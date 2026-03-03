@@ -3,20 +3,5 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "vite",
-  "nodejs": "20.x",
-  "regions": ["iad1"],
-  "env": {
-    "VITE_API_URL": "@vite_api_url",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_KEY": "@supabase_key",
-    "SUPABASE_SERVICE_ROLE_KEY": "@supabase_service_role_key",
-    "JWT_SECRET": "@jwt_secret",
-    "ANTHROPIC_API_KEY": "@anthropic_api_key",
-    "REDIS_URL": "@redis_url",
-    "STRIPE_SECRET_KEY": "@stripe_secret_key",
-    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret"
-  },
-  "public": {
-    "VITE_API_URL": "@vite_api_url"
-  }
+  "regions": ["iad1"]
 }
