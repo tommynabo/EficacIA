@@ -33,10 +33,6 @@ export const config = {
   // LinkedIn
   LINKEDIN_SESSION_VALIDATION_ENDPOINT: process.env.LINKEDIN_SESSION_VALIDATION_ENDPOINT || 'https://www.linkedin.com/feed/',
   
-  // Telegram (optional)
-  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
-  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
-  
   // Proxies
   BRIGHT_DATA_API_KEY: process.env.BRIGHT_DATA_API_KEY,
   

@@ -154,24 +154,6 @@ This guide explains all the API keys and environment variables needed for the Ef
 
 ---
 
-### **Telegram Notifications (Optional - Why it's there)**
-
-#### `TELEGRAM_BOT_TOKEN`
-#### `TELEGRAM_CHAT_ID`
-- **What it is**: Credentials for receiving alerts on Telegram
-- **Why it's there**: Optional feature to get notified when:
-  - Lead sent successfully
-  - Campaign paused due to errors
-  - Daily stats summary
-- **Is it required?**: ❌ **NO** - completely optional
-- **To disable**: Just leave blank in `.env`
-- **How to set up if you want it**:
-  1. Create a Telegram bot: message `@BotFather` on Telegram
-  2. Create new bot, get `TELEGRAM_BOT_TOKEN`
-  3. Get your chat ID: message the bot and visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
-
----
-
 ### **Bright Data Proxies (Optional - Currently Not Used)**
 
 #### `BRIGHT_DATA_API_KEY`
@@ -356,7 +338,6 @@ CREATE POLICY "Users can see their own action logs" ON actions_logs
 
 - [ ] **Optional (For Future)**
   - [ ] Stripe account created (if planning payments)
-  - [ ] Telegram bot created (if wanting notifications)
 
 ---
 
@@ -381,10 +362,6 @@ CREATE POLICY "Users can see their own action logs" ON actions_logs
    VITE_API_URL=http://localhost:3001
    PORT=3001
    NODE_ENV=development
-   
-   # Optional (leave blank to disable)
-   TELEGRAM_BOT_TOKEN=
-   TELEGRAM_CHAT_ID=
    ```
 
 3. Never commit `.env` to git!
