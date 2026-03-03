@@ -1,20 +1,27 @@
 import * as React from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { Zap, AlertCircle } from "lucide-react"
-import { useAuth } from "@/src/lib/auth-context"
+import { useAuth } from "@/src/contexts/AuthContext"
 
 export default function AuthPage({ mode = "login" }: { mode?: "login" | "register" }) {
   const navigate = useNavigate()
-  const { login, register } = useAuth()
+  const { login, signup, isAuthenticated } = useAuth()
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [formData, setFormData] = React.useState({
     email: "",
     password: "",
-    name: "",
+    fullName: "",
   })
+
+  // Redirige si ya está autenticado
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/dashboard")
+    }
+  }, [isAuthenticated, navigate])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -31,7 +38,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
       if (mode === "login") {
         await login(formData.email, formData.password)
       } else {
-        await register(formData.email, formData.password, formData.name)
+        await signup(formData.email, formData.password, formData.fullName)
       }
       navigate("/dashboard")
     } catch (err: any) {
@@ -72,17 +79,17 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           <form className="space-y-6" onSubmit={handleSubmit}>
             {mode === "register" && (
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-slate-300">
+                <label htmlFor="fullName" className="block text-sm font-medium text-slate-300">
                   Nombre completo
                 </label>
                 <div className="mt-2">
                   <Input
-                    id="name"
-                    name="name"
+                    id="fullName"
+                    name="fullName"
                     type="text"
                     required
                     placeholder="Juan Pérez"
-                    value={formData.name}
+                    value={formData.fullName}
                     onChange={handleChange}
                   />
                 </div>

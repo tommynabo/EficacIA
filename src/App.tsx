@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import { AuthProvider, useAuth } from "./lib/auth-context"
+import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import LandingPage from "./pages/landing"
 import AuthPage from "./pages/auth"
+import PricingPage from "./pages/pricing"
 import { DashboardLayout } from "./components/layout"
 import AccountsPage from "./pages/dashboard/accounts"
 import CampaignsPage from "./pages/dashboard/campaigns"
@@ -33,6 +34,7 @@ function AppRoutes() {
       <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <AuthPage mode="login" />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <AuthPage mode="register" />} />
+      <Route path="/pricing" element={<PricingPage />} />
       
       <Route
         path="/dashboard"

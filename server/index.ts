@@ -11,8 +11,12 @@ import { initWorkers } from './workers/index.js';
 import authRoutes from './routes/auth.routes.js';
 import linkedInRoutes from './routes/linkedin.routes.js';
 import leadsRoutes from './routes/leads.routes.js';
+import paymentsRoutes from './routes/payments.routes.js';
 
 const app: Express = express();
+
+// Stripe webhook MUST be before JSON parser (needs raw body)
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), paymentsRoutes);
 
 // Middleware
 app.use(cors({
@@ -30,6 +34,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/payments', paymentsRoutes);
 app.use('/api/linkedin', authMiddleware, linkedInRoutes);
 app.use('/api/leads', authMiddleware, leadsRoutes);
 
