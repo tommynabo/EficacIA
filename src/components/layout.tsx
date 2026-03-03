@@ -1,6 +1,5 @@
 import * as React from "react"
 import { Link, useLocation, Outlet } from "react-router-dom"
-import { motion } from "framer-motion"
 import { 
   BarChart3, 
   Inbox, 
@@ -46,17 +45,9 @@ export function DashboardLayout() {
                 to={item.href}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative",
-                  isActive ? "text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                  isActive ? "text-white bg-blue-500/10 rounded-lg" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
                 )}
               >
-                {isActive && (
-                  <motion.div
-                    layoutId="sidebar-active"
-                    className="absolute inset-0 bg-blue-500/10 rounded-lg"
-                    initial={false}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  />
-                )}
                 <item.icon className={cn("w-5 h-5", isActive ? "text-blue-500" : "text-slate-500")} />
                 <span className="relative z-10">{item.name}</span>
               </Link>

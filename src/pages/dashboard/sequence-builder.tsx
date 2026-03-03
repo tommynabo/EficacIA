@@ -5,7 +5,6 @@ import { Card } from "@/src/components/ui/card"
 import { Switch } from "@/src/components/ui/switch"
 import { Badge } from "@/src/components/ui/badge"
 import { Plus, Trash2, Bot, ArrowLeft, Save, Clock } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
 
 type StepType = "invitation" | "message"
 
@@ -66,13 +65,7 @@ export default function SequenceBuilderPage() {
           </div>
         </div>
         <Button onClick={handleSave} disabled={isSaving} className="gap-2 min-w-[120px]">
-          {isSaving ? (
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-              <Save className="w-4 h-4" />
-            </motion.div>
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
+          <Save className={`w-4 h-4 ${isSaving ? "animate-spin" : ""}`} />
           {isSaving ? "Guardando..." : "Guardar Cambios"}
         </Button>
       </div>
@@ -80,15 +73,8 @@ export default function SequenceBuilderPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Steps List */}
         <div className="lg:col-span-1 space-y-4">
-          <AnimatePresence>
-            {steps.map((step, index) => (
-              <motion.div
-                key={step.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-              >
+          {steps.map((step, index) => (
+            <div key={step.id}>
                 {index > 0 && (
                   <div className="flex flex-col items-center py-2 text-slate-500">
                     <div className="h-4 w-px bg-slate-800" />
@@ -146,9 +132,9 @@ export default function SequenceBuilderPage() {
                     </div>
                   </div>
                 </Card>
-              </motion.div>
+              </div>
             ))}
-          </AnimatePresence>
+
           
           <Button variant="outline" className="w-full border-dashed border-slate-700 text-slate-400 hover:text-white hover:border-slate-500 gap-2" onClick={addStep}>
             <Plus className="w-4 h-4" />

@@ -1,5 +1,4 @@
 import * as React from "react"
-import { motion } from "framer-motion"
 import { cn } from "@/src/lib/utils"
 
 interface ProgressRingProps {
@@ -33,7 +32,7 @@ export function ProgressRing({
           cx={size / 2}
           cy={size / 2}
         />
-        <motion.circle
+        <circle
           className={color}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
@@ -44,9 +43,6 @@ export function ProgressRing({
           r={radius}
           cx={size / 2}
           cy={size / 2}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 1, ease: "easeOut" }}
         />
       </svg>
       <span className="absolute text-[10px] font-bold text-slate-300">
