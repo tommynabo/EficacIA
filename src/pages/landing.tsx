@@ -1,6 +1,5 @@
 import * as React from "react"
 import { Link } from "react-router-dom"
-import { motion } from "framer-motion"
 import { Button } from "@/src/components/ui/button"
 import { Zap, CheckCircle2, Bot, Inbox, Users } from "lucide-react"
 
@@ -31,11 +30,7 @@ export default function LandingPage() {
       <section className="relative pt-32 pb-20 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-950 to-slate-950"></div>
         <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
+          <div>
             <h1 className="text-5xl md:text-7xl font-bold tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-400">
               Automatización de LinkedIn que <span className="text-blue-500">no falla</span>.
             </h1>
@@ -50,7 +45,7 @@ export default function LandingPage() {
                 Ver Demo
               </Button>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
