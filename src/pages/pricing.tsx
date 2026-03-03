@@ -46,19 +46,20 @@ export default function PricingPage() {
   }, [user])
 
   const handleSelectPlan = async (planId: string) => {
-    if (planId === currentPlan) {
-      return // Already subscribed
+    if (planId === currentPlan || planId === 'free') {
+      return // Already subscribed or free
     }
 
     setSelectedPlan(planId)
 
-    // En producción, esto abrirá un modal de Stripe para pagar
-    // Por ahora, vamos a grabar en console para testing
-    console.log('Selected plan:', planId)
-
     try {
       const token = localStorage.getItem('auth_token')
-      const res = await fetch(`${API_URL}/api/payments/create-payment-intent`, {
+      if (!token) {
+        throw new Error('No autenticado')
+      }
+
+      // Crea la suscripción directamente
+      const res = await fetch(`${API_URL}/api/payments/create-subscription`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -67,13 +68,21 @@ export default function PricingPage() {
         body: JSON.stringify({ plan: planId }),
       })
 
-      const data = await res.json()
-      console.log('Payment API response:', data)
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || 'Error en la suscripción')
+      }
 
-      // Aquí irías a Stripe Checkout
-      // window.location.href = data.checkoutUrl
-    } catch (error) {
-      console.error('Error creating payment:', error)
+      const data = await res.json()
+      console.log('Subscription created:', data)
+
+      // Refresca la página para actualizar el estado
+      setTimeout(() => {
+        window.location.reload()
+      }, 1500)
+    } catch (error: any) {
+      console.error('Error creating subscription:', error)
+      alert(`Error: ${error.message}`)
     } finally {
       setSelectedPlan(null)
     }
@@ -105,7 +114,7 @@ export default function PricingPage() {
         )}
 
         {/* Plans Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {plans.map((plan) => {
             const isCurrentPlan = currentPlan === plan.id
             const isFree = plan.id === 'free'
@@ -122,7 +131,7 @@ export default function PricingPage() {
                   <h3 className="text-2xl font-bold text-white mb-2">{plan.name}</h3>
                   <div className="flex items-baseline gap-1">
                     <span className="text-4xl font-bold text-white">
-                      ${(plan.price / 100).toFixed(2)}
+                      €{(plan.price / 100).toFixed(2)}
                     </span>
                     <span className="text-slate-400">/mes</span>
                   </div>
@@ -150,7 +159,7 @@ export default function PricingPage() {
                   className="w-full"
                   variant={isCurrentPlan ? 'outline' : 'default'}
                 >
-                  {isCurrentPlan ? 'Plan Actual' : selectedPlan === plan.id ? 'Procesando...' : 'Comenzar Prueba'}
+                  {isCurrentPlan ? 'Plan Actual' : selectedPlan === plan.id ? 'Procesando...' : '7 Días Gratis'}
                 </Button>
               </Card>
             )

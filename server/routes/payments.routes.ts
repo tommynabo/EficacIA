@@ -8,37 +8,63 @@ const router = Router()
 const stripe = new Stripe(config.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' })
 
 /**
- * PLANES DISPONIBLES
+ * PLANES DISPONIBLES - Usando Stripe Product & Price IDs
  */
 const PLANS = {
   starter: {
     name: 'Starter',
-    price: 2999, // $29.99
-    currency: 'usd',
-    features: ['Hasta 100 leads', 'Campañas básicas', 'Soporte por email'],
-    metadata: { plan: 'starter', trial_days: 7 },
+    priceId: 'price_1T6w3Y2dSOGFvDre1P8c2t4L', // €49.99/mes
+    price: 4999,
+    currency: 'eur',
+    features: ['Hasta 500 leads/mes', 'Búsqueda en LinkedIn', '1 campaña activa', 'Soporte por email'],
+    trial_days: 7,
   },
   pro: {
     name: 'Pro',
-    price: 7999, // $79.99
-    currency: 'usd',
-    features: ['Leads ilimitados', 'Campañas avanzadas', 'LinkedIn automation', 'Soporte prioritario'],
-    metadata: { plan: 'pro', trial_days: 7 },
-  },
-  enterprise: {
-    name: 'Enterprise',
-    price: 29999, // $299.99
-    currency: 'usd',
-    features: ['Todo en Pro', 'API access', 'Webhook personalizado', 'Soporte 24/7'],
-    metadata: { plan: 'enterprise', trial_days: 14 },
+    priceId: 'price_1T6w3Z2dSOGFvDrePckW6jYJ', // €84.99/mes
+    price: 8499,
+    currency: 'eur',
+    features: ['Leads ilimitados', 'Automatización completa', 'Campañas ilimitadas', 'API access', 'Soporte prioritario'],
+    trial_days: 7,
   },
 }
 
 /**
  * POST /api/payments/create-payment-intent
- * Crea un PaymentIntent para checkout
+ * DEPRECATED - Use create-subscription instead
+ * Mantiene compatibilidad pero redirige a create-subscription
  */
 router.post('/create-payment-intent', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId
+    const { plan } = req.body
+
+    if (!plan || !PLANS[plan as keyof typeof PLANS]) {
+      return res.status(400).json({ error: 'Plan inválido' })
+    }
+
+    const planConfig = PLANS[plan as keyof typeof PLANS]
+
+    // Retorna la información necesaria para el checkout
+    res.json({
+      priceId: planConfig.priceId,
+      planName: planConfig.name,
+      amount: planConfig.price,
+      currency: planConfig.currency,
+      trialDays: planConfig.trial_days,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    })
+  } catch (error: any) {
+    console.error('Payment intent error:', error)
+    res.status(500).json({ error: error.message || 'Error creando payment intent' })
+  }
+})
+
+/**
+ * POST /api/payments/create-subscription
+ * Crea una suscripción con Stripe Price ID (7 días gratis)
+ */
+router.post('/create-subscription', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
     const { plan } = req.body
@@ -60,79 +86,12 @@ router.post('/create-payment-intent', authMiddleware, async (req: Request, res: 
       return res.status(404).json({ error: 'Usuario no encontrado' })
     }
 
-    // Crea o obtiene customer de Stripe
-    let customerId = user.stripe_customer_id
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: { userId },
-      })
-      customerId = customer.id
-
-      // Actualiza usuario con stripe_customer_id
-      await supabase
-        .from('users')
-        .update({ stripe_customer_id: customerId })
-        .eq('id', userId)
-    }
-
-    // Crea PaymentIntent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: planConfig.price,
-      currency: planConfig.currency,
-      customer: customerId,
-      metadata: {
-        userId,
-        plan,
-        ...planConfig.metadata,
-      },
-      description: `${planConfig.name} Plan - 7 days free trial`,
-    })
-
-    res.json({
-      clientSecret: paymentIntent.client_secret,
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-    })
-  } catch (error: any) {
-    console.error('Payment intent error:', error)
-    res.status(500).json({ error: error.message || 'Error creando payment intent' })
-  }
-})
-
-/**
- * POST /api/payments/create-subscription
- * Crea una suscripción directamente (usa si tienes tarjeta guardada)
- */
-router.post('/create-subscription', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const userId = req.userId
-    const { plan, paymentMethodId } = req.body
-
-    if (!plan || !PLANS[plan as keyof typeof PLANS]) {
-      return res.status(400).json({ error: 'Plan inválido' })
-    }
-
-    const planConfig = PLANS[plan as keyof typeof PLANS]
-
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single()
-
-    if (userError || !user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' })
-    }
-
     // Crea customer si no existe
     let customerId = user.stripe_customer_id
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: { userId },
-        payment_method: paymentMethodId,
-        invoice_settings: { default_payment_method: paymentMethodId },
       })
       customerId = customer.id
 
@@ -142,13 +101,23 @@ router.post('/create-subscription', authMiddleware, async (req: Request, res: Re
         .eq('id', userId)
     }
 
-    // Crea una suscripción con trial de 7 días
-    const trialDays = planConfig.metadata.trial_days
+    // Crea suscripción con trial de 7 días
+    const trialDays = planConfig.trial_days
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
-      items: [{ price_data: { currency: planConfig.currency, product_data: { name: planConfig.name }, unit_amount: planConfig.price, recurring: { interval: 'month' } } }],
+      items: [
+        {
+          price: planConfig.priceId,
+        },
+      ],
       trial_period_days: trialDays,
-      metadata: { userId, plan },
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+      },
+      metadata: {
+        userId,
+        plan,
+      },
     })
 
     // Actualiza usuario en Supabase
@@ -163,8 +132,14 @@ router.post('/create-subscription', authMiddleware, async (req: Request, res: Re
     }).eq('id', userId)
 
     res.json({
-      subscription,
-      message: `Trial de ${trialDays} días activado`,
+      success: true,
+      subscription: {
+        id: subscription.id,
+        plan,
+        status: subscription.status,
+        trial_ends_at: trialEndsAt,
+      },
+      message: `✓ Prueba de ${trialDays} días activada. Se cobrará €${(planConfig.price / 100).toFixed(2)} después.`,
     })
   } catch (error: any) {
     console.error('Subscription error:', error)
