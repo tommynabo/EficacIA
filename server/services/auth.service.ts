@@ -19,7 +19,8 @@ export class AuthService {
       const userId = authData.user.id;
 
       // Create user profile in database
-      const { data: userData, error: dbError } = await (supabase
+      // @ts-ignore-next-line - Supabase types not fully generated
+      const { data: userData, error: dbError } = await supabase
         .from('users')
         .insert({
           id: userId,
@@ -27,7 +28,7 @@ export class AuthService {
           name: name || email.split('@')[0],
           subscription_status: 'free',
           settings: {},
-        }) as any)
+        })
         .select()
         .single();
 
@@ -98,12 +99,13 @@ export class AuthService {
 
   static async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
     try {
-      const { data, error } = await (supabase
+      // @ts-ignore-next-line - Supabase types not fully generated
+      const { data, error } = await supabase
         .from('users')
-        .update(updates as any)
+        .update(updates)
         .eq('id', userId)
         .select()
-        .single() as any);
+        .single();
 
       if (error) {
         throw new Error(error.message);

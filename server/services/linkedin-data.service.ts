@@ -8,8 +8,9 @@ export class LinkedInDataService {
     userId: string,
     sessionCookie: string,
     proxyIp?: string
-  ): Promise<LinkedInAccount> {
-    const { data, error } = await (supabase
+  ): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('linkedin_accounts')
       .insert({
         user_id: userId,
@@ -17,7 +18,7 @@ export class LinkedInDataService {
         proxy_ip: proxyIp,
         status: 'active',
         last_validated_at: new Date().toISOString(),
-      }) as any)
+      })
       .select()
       .single();
 
@@ -35,13 +36,14 @@ export class LinkedInDataService {
     return data as LinkedInAccount[];
   }
 
-  static async updateLinkedInAccount(accountId: string, updates: Partial<LinkedInAccount>): Promise<LinkedInAccount> {
-    const { data, error } = await (supabase
+  static async updateLinkedInAccount(accountId: string, updates: Partial<LinkedInAccount>): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('linkedin_accounts')
-      .update({ ...updates, updated_at: new Date().toISOString() } as any)
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', accountId)
       .select()
-      .single() as any);
+      .single();
 
     if (error) throw new Error(error.message);
     return data as LinkedInAccount;
@@ -53,8 +55,9 @@ export class LinkedInDataService {
     name: string,
     linkedInAccountId: string,
     settings?: any
-  ): Promise<Campaign> {
-    const { data, error } = await (supabase
+  ): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('campaigns')
       .insert({
         user_id: userId,
@@ -71,9 +74,9 @@ export class LinkedInDataService {
           follow_up_enabled: false,
           follow_up_delay_days: 3,
         },
-      } as any)
+      })
       .select()
-      .single() as any);
+      .single();
 
     if (error) throw new Error(error.message);
     return data as Campaign;
@@ -101,13 +104,14 @@ export class LinkedInDataService {
     return data as Campaign;
   }
 
-  static async updateCampaign(campaignId: string, updates: Partial<Campaign>): Promise<Campaign> {
-    const { data, error } = await (supabase
+  static async updateCampaign(campaignId: string, updates: Partial<Campaign>): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('campaigns')
-      .update({ ...updates, updated_at: new Date().toISOString() } as any)
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', campaignId)
       .select()
-      .single() as any);
+      .single();
 
     if (error) throw new Error(error.message);
     return data as Campaign;
@@ -121,10 +125,11 @@ export class LinkedInDataService {
       status: 'pending',
     }));
 
-    const { data, error } = await (supabase
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('leads')
-      .insert(leadsData as any)
-      .select() as any);
+      .insert(leadsData)
+      .select();
 
     if (error) throw new Error(error.message);
     return data as Lead[];
@@ -146,37 +151,40 @@ export class LinkedInDataService {
     return data as Lead[];
   }
 
-  static async updateLead(leadId: string, updates: Partial<Lead>): Promise<Lead> {
-    const { data, error } = await (supabase
+  static async updateLead(leadId: string, updates: Partial<Lead>): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('leads')
-      .update({ ...updates, updated_at: new Date().toISOString() } as any)
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', leadId)
       .select()
-      .single() as any);
+      .single();
 
     if (error) throw new Error(error.message);
     return data as Lead;
   }
 
   static async updateLeadsBatch(leadIds: string[], updates: Partial<Lead>): Promise<void> {
-    const { error } = await (supabase
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { error } = await supabase
       .from('leads')
-      .update({ ...updates, updated_at: new Date().toISOString() } as any)
-      .in('id', leadIds) as any);
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .in('id', leadIds);
 
     if (error) throw new Error(error.message);
   }
 
   // Action Logs
-  static async logAction(logData: Omit<ActionLog, 'id' | 'timestamp'>): Promise<ActionLog> {
-    const { data, error } = await (supabase
+  static async logAction(logData: Omit<ActionLog, 'id' | 'timestamp'>): Promise<any> {
+    // @ts-ignore-next-line - Supabase types not fully generated
+    const { data, error } = await supabase
       .from('actions_logs')
       .insert({
         ...logData,
         timestamp: new Date().toISOString(),
-      } as any)
+      })
       .select()
-      .single() as any);
+      .single();
 
     if (error) throw new Error(error.message);
     return data as ActionLog;
