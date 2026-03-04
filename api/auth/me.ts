@@ -1,6 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getSupabase } from '../_lib/supabase'
-import { verifyJWT, corsHeaders } from '../_lib/utils'
+import { corsHeaders } from '../_lib/constants'
+
+const jwt = require('jsonwebtoken')
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key'
+function verifyJWT(token: string): { userId: string; email: string } | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as { userId: string; email: string }
+  } catch {
+    return null
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS preflight

@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import bcrypt from 'bcryptjs'
 import { getSupabaseAdmin, getSupabase } from '../_lib/supabase'
-import { generateJWT, corsHeaders } from '../_lib/utils'
+import { corsHeaders } from '../_lib/constants'
+
+const jwt = require('jsonwebtoken')
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key'
+function generateJWT(userId: string, email: string): string {
+  return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: '7d' })
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS preflight
