@@ -3,6 +3,7 @@ import { Card } from '@/src/components/ui/card'
 import { Button } from '@/src/components/ui/button'
 import { Badge } from '@/src/components/ui/badge'
 import { Input } from '@/src/components/ui/input'
+import { LinkedInService } from '@/src/services/linkedin'
 import { 
   Search, 
   Plus, 
@@ -45,18 +46,11 @@ export default function LeadsPage() {
   const fetchLeads = async () => {
     try {
       setLoading(true)
-      const res = await fetch(
-        `/api/linkedin/leads?status=${statusFilter}&limit=100&search=${search}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      )
-      const data = await res.json()
+      const data = await LinkedInService.getLeads(statusFilter, 100, 0, search)
       setLeads(data.leads || [])
     } catch (error) {
       console.error('Error fetching leads:', error)
+      alert('Error cargando leads')
     } finally {
       setLoading(false)
     }
@@ -65,18 +59,7 @@ export default function LeadsPage() {
   const searchLeads = async () => {
     try {
       setImporting(true)
-      const res = await fetch('/api/linkedin/search-leads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify({
-          keywords: 'sales director',
-          limit: 10,
-        }),
-      })
-      const data = await res.json()
+      const data = await LinkedInService.searchLeads('sales director', undefined, undefined, 10)
       if (data.success) {
         alert(`✓ ${data.message}`)
         fetchLeads()
@@ -101,15 +84,7 @@ export default function LeadsPage() {
 
     try {
       setImporting(true)
-      const res = await fetch('/api/linkedin/bulk-import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify({ csvData }),
-      })
-      const data = await res.json()
+      const data = await LinkedInService.bulkImportCSV(csvData)
       if (data.success) {
         alert(`✓ Se importaron ${data.count} leads`)
         ;(document.getElementById('csvInput') as HTMLTextAreaElement).value = ''
@@ -128,20 +103,13 @@ export default function LeadsPage() {
 
   const updateLeadStatus = async (leadId: string, newStatus: string) => {
     try {
-      const res = await fetch(`/api/linkedin/leads/${leadId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      })
-      const data = await res.json()
+      const data = await LinkedInService.updateLead(leadId, { status: newStatus })
       if (data.success) {
         fetchLeads()
       }
     } catch (error) {
       console.error('Error updating lead:', error)
+      alert('Error actualizando lead')
     }
   }
 
@@ -149,18 +117,13 @@ export default function LeadsPage() {
     if (!confirm('¿Eliminar este lead?')) return
 
     try {
-      const res = await fetch(`/api/linkedin/leads/${leadId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      })
-      const data = await res.json()
+      const data = await LinkedInService.deleteLead(leadId)
       if (data.success) {
         fetchLeads()
       }
     } catch (error) {
       console.error('Error deleting lead:', error)
+      alert('Error eliminando lead')
     }
   }
 
