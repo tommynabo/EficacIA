@@ -1,7 +1,8 @@
 import * as React from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
-import { Zap, CheckCircle2, Bot, Inbox, Users } from "lucide-react"
+import { Card } from "@/src/components/ui/card"
+import { Zap, CheckCircle2, Bot, Inbox, Users, Check } from "lucide-react"
 
 export default function LandingPage() {
   return (
@@ -74,42 +75,89 @@ export default function LandingPage() {
 
       {/* Pricing */}
       <section className="py-24">
-        <div className="max-w-3xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold tracking-tight mb-4">Precios Simples y Transparentes</h2>
-          <p className="text-slate-400 mb-12">Todo lo que necesitas para escalar tus ventas B2B.</p>
-          
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 md:p-12 relative overflow-hidden">
-            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
-            <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
-              <div className="text-left">
-                <h3 className="text-2xl font-bold mb-2">Plan Pro</h3>
-                <div className="flex items-baseline gap-2 mb-6">
-                  <span className="text-5xl font-extrabold tracking-tight">49€</span>
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold tracking-tight mb-4">Planes Simple y Transparentes</h2>
+            <p className="text-slate-400 text-lg">Comienza con 7 días gratis. Sin tarjeta de crédito requerida.</p>
+          </div>
+
+          {/* Pricing Cards */}
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Starter Plan */}
+            <Card className="flex flex-col p-8 bg-slate-900 border-slate-800 hover:border-slate-700 transition-colors">
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold text-white mb-2">Starter</h3>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-5xl font-bold text-white">€49.99</span>
                   <span className="text-slate-400">/mes</span>
                 </div>
-                <ul className="space-y-3">
+                <p className="text-sm text-slate-400 mt-3">Perfecto para empezar</p>
+              </div>
+
+              <div className="flex-1 mb-8">
+                <ul className="space-y-4">
                   {[
-                    "Cuentas ilimitadas",
-                    "Secuencias con IA generativa",
-                    "Unibox centralizado",
-                    "Soporte prioritario",
-                    "Gestión de Proxies dedicada"
+                    "Hasta 500 leads/mes",
+                    "Búsqueda en LinkedIn",
+                    "1 campaña activa",
+                    "Secuencias básicas",
+                    "Soporte por email"
                   ].map((feature, i) => (
-                    <li key={i} className="flex items-center gap-3 text-slate-300">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                      <span>{feature}</span>
+                    <li key={i} className="flex items-center gap-3">
+                      <Check className="w-5 h-5 text-green-500 shrink-0" />
+                      <span className="text-slate-300">{feature}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="w-full md:w-auto">
-                <Button size="lg" className="w-full md:w-64 h-14 text-lg" asChild>
-                  <Link to="/register">Empezar Ahora</Link>
-                </Button>
-                <p className="text-sm text-slate-500 mt-4 text-center">Cancela en cualquier momento.</p>
+
+              <Button size="lg" className="w-full h-12" asChild>
+                <Link to="/pricing">7 Días Gratis</Link>
+              </Button>
+            </Card>
+
+            {/* Pro Plan */}
+            <Card className="flex flex-col p-8 bg-slate-800 border-blue-500/50 ring-2 ring-blue-500/20 relative">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-blue-500 text-white text-sm font-semibold rounded-full">
+                Más Popular
               </div>
-            </div>
+              
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold text-white mb-2">Pro</h3>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-5xl font-bold text-white">€84.99</span>
+                  <span className="text-slate-400">/mes</span>
+                </div>
+                <p className="text-sm text-slate-400 mt-3">Para equipos en crecimiento</p>
+              </div>
+
+              <div className="flex-1 mb-8">
+                <ul className="space-y-4">
+                  {[
+                    "Leads ilimitados",
+                    "Automatización completa",
+                    "Campañas ilimitadas",
+                    "Secuencias con IA avanzada",
+                    "API access",
+                    "Soporte prioritario"
+                  ].map((feature, i) => (
+                    <li key={i} className="flex items-center gap-3">
+                      <Check className="w-5 h-5 text-green-500 shrink-0" />
+                      <span className="text-slate-300">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <Button size="lg" className="w-full h-12" asChild>
+                <Link to="/pricing">7 Días Gratis</Link>
+              </Button>
+            </Card>
           </div>
+
+          <p className="text-center text-sm text-slate-500 mt-12">
+            Ambos planes incluyen 7 días de prueba gratuita. Cancela cuando quieras sin cargos adicionales.
+          </p>
         </div>
       </section>
     </div>

@@ -1,6 +1,8 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
+import Stripe from 'stripe';
 import { config } from './config/index.js';
+import { initSupabase, supabase } from './lib/supabase.js';
 import { initSupabase } from './lib/supabase.js';
 import { initRedis } from './lib/redis.js';
 import { authMiddleware, errorHandler, notFoundHandler } from './middleware/index.js';
@@ -15,15 +17,87 @@ import paymentsRoutes from './routes/payments.routes.js';
 
 const app: Express = express();
 
-// Stripe webhook MUST be before JSON parser (needs raw body)
-app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), paymentsRoutes);
-
-// Middleware
+// CORS must be early
 app.use(cors({
   origin: config.FRONTEND_URL,
   credentials: true,
 }));
 
+// Stripe webhook needs raw body - must come BEFORE JSON parser
+const stripe = new Stripe(config.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
+const rawBodyParser = express.raw({ type: 'application/json' });
+
+app.post('/api/payments/stripe-webhook', rawBodyParser, async (req: any, res: Response) => {
+  const sig = req.headers['stripe-signature'] as string;
+  const body = Buffer.isBuffer(req.body) ? req.body.toString() : JSON.stringify(req.body);
+
+  try {
+    const event = stripe.webhooks.constructEvent(body, sig, config.STRIPE_WEBHOOK_SECRET);
+    console.log(`✓ Webhook received: ${event.type}`);
+
+    // Handle different Stripe events
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = subscription.metadata?.userId;
+
+        if (userId) {
+          let status = 'active';
+          if (subscription.status === 'past_due') status = 'past_due';
+          if (subscription.cancel_at) status = 'pending_cancellation';
+
+          await supabase.from('users').update({
+            subscription_status: status,
+            stripe_subscription_id: subscription.id,
+          }).eq('id', userId);
+
+          console.log(`✓ Subscription updated for user ${userId}`);
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = subscription.metadata?.userId;
+
+        if (userId) {
+          await supabase.from('users').update({
+            subscription_status: 'canceled',
+            subscription_plan: 'free',
+          }).eq('id', userId);
+
+          console.log(`✓ Subscription canceled for user ${userId}`);
+        }
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        
+        console.log(`✓ Invoice paid:  ${invoice.id}`);
+        break;
+      }
+
+      case 'charge.failed': {
+        const charge = event.data.object as Stripe.Charge;
+        console.error(`✗ Charge failed: ${charge.id} - ${charge.failure_message}`);
+        break;
+      }
+
+      default:
+        console.log(`Unhandled event type: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error: any) {
+    console.error('Webhook signature verification failed:', error);
+    res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+});
+
+// JSON parser for all other routes
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 

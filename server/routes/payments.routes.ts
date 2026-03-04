@@ -185,88 +185,11 @@ router.get('/subscription', authMiddleware, async (req: Request, res: Response) 
 
 /**
  * POST /api/webhooks/stripe
- * Webhook de Stripe - Procesa eventos
+ * Webhook is handled in server/index.ts to manage raw body before JSON parser
+ * This endpoint is deprecated - use /api/payments/stripe-webhook instead
  */
-router.post('/stripe-webhook', async (req: Request, res: Response) => {
-  const sig = req.headers['stripe-signature'] as string
-
-  try {
-    const event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      config.STRIPE_WEBHOOK_SECRET
-    )
-
-    console.log(`Stripe event: ${event.type}`)
-
-    switch (event.type) {
-      case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent
-        const userId = paymentIntent.metadata?.userId
-        const plan = paymentIntent.metadata?.plan
-        const trialDays = parseInt(paymentIntent.metadata?.trial_days || '7')
-
-        if (userId && plan) {
-          const trialEndsAt = new Date()
-          trialEndsAt.setDate(trialEndsAt.getDate() + trialDays)
-
-          await supabase.from('users').update({
-            subscription_plan: plan,
-            subscription_status: 'active',
-            trial_ends_at: trialEndsAt.toISOString(),
-          }).eq('id', userId)
-
-          console.log(`✓ Payment succeeded for user ${userId}, plan: ${plan}`)
-        }
-        break
-      }
-
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription
-        const userId = subscription.metadata?.userId
-
-        if (userId) {
-          let status = 'active'
-          if (subscription.status === 'past_due') status = 'past_due'
-          if (subscription.pause_at) status = 'paused'
-
-          await supabase.from('users').update({
-            subscription_status: status,
-          }).eq('id', userId)
-        }
-        break
-      }
-
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription
-        const userId = subscription.metadata?.userId
-
-        if (userId) {
-          await supabase.from('users').update({
-            subscription_status: 'canceled',
-            subscription_plan: 'free',
-          }).eq('id', userId)
-
-          console.log(`✓ Subscription canceled for user ${userId}`)
-        }
-        break
-      }
-
-      case 'charge.failed': {
-        const charge = event.data.object as Stripe.Charge
-        console.error(`✗ Charge failed: ${charge.id} - ${charge.failure_message}`)
-        break
-      }
-
-      default:
-        console.log(`Unhandled event type: ${event.type}`)
-    }
-
-    res.json({ received: true })
-  } catch (error: any) {
-    console.error('Webhook error:', error)
-    res.status(400).json({ error: `Webhook Error: ${error.message}` })
-  }
+router.post('/stripe-webhook', (req: Request, res: Response) => {
+  res.status(404).json({ error: 'Use POST /api/payments/stripe-webhook instead' })
 })
 
 export default router
