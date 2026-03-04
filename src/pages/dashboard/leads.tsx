@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card } from '@/src/components/ui/card'
 import { Button } from '@/src/components/ui/button'
-import { Badge } from '@/src/components/ui/badge'
 import { Input } from '@/src/components/ui/input'
 import { LinkedInService } from '@/src/services/linkedin'
 import { 
@@ -37,8 +36,6 @@ export default function LeadsPage() {
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [importing, setImporting] = useState(false)
 
-  return (
-  // Carga leads
   useEffect(() => {
     fetchLeads()
   }, [statusFilter])
