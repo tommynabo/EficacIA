@@ -44,7 +44,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
     if (sessionId && mode === 'register') {
       const fetchStripeData = async () => {
         try {
-          const res = await fetch(`${API_URL}/api/payments/checkout-session/${sessionId}`)
+          const res = await fetch(`${API_URL}/api/payments/checkout-session?sessionId=${sessionId}`)
           if (!res.ok) throw new Error('No se pudo verificar el pago')
           const data = await res.json()
           setStripeData(data)
