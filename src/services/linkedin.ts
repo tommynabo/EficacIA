@@ -14,7 +14,7 @@ export class LinkedInService {
 
     const response = await fetch(`${this.baseUrl}/leads?${params}`, {
       headers: {
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
     })
 
@@ -30,7 +30,7 @@ export class LinkedInService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
       body: JSON.stringify({
         keywords,
@@ -52,7 +52,7 @@ export class LinkedInService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
       body: JSON.stringify({ leads }),
     })
@@ -69,7 +69,7 @@ export class LinkedInService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
       body: JSON.stringify({ csvData }),
     })
@@ -86,7 +86,7 @@ export class LinkedInService {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
       body: JSON.stringify(updates),
     })
@@ -102,7 +102,7 @@ export class LinkedInService {
     const response = await fetch(`${this.baseUrl}/leads/${leadId}`, {
       method: 'DELETE',
       headers: {
-        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
     })
 

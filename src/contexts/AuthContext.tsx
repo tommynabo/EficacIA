@@ -4,6 +4,7 @@ import AuthService, { User } from '../services/auth'
 interface AuthContextType {
   user: User | null
   loading: boolean
+  isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
   signup: (email: string, password: string, fullName: string) => Promise<void>
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value: AuthContextType = {
     user,
     loading,
+    isLoading: loading,
     isAuthenticated: !!user,
     login,
     signup,

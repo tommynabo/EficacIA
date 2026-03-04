@@ -21,7 +21,7 @@ export default function LandingPage() {
               Iniciar Sesión
             </Link>
             <Button asChild>
-              <Link to="/register">Empezar Gratis</Link>
+              <Link to="/pricing">Empezar Gratis</Link>
             </Button>
           </div>
         </div>
@@ -40,7 +40,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Button size="lg" className="w-full sm:w-auto text-base h-12 px-8" asChild>
-                <Link to="/register">Comenzar Prueba de 7 Días</Link>
+                <Link to="/pricing">Comenzar Prueba de 7 Días</Link>
               </Button>
               <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8">
                 Ver Demo

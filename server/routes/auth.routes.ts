@@ -1,13 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/index.js';
 import { generateJWT } from '../lib/utils.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = Router();
 
 // Register
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, name, fullName } = req.body;
+    const { email, password, name, fullName, stripeCustomerId, stripeSubscriptionId, plan } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -17,6 +18,24 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const userName = fullName || name;
     const result = await AuthService.registerUser(email, password, userName);
+
+    // Si viene con datos de Stripe (flujo trial-first), vincula la suscripción
+    if (stripeCustomerId && stripeSubscriptionId) {
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+
+      await supabase.from('users').update({
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscriptionId,
+        subscription_plan: plan || 'starter',
+        subscription_status: 'trial',
+        trial_ends_at: trialEndsAt.toISOString(),
+      }).eq('id', result.user.id);
+
+      // Actualiza el objeto user para la respuesta
+      result.user.subscription_plan = plan || 'starter';
+      result.user.subscription_status = 'trial';
+    }
 
     res.json({
       user: result.user,

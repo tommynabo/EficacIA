@@ -1,15 +1,31 @@
 import * as React from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams, Link } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
-import { Zap, AlertCircle } from "lucide-react"
+import { Zap, AlertCircle, CheckCircle2, CreditCard } from "lucide-react"
 import { useAuth } from "@/src/contexts/AuthContext"
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 export default function AuthPage({ mode = "login" }: { mode?: "login" | "register" }) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { login, signup, isAuthenticated } = useAuth()
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+
+  // Datos de Stripe Checkout (flujo trial-first)
+  const sessionId = searchParams.get('session_id')
+  const planFromUrl = searchParams.get('plan')
+  const [stripeData, setStripeData] = React.useState<{
+    email: string
+    name: string
+    customerId: string
+    subscriptionId: string
+    plan: string
+  } | null>(null)
+  const [loadingStripe, setLoadingStripe] = React.useState(!!sessionId)
+
   const [formData, setFormData] = React.useState({
     email: "",
     password: "",
@@ -22,6 +38,31 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
       navigate("/dashboard")
     }
   }, [isAuthenticated, navigate])
+
+  // Si venimos de Stripe Checkout, obtener los datos del cliente
+  React.useEffect(() => {
+    if (sessionId && mode === 'register') {
+      const fetchStripeData = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/payments/checkout-session/${sessionId}`)
+          if (!res.ok) throw new Error('No se pudo verificar el pago')
+          const data = await res.json()
+          setStripeData(data)
+          setFormData(prev => ({
+            ...prev,
+            email: data.email || '',
+            fullName: data.name || '',
+          }))
+        } catch (err: any) {
+          console.error('Error fetching Stripe session:', err)
+          setError('No se pudieron recuperar los datos del pago. Puedes registrarte normalmente.')
+        } finally {
+          setLoadingStripe(false)
+        }
+      }
+      fetchStripeData()
+    }
+  }, [sessionId, mode])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -38,7 +79,37 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
       if (mode === "login") {
         await login(formData.email, formData.password)
       } else {
-        await signup(formData.email, formData.password, formData.fullName)
+        // Si tenemos datos de Stripe, enviarlos junto con el registro
+        if (stripeData) {
+          const res = await fetch(`${API_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: formData.email,
+              password: formData.password,
+              fullName: formData.fullName,
+              stripeCustomerId: stripeData.customerId,
+              stripeSubscriptionId: stripeData.subscriptionId,
+              plan: stripeData.plan || planFromUrl || 'starter',
+            }),
+          })
+
+          if (!res.ok) {
+            const errorData = await res.json()
+            throw new Error(errorData.error || 'Error en registro')
+          }
+
+          const data = await res.json()
+          // Guardar token y usuario manualmente
+          if (data.token) {
+            localStorage.setItem('auth_token', data.token)
+            localStorage.setItem('user', JSON.stringify(data.user))
+          }
+          // Login para actualizar el contexto
+          await login(formData.email, formData.password)
+        } else {
+          await signup(formData.email, formData.password, formData.fullName)
+        }
       }
       navigate("/dashboard")
     } catch (err: any) {
@@ -46,6 +117,17 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (loadingStripe) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center">
+        <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
+          <Zap className="w-7 h-7 text-white" />
+        </div>
+        <p className="text-slate-400 text-lg">Verificando tu pago...</p>
+      </div>
+    )
   }
 
   return (
@@ -57,14 +139,27 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-slate-100">
-          {mode === "login" ? "Inicia sesión en tu cuenta" : "Crea tu cuenta en EficacIA"}
+          {mode === "login" ? "Inicia sesión en tu cuenta" : stripeData ? "Completa tu registro" : "Crea tu cuenta en EficacIA"}
         </h2>
-        <p className="mt-2 text-center text-sm text-slate-400">
-          O{" "}
-          <Link to={mode === "login" ? "/register" : "/login"} className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
-            {mode === "login" ? "comienza tu prueba gratuita de 7 días" : "inicia sesión si ya tienes cuenta"}
-          </Link>
-        </p>
+
+        {/* Mensaje de éxito de Stripe */}
+        {stripeData && mode === 'register' && (
+          <div className="mt-4 mx-auto max-w-sm p-3 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+            <p className="text-sm text-green-400">
+              Pago verificado — Solo falta tu contraseña para activar tu trial de 7 días
+            </p>
+          </div>
+        )}
+
+        {!stripeData && (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            O{" "}
+            <Link to={mode === "login" ? "/pricing" : "/login"} className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              {mode === "login" ? "comienza tu prueba gratuita de 7 días" : "inicia sesión si ya tienes cuenta"}
+            </Link>
+          </p>
+        )}
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -91,6 +186,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                     placeholder="Juan Pérez"
                     value={formData.fullName}
                     onChange={handleChange}
+                    disabled={!!stripeData?.name}
                   />
                 </div>
               </div>
@@ -110,8 +206,14 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                   placeholder="juan@empresa.com"
                   value={formData.email}
                   onChange={handleChange}
+                  disabled={!!stripeData?.email}
                 />
               </div>
+              {stripeData?.email && (
+                <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
+                  <CreditCard className="w-3 h-3" /> Pre-rellenado desde tu pago en Stripe
+                </p>
+              )}
             </div>
 
             <div>
@@ -123,7 +225,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                   id="password"
                   name="password"
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
                   required
                   placeholder="••••••••"
                   value={formData.password}
@@ -156,7 +258,13 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
 
             <div>
               <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
-                {isLoading ? "Cargando..." : mode === "login" ? "Iniciar Sesión" : "Crear Cuenta"}
+                {isLoading
+                  ? "Cargando..."
+                  : mode === "login"
+                  ? "Iniciar Sesión"
+                  : stripeData
+                  ? "Activar Trial de 7 Días"
+                  : "Crear Cuenta"}
               </Button>
             </div>
           </form>

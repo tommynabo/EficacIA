@@ -30,6 +30,88 @@ const PLANS = {
 }
 
 /**
+ * POST /api/payments/create-checkout-session
+ * Crea una sesión de Stripe Checkout para el trial de 7 días
+ * NO requiere autenticación - el usuario aún no tiene cuenta
+ */
+router.post('/create-checkout-session', async (req: Request, res: Response) => {
+  try {
+    const { plan } = req.body
+
+    if (!plan || !PLANS[plan as keyof typeof PLANS]) {
+      return res.status(400).json({ error: 'Plan inválido. Usa "starter" o "pro".' })
+    }
+
+    const planConfig = PLANS[plan as keyof typeof PLANS]
+    const baseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173'
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: planConfig.priceId,
+          quantity: 1,
+        },
+      ],
+      subscription_data: {
+        trial_period_days: planConfig.trial_days,
+        metadata: { plan },
+      },
+      metadata: { plan },
+      // Recoger datos del cliente
+      customer_creation: 'always',
+      billing_address_collection: 'auto',
+      // Campos personalizados no necesarios — Stripe recoge email y nombre automáticamente
+      success_url: `${baseUrl}/register?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
+      cancel_url: `${baseUrl}/pricing`,
+    })
+
+    res.json({
+      sessionId: session.id,
+      url: session.url,
+    })
+  } catch (error: any) {
+    console.error('Checkout session error:', error)
+    res.status(500).json({ error: error.message || 'Error creando sesión de checkout' })
+  }
+})
+
+/**
+ * GET /api/payments/checkout-session/:sessionId
+ * Recupera datos del cliente desde la sesión de Stripe Checkout
+ * Se usa para pre-rellenar el formulario de registro
+ */
+router.get('/checkout-session/:sessionId', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['customer', 'subscription'],
+    })
+
+    if (session.status !== 'complete') {
+      return res.status(400).json({ error: 'Sesión no completada' })
+    }
+
+    // Extrae datos del cliente
+    const customer = session.customer as Stripe.Customer
+    const subscription = session.subscription as Stripe.Subscription
+
+    res.json({
+      email: customer?.email || session.customer_details?.email || '',
+      name: customer?.name || session.customer_details?.name || '',
+      customerId: typeof session.customer === 'string' ? session.customer : customer?.id,
+      subscriptionId: typeof session.subscription === 'string' ? session.subscription : subscription?.id,
+      plan: session.metadata?.plan || '',
+    })
+  } catch (error: any) {
+    console.error('Retrieve checkout session error:', error)
+    res.status(500).json({ error: error.message || 'Error recuperando sesión' })
+  }
+})
+
+/**
  * POST /api/payments/create-payment-intent
  * DEPRECATED - Use create-subscription instead
  * Mantiene compatibilidad pero redirige a create-subscription
