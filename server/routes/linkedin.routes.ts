@@ -1,9 +1,13 @@
 import { Router, Request, Response } from 'express'
-import { initSupabase, supabase } from '../lib/supabase.js'
+import { initSupabase, supabaseAdmin } from '../lib/supabase.js'
 import { authMiddleware } from '../middleware/index.js'
 import { linkedInAuthService } from '../services/linkedin-auth.service.js'
 
 const router = Router()
+
+// Use supabaseAdmin (service role) cast as any to bypass strict Supabase type checking
+// All table schemas are defined in SUPABASE_SCHEMA.sql + database/migration_linkedin_auth.sql
+const db = supabaseAdmin as any
 
 /**
  * GET /api/linkedin/leads
@@ -15,7 +19,7 @@ router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
     const { status = 'all', limit = 50, offset = 0, search = '' } = req.query
 
     // Obtiene equipo del usuario
-    const { data: teams, error: teamsError } = await supabase
+    const { data: teams, error: teamsError } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -28,7 +32,7 @@ router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
     const teamId = teams[0].id
 
     // Query leads con búsqueda
-    let query = supabase
+    let query = db
       .from('leads')
       .select('*', { count: 'exact' })
       .eq('team_id', teamId)
@@ -82,7 +86,7 @@ router.post('/import-leads', authMiddleware, async (req: Request, res: Response)
     }
 
     // Obtiene equipo del usuario
-    const { data: teams, error: teamsError } = await supabase
+    const { data: teams, error: teamsError } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -110,7 +114,7 @@ router.post('/import-leads', authMiddleware, async (req: Request, res: Response)
     }))
 
     // Inserta los leads
-    const { data: insertedLeads, error: insertError } = await supabase
+    const { data: insertedLeads, error: insertError } = await db
       .from('leads')
       .insert(leadsToInsert)
       .select()
@@ -146,7 +150,7 @@ router.post('/search-leads', authMiddleware, async (req: Request, res: Response)
     }
 
     // Obtiene equipo del usuario
-    const { data: teams, error: teamsError } = await supabase
+    const { data: teams, error: teamsError } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -216,7 +220,7 @@ router.post('/search-leads', authMiddleware, async (req: Request, res: Response)
     }))
 
     // Inserta los leads
-    const { data: insertedLeads, error: insertError } = await supabase
+    const { data: insertedLeads, error: insertError } = await db
       .from('leads')
       .insert(leadsToInsert)
       .select()
@@ -252,7 +256,7 @@ router.put('/leads/:leadId', authMiddleware, async (req: Request, res: Response)
     if (company) updateData.company = company
     if (position) updateData.position = position
 
-    const { data: lead, error } = await supabase
+    const { data: lead, error } = await db
       .from('leads')
       .update(updateData)
       .eq('id', leadId)
@@ -278,7 +282,7 @@ router.delete('/leads/:leadId', authMiddleware, async (req: Request, res: Respon
   try {
     const { leadId } = req.params
 
-    const { error } = await supabase.from('leads').delete().eq('id', leadId)
+    const { error } = await db.from('leads').delete().eq('id', leadId)
 
     if (error) {
       return res.status(400).json({ error: error.message })
@@ -305,7 +309,7 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
     }
 
     // Obtiene equipo del usuario
-    const { data: teams, error: teamsError } = await supabase
+    const { data: teams, error: teamsError } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -340,7 +344,7 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
       return lead
     })
 
-    const { data: insertedLeads, error: insertError } = await supabase
+    const { data: insertedLeads, error: insertError } = await db
       .from('leads')
       .insert(leadsToInsert)
       .select()
@@ -368,10 +372,20 @@ router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
 
-    const { data: accounts, error } = await supabase
+    const { data: teamsForAccounts } = await db
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1)
+
+    if (!teamsForAccounts?.length) {
+      return res.json({ success: true, accounts: [], count: 0 })
+    }
+
+    const { data: accounts, error } = await db
       .from('linkedin_accounts')
       .select('*')
-      .eq('user_id', userId)
+      .eq('team_id', teamsForAccounts[0].id)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -397,16 +411,23 @@ router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
 router.post('/accounts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
-    // Soporta dos formatos:
-    // 1. Nuevo: { linkedin_email, linkedin_password } - credenciales
-    // 2. Antiguo: { session_cookie } - para compatibilidad
     const { linkedin_email, linkedin_password, session_cookie, profile_name } = req.body
+
+    // Obtener o crear team del usuario
+    let teamIdForAccount: string
+    const { data: existingTeams } = await db.from('teams').select('id').eq('owner_id', userId).limit(1)
+    if (existingTeams?.length) {
+      teamIdForAccount = existingTeams[0].id
+    } else {
+      const { data: newT } = await db.from('teams').insert({ name: 'Mi Equipo', owner_id: userId }).select().single()
+      if (!newT) return res.status(500).json({ error: 'No se pudo crear el equipo' })
+      teamIdForAccount = newT.id
+    }
 
     // Si viene con credenciales, hacer login automático con Playwright
     if (linkedin_email && linkedin_password) {
       console.log('[LINKEDIN] Usando Playwright para login con credenciales:', linkedin_email)
 
-      // Usar Playwright para obtener session cookie válida
       const sessionCookie = await linkedInAuthService.authenticateAndGetSession(
         linkedin_email,
         linkedin_password
@@ -416,34 +437,28 @@ router.post('/accounts', authMiddleware, async (req: Request, res: Response) => 
         return res.status(401).json({
           error:
             'No se pudo autenticar con LinkedIn. Verifica email/contraseña o si LinkedIn solicitó verificación adicional.',
+          needsCookie: true,
         })
       }
 
       console.log('[LINKEDIN] ✓ Session obtenida con Playwright')
 
-      // Obtener perfil para guardar nombre
-      let profileName = 'Mi Cuenta LinkedIn'
+      let profileName = profile_name || linkedin_email.split('@')[0] || 'Mi Cuenta LinkedIn'
       try {
         const profileResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
-          headers: {
-            'cookie': `li_at=${sessionCookie}`,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
+          headers: { 'cookie': `li_at=${sessionCookie}`, 'User-Agent': 'Mozilla/5.0' },
         })
-
         if (profileResponse.status === 200) {
           const profileData = await profileResponse.json()
-          profileName = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() || 'Mi Cuenta LinkedIn'
+          profileName = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() || profileName
         }
-      } catch (e) {
-        console.warn('[LINKEDIN] Could not fetch profile:', e)
-      }
+      } catch (e) { console.warn('[LINKEDIN] Could not fetch profile:', e) }
 
-      // Guardar cuenta con la sesión obtenida
-      const { data: account, error: insertError } = await supabase
+      const { data: account, error: insertError } = await db
         .from('linkedin_accounts')
         .insert({
-          user_id: userId,
+          team_id: teamIdForAccount,
+          username: linkedin_email.split('@')[0],
           session_cookie: sessionCookie,
           profile_name: profileName,
           is_valid: true,
@@ -458,64 +473,49 @@ router.post('/accounts', authMiddleware, async (req: Request, res: Response) => 
       }
 
       console.log('[LINKEDIN] ✓ Cuenta conectada:', profileName)
-      return res.json({
-        success: true,
-        account,
-        message: `✓ Cuenta LinkedIn de ${profileName} conectada exitosamente`,
-      })
+      return res.json({ success: true, account, message: `✓ Cuenta LinkedIn de ${profileName} conectada exitosamente` })
     }
-    
-    // Modo antiguo: si viene con cookie (para compatibilidad)
+
+    // Modo cookie manual
     else if (session_cookie) {
-      console.log('[LINKEDIN] Conectando con cookie (modo legacy)')
-      
-      // Validar que la sesión sea válida haciendo ping a LinkedIn
+      console.log('[LINKEDIN] Conectando con cookie (modo manual)')
+
+      let resolvedProfileName = profile_name || 'Mi Cuenta LinkedIn'
       let isValid = true
       try {
         const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
-          headers: {
-            'cookie': `li_at=${session_cookie}`,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
+          headers: { 'cookie': `li_at=${session_cookie}`, 'User-Agent': 'Mozilla/5.0' },
         })
         isValid = validateResponse.status === 200
-      } catch (e) {
-        console.warn('[LINKEDIN] Could not validate cookie:', e)
-      }
+        if (isValid) {
+          try {
+            const d = await validateResponse.json()
+            resolvedProfileName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || resolvedProfileName
+          } catch { /* ignorar */ }
+        }
+      } catch (e) { console.warn('[LINKEDIN] Could not validate cookie:', e) }
 
-      if (!isValid) {
-        return res.status(401).json({ error: 'Cookie de LinkedIn inválida o expirada' })
-      }
+      if (!isValid) return res.status(401).json({ error: 'Cookie de LinkedIn inválida o expirada' })
 
-      // Guardar cuenta
-      const { data: account, error: insertError } = await supabase
+      const { data: account, error: insertError } = await db
         .from('linkedin_accounts')
         .insert({
-          user_id: userId,
-          session_cookie: session_cookie,
-          profile_name: profile_name || 'Mi Cuenta LinkedIn',
+          team_id: teamIdForAccount,
+          username: resolvedProfileName.replace(/\s+/g, '-').toLowerCase() || 'cuenta-linkedin',
+          session_cookie,
+          profile_name: resolvedProfileName,
           is_valid: true,
           last_validated_at: new Date().toISOString(),
         })
         .select()
         .single()
 
-      if (insertError) {
-        console.error('Insert account error:', insertError)
-        return res.status(400).json({ error: insertError.message })
-      }
-
-      return res.json({
-        success: true,
-        account,
-        message: '✓ Cuenta LinkedIn conectada exitosamente',
-      })
+      if (insertError) return res.status(400).json({ error: insertError.message })
+      return res.json({ success: true, account, message: '✓ Cuenta LinkedIn conectada exitosamente' })
     }
-    
+
     else {
-      return res.status(400).json({ 
-        error: 'Se requiere (linkedin_email + linkedin_password) o session_cookie' 
-      })
+      return res.status(400).json({ error: 'Se requiere (linkedin_email + linkedin_password) o session_cookie' })
     }
   } catch (error: any) {
     console.error('[LINKEDIN] Connect account error:', error)
@@ -532,19 +532,22 @@ router.delete('/accounts/:accountId', authMiddleware, async (req: Request, res: 
     const { accountId } = req.params
     const userId = req.userId
 
-    // Verificar que la cuenta pertenezca al usuario
-    const { data: account } = await supabase
+    // Verificar que la cuenta pertenezca al equipo del usuario
+    const { data: userTeams } = await db.from('teams').select('id').eq('owner_id', userId)
+    const userTeamIds = (userTeams || []).map((t: any) => t.id)
+
+    const { data: account } = await db
       .from('linkedin_accounts')
       .select('*')
       .eq('id', accountId)
-      .eq('user_id', userId)
+      .in('team_id', userTeamIds.length ? userTeamIds : ['none'])
       .single()
 
     if (!account) {
       return res.status(404).json({ error: 'Cuenta no encontrada' })
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('linkedin_accounts')
       .delete()
       .eq('id', accountId)
@@ -569,7 +572,7 @@ router.get('/campaigns', authMiddleware, async (req: Request, res: Response) => 
     const userId = req.userId
 
     // Obtener team del usuario
-    const { data: teams } = await supabase
+    const { data: teams } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -581,7 +584,7 @@ router.get('/campaigns', authMiddleware, async (req: Request, res: Response) => 
 
     const teamId = teams[0].id
 
-    const { data: campaigns, error } = await supabase
+    const { data: campaigns, error } = await db
       .from('campaigns')
       .select('*')
       .eq('team_id', teamId)
@@ -616,7 +619,7 @@ router.post('/campaigns', authMiddleware, async (req: Request, res: Response) =>
     }
 
     // Obtener o crear team
-    let { data: teams } = await supabase
+    let { data: teams } = await db
       .from('teams')
       .select('id')
       .eq('owner_id', userId)
@@ -624,7 +627,7 @@ router.post('/campaigns', authMiddleware, async (req: Request, res: Response) =>
 
     let teamId: string
     if (!teams?.length) {
-      const { data: newTeam } = await supabase
+      const { data: newTeam } = await db
         .from('teams')
         .insert({
           name: `Team de ${userId}`,
@@ -633,13 +636,13 @@ router.post('/campaigns', authMiddleware, async (req: Request, res: Response) =>
         })
         .select()
         .single()
-      teamId = newTeam.id
+      teamId = newTeam?.id || ''
     } else {
       teamId = teams[0].id
     }
 
     // Crear campaña
-    const { data: campaign, error: insertError } = await supabase
+    const { data: campaign, error: insertError } = await db
       .from('campaigns')
       .insert({
         team_id: teamId,
@@ -683,7 +686,7 @@ router.post(
       }
 
       // Obtener info del lead
-      const { data: lead, error: leadError } = await supabase
+      const { data: lead, error: leadError } = await db
         .from('leads')
         .select('*')
         .eq('id', leadId)
@@ -765,8 +768,8 @@ router.post(
 
       // Obtener lead y cuenta
       const [leadResponse, accountResponse] = await Promise.all([
-        supabase.from('leads').select('*').eq('id', leadId).single(),
-        supabase
+        db.from('leads').select('*').eq('id', leadId).single(),
+        db
           .from('linkedin_accounts')
           .select('*')
           .eq('id', accountId)
@@ -797,7 +800,7 @@ router.post(
         )
 
         if (validateResponse.status === 401) {
-          await supabase
+          await db
             .from('linkedin_accounts')
             .update({ is_valid: false })
             .eq('id', accountId)
@@ -811,7 +814,7 @@ router.post(
       }
 
       // Marcar como enviado/contactado
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from('leads')
         .update({
           status: 'contacted',

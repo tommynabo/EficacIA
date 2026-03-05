@@ -27,40 +27,60 @@ CREATE INDEX IF NOT EXISTS idx_leads_sent_message ON public.leads(sent_message);
 CREATE INDEX IF NOT EXISTS idx_leads_campaign_id ON public.leads(campaign_id);
 
 -- 4. Políticas RLS para linkedin_accounts (permitir INSERT/UPDATE/DELETE para owners del team)
-CREATE POLICY IF NOT EXISTS "Team owners can manage linkedin accounts"
-  ON public.linkedin_accounts FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.teams
-      WHERE teams.id = linkedin_accounts.team_id AND owner_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Team owners can manage linkedin accounts' AND tablename = 'linkedin_accounts') THEN
+    CREATE POLICY "Team owners can manage linkedin accounts"
+      ON public.linkedin_accounts FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.teams
+          WHERE teams.id = linkedin_accounts.team_id AND owner_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- 5. Políticas RLS para leads (INSERT/UPDATE/DELETE)
-CREATE POLICY IF NOT EXISTS "Team owners can manage leads"
-  ON public.leads FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.teams
-      WHERE teams.id = leads.team_id AND owner_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Team owners can manage leads' AND tablename = 'leads') THEN
+    CREATE POLICY "Team owners can manage leads"
+      ON public.leads FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.teams
+          WHERE teams.id = leads.team_id AND owner_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- 6. Políticas RLS para campaigns
-CREATE POLICY IF NOT EXISTS "Team owners can manage campaigns"
-  ON public.campaigns FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.teams
-      WHERE teams.id = campaigns.team_id AND owner_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Team owners can manage campaigns' AND tablename = 'campaigns') THEN
+    CREATE POLICY "Team owners can manage campaigns"
+      ON public.campaigns FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.teams
+          WHERE teams.id = campaigns.team_id AND owner_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- 7. Política para teams: owners pueden insertar/modificar
-CREATE POLICY IF NOT EXISTS "Users can create teams"
-  ON public.teams FOR INSERT
-  WITH CHECK (owner_id = auth.uid());
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can create teams' AND tablename = 'teams') THEN
+    CREATE POLICY "Users can create teams"
+      ON public.teams FOR INSERT
+      WITH CHECK (owner_id = auth.uid());
+  END IF;
+END $$;
 
-CREATE POLICY IF NOT EXISTS "Owners can update teams"
-  ON public.teams FOR UPDATE
-  USING (owner_id = auth.uid());
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Owners can update teams' AND tablename = 'teams') THEN
+    CREATE POLICY "Owners can update teams"
+      ON public.teams FOR UPDATE
+      USING (owner_id = auth.uid());
+  END IF;
+END $$;
