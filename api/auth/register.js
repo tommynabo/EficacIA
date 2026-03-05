@@ -17,7 +17,6 @@ export default async function handler(req, res) {
     }
 
     const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
     const userName = fullName || name || email.split('@')[0];
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -47,7 +46,7 @@ export default async function handler(req, res) {
       insertData.trial_ends_at = trialEndsAt.toISOString();
     }
 
-    const { data: userData, error: dbError } = await supabase.from('users').insert(insertData).select().single();
+    const { data: userData, error: dbError } = await supabaseAdmin.from('users').insert(insertData).select().single();
     if (dbError) throw new Error(dbError.message);
 
     const token = jwt.sign({ userId, email }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '7d' });
