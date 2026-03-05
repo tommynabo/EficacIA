@@ -64,7 +64,6 @@ export default function AccountsPage() {
       setSessionStatus("starting")
       setError(null)
       setSuccess(null)
-      setStatusMessage("Iniciando navegador en la nube...")
 
       const token = localStorage.getItem("auth_token")
       const response = await fetch("/api/linkedin/browser-session", {
