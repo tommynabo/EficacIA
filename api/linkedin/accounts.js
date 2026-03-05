@@ -38,128 +38,104 @@ async function getOrCreateTeam(userId) {
 }
 
 /**
- * Inicia sesión en LinkedIn usando Browserless.io (cloud headless Chrome).
- * Requiere BROWSERLESS_TOKEN en las variables de entorno.
- * Registro gratuito en https://www.browserless.io
+ * Valida una cookie li_at llamando a la Voyager API de LinkedIn.
+ * Si es válida, devuelve el nombre del perfil.
+ * Esta es la técnica real que usan tools como Walead/Dux-Soup/Expandi.
  */
-async function loginWithBrowserless(email, password) {
-  const token = process.env.BROWSERLESS_TOKEN;
-  if (!token || token.trim() === '') {
-    console.warn('[BROWSERLESS] BROWSERLESS_TOKEN no configurado');
-    return { tokenMissing: true };
-  }
-
-  console.log('[BROWSERLESS] Token presente, longitud:', token.length);
-
-  // Código Puppeteer en formato ESM (Browserless actual requiere export default)
-  const puppeteerCode = `
-    export default async ({ page, context }) => {
-      const { email, password } = context;
-      try {
-        await page.goto('https://www.linkedin.com/login', {
-          waitUntil: 'networkidle2',
-          timeout: 30000,
-        });
-
-        await page.waitForSelector('#username', { timeout: 10000 });
-        await page.type('#username', email, { delay: 60 });
-        await page.waitForSelector('#password', { timeout: 5000 });
-        await page.type('#password', password, { delay: 60 });
-
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 25000 }),
-          page.click('[type=submit]'),
-        ]);
-
-        const currentUrl = page.url();
-
-        if (
-          currentUrl.includes('/checkpoint/') ||
-          currentUrl.includes('/challenge/') ||
-          currentUrl.includes('verification') ||
-          currentUrl.includes('/authwall')
-        ) {
-          return { error: 'LinkedIn requiere verificación adicional (2FA o email de confirmación). Por favor activa la cuenta en LinkedIn y vuelve a intentarlo.', needsVerification: true };
-        }
-
-        if (currentUrl.includes('/login') || currentUrl.includes('/uas/login')) {
-          const errorEl = await page.$('.form__input--error, .alert-content, [role=alert]');
-          const errorText = errorEl ? await page.evaluate(el => el.textContent.trim(), errorEl) : '';
-          return { error: errorText || 'Email o contraseña incorrectos.', invalidCredentials: true };
-        }
-
-        const cookies = await page.cookies('https://www.linkedin.com');
-        const liAt = cookies.find(c => c.name === 'li_at');
-
-        if (!liAt?.value) {
-          return { error: 'No se pudo obtener la sesión de LinkedIn. Intenta de nuevo.' };
-        }
-
-        let profileName = email.split('@')[0];
-        try {
-          await page.goto('https://www.linkedin.com/in/me/', { waitUntil: 'domcontentloaded', timeout: 10000 });
-          const nameEl = await page.$('h1.text-heading-xlarge, h1.inline, h1');
-          if (nameEl) {
-            profileName = await page.evaluate(el => el.textContent.trim(), nameEl);
-          }
-        } catch { /* ignorar */ }
-
-        return { liAt: liAt.value, profileName };
-      } catch (err) {
-        return { error: 'Error durante la autenticación: ' + err.message };
-      }
-    };
-  `;
-
-  // Timeout manual (AbortSignal.timeout no disponible en todos los entornos)
-  const timeoutMs = 65000;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+async function validateLiAtCookie(liAt) {
+  console.log('[LINKEDIN] Validando cookie li_at...');
 
   try {
-    // Probar primero Browserless v1
-    const browserlessUrl = `https://chrome.browserless.io/function?token=${token}`;
-    console.log('[BROWSERLESS] Llamando a:', browserlessUrl.replace(token, '[TOKEN]'));
-
-    const response = await fetch(browserlessUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: puppeteerCode,
-        context: { email, password },
-      }),
-      signal: controller.signal,
+    // LinkedIn Voyager API - el par JSESSIONID="ajax:0" + csrf-token: ajax:0 funciona sin login real
+    const response = await fetch('https://www.linkedin.com/voyager/api/me', {
+      headers: {
+        'Cookie': `li_at=${liAt}; JSESSIONID="ajax:0"`,
+        'csrf-token': 'ajax:0',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'x-li-lang': 'en_US',
+        'x-restli-protocol-version': '2.0.0',
+        'Accept': 'application/vnd.linkedin.normalized+json+2.1',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        'Referer': 'https://www.linkedin.com/feed/',
+      },
     });
 
-    clearTimeout(timeoutId);
+    console.log('[LINKEDIN] Voyager API status:', response.status);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[BROWSERLESS] Error HTTP:', response.status, errorText.slice(0, 500));
-      return {
-        browserlessError: true,
-        status: response.status,
-        message: errorText.slice(0, 300),
-      };
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'La cookie li_at no es válida o ha caducado. Vuelve a copiarla desde LinkedIn.' };
     }
 
-    const result = await response.json();
-    console.log('[BROWSERLESS] Resultado:', JSON.stringify({
-      ...result,
-      liAt: result.liAt ? '[OBTENIDO]' : undefined,
-    }));
-    return result;
+    if (response.status === 429) {
+      return { valid: false, error: 'LinkedIn está limitando las peticiones. Espera un momento e inténtalo de nuevo.' };
+    }
+
+    if (!response.ok) {
+      // Fallback: comprobar acceso a /feed/
+      console.log('[LINKEDIN] Voyager falló, usando fallback de /feed/...');
+      return await validateWithFeedCheck(liAt);
+    }
+
+    const data = await response.json();
+
+    // Extraer nombre del perfil
+    let profileName = 'Usuario LinkedIn';
+    let publicId = '';
+
+    try {
+      const included = data?.included || [];
+      const miniProfile = included.find(item =>
+        item?.firstName || item?.$type?.includes('MiniProfile')
+      );
+
+      if (miniProfile?.firstName || miniProfile?.lastName) {
+        profileName = `${miniProfile.firstName || ''} ${miniProfile.lastName || ''}`.trim();
+        publicId = miniProfile.publicIdentifier || '';
+      } else if (data?.miniProfile?.firstName) {
+        profileName = `${data.miniProfile.firstName || ''} ${data.miniProfile.lastName || ''}`.trim();
+        publicId = data.miniProfile.publicIdentifier || '';
+      }
+    } catch (parseErr) {
+      console.warn('[LINKEDIN] Error parseando nombre:', parseErr.message);
+    }
+
+    console.log('[LINKEDIN] Cookie válida. Perfil:', profileName);
+    return { valid: true, profileName, publicId };
 
   } catch (err) {
-    clearTimeout(timeoutId);
-    const isTimeout = err.name === 'AbortError';
-    console.error('[BROWSERLESS] Error:', isTimeout ? 'Timeout' : err.message);
-    return {
-      browserlessError: true,
-      message: isTimeout
-        ? 'Timeout: El navegador tardó demasiado. Intenta de nuevo.'
-        : `Error de conexión con Browserless: ${err.message}`,
-    };
+    console.error('[LINKEDIN] Error validando:', err.message);
+    return { valid: false, error: `Error de conexión con LinkedIn: ${err.message}` };
+  }
+}
+
+/**
+ * Fallback: validar cookie comprobando si /feed/ está accesible (sin redirección a /login)
+ */
+async function validateWithFeedCheck(liAt) {
+  try {
+    const response = await fetch('https://www.linkedin.com/feed/', {
+      method: 'GET',
+      headers: {
+        'Cookie': `li_at=${liAt}`,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      },
+      redirect: 'manual',
+    });
+
+    console.log('[LINKEDIN] Feed check status:', response.status, 'Location:', response.headers.get('location') || 'none');
+
+    const location = response.headers.get('location') || '';
+    if (location.includes('/login') || location.includes('/authwall') || response.status === 302) {
+      return { valid: false, error: 'La cookie li_at no es válida o ha caducado. Cópiala de nuevo desde LinkedIn.' };
+    }
+
+    if (response.status === 200) {
+      return { valid: true, profileName: 'Usuario LinkedIn', publicId: '' };
+    }
+
+    return { valid: false, error: `Respuesta inesperada de LinkedIn: ${response.status}` };
+  } catch (err) {
+    return { valid: false, error: `Error verificando sesión: ${err.message}` };
   }
 }
 
@@ -188,67 +164,84 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, accounts: accounts || [] });
   }
 
-  // POST - conectar nueva cuenta con email + contraseña (headless browser)
+  // POST - conectar cuenta usando cookie li_at (el método profesional, como Walead/Expandi)
   if (req.method === 'POST') {
-    const { linkedin_email, linkedin_password } = req.body || {};
+    const { li_at } = req.body || {};
 
-    if (!linkedin_email || !linkedin_password) {
-      return res.status(400).json({ error: 'Email y contraseña de LinkedIn requeridos' });
-    }
-
-    // Usar Browserless.io para login con navegador real en la nube
-    const browserResult = await loginWithBrowserless(linkedin_email, linkedin_password);
-
-    // Token no configurado
-    if (browserResult.tokenMissing) {
-      return res.status(503).json({
-        error: 'BROWSERLESS_TOKEN no está configurado en las variables de entorno de Vercel. Ve a Vercel → Settings → Environment Variables y añade BROWSERLESS_TOKEN.',
+    if (!li_at || li_at.trim().length < 20) {
+      return res.status(400).json({
+        error: 'El valor de la cookie li_at es requerido. Debe tener al menos 20 caracteres.'
       });
     }
 
-    // Error del servicio Browserless
-    if (browserResult.browserlessError) {
-      return res.status(503).json({
-        error: `Error del servicio de automatización: ${browserResult.message || 'Error desconocido'}. Estado HTTP: ${browserResult.status || 'N/A'}`,
-      });
+    const liAtClean = li_at.trim();
+
+    // Validar la cookie contra LinkedIn
+    const validation = await validateLiAtCookie(liAtClean);
+
+    if (!validation.valid) {
+      return res.status(401).json({ error: validation.error });
     }
 
-    // LinkedIn devolvió un error (2FA, credenciales, etc.)
-    if (browserResult.error) {
-      const statusCode = browserResult.invalidCredentials ? 401 : 422;
-      return res.status(statusCode).json({ error: browserResult.error, ...browserResult });
-    }
-
-    if (!browserResult.liAt) {
-      return res.status(401).json({ error: 'No se pudo obtener la sesión de LinkedIn. Intenta de nuevo.' });
-    }
-
-    // Guardar cuenta en Supabase
+    // Guardar en Supabase
     const teamId = await getOrCreateTeam(userId);
     if (!teamId) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
 
-    const usernameSlug = linkedin_email.split('@')[0] || 'linkedin';
-    const profileName = browserResult.profileName || usernameSlug;
+    const profileName = validation.profileName || 'Usuario LinkedIn';
+    const username = validation.publicId || profileName.toLowerCase().replace(/\s+/g, '-') || 'linkedin';
 
+    // Comprobar si ya existe una cuenta con el mismo username
+    const { data: existing } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('username', username)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      // Actualizar la cookie de la cuenta existente
+      const { error: updateError } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .update({
+          session_cookie: liAtClean,
+          is_valid: true,
+          last_validated_at: new Date().toISOString(),
+          profile_name: profileName,
+        })
+        .eq('id', existing[0].id);
+
+      if (updateError) return res.status(500).json({ error: updateError.message });
+
+      return res.status(200).json({
+        success: true,
+        message: `✓ Sesión de ${profileName} actualizada correctamente`,
+        accountId: existing[0].id,
+      });
+    }
+
+    // Insertar nueva cuenta
     const { data: account, error: insertError } = await supabaseAdmin
       .from('linkedin_accounts')
       .insert({
         team_id: teamId,
-        username: usernameSlug,
+        username,
         profile_name: profileName,
-        session_cookie: browserResult.liAt,
+        session_cookie: liAtClean,
         is_valid: true,
         last_validated_at: new Date().toISOString(),
       })
       .select()
       .single();
 
-    if (insertError) return res.status(400).json({ error: insertError.message });
+    if (insertError) {
+      console.error('[DB] Error insertando cuenta:', insertError.message);
+      return res.status(500).json({ error: insertError.message });
+    }
 
     return res.status(200).json({
       success: true,
-      account,
       message: `✓ Cuenta de ${profileName} conectada exitosamente`,
+      accountId: account?.id,
     });
   }
 
