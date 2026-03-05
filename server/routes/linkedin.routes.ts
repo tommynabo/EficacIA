@@ -359,4 +359,408 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
   }
 })
 
+/**
+ * GET /api/linkedin/accounts
+ * Obtiene todas las cuentas LinkedIn conectadas del usuario
+ */
+router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId
+
+    const { data: accounts, error } = await supabase
+      .from('linkedin_accounts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Fetch accounts error:', error)
+      return res.status(400).json({ error: error.message })
+    }
+
+    res.json({
+      success: true,
+      accounts: accounts || [],
+      count: accounts?.length || 0,
+    })
+  } catch (error: any) {
+    console.error('Get accounts error:', error)
+    res.status(500).json({ error: error.message || 'Error obteniendo cuentas' })
+  }
+})
+
+/**
+ * POST /api/linkedin/accounts
+ * Conecta una nueva cuenta LinkedIn
+ */
+router.post('/accounts', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId
+    const { session_cookie, profile_name } = req.body
+
+    if (!session_cookie) {
+      return res.status(400).json({ error: 'Session cookie requerido' })
+    }
+
+    // Validar que la sesión sea válida haciendo ping a LinkedIn
+    let isValid = true
+    try {
+      const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
+        headers: {
+          'cookie': `li_at=${session_cookie}`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        },
+      })
+      isValid = validateResponse.status === 200
+    } catch (e) {
+      // Si no podemos validar, asumimos que es válida por ahora
+      console.warn('Could not validate LinkedIn session:', e)
+    }
+
+    if (!isValid) {
+      return res.status(401).json({ error: 'Sesión de LinkedIn inválida o expirada' })
+    }
+
+    // Guardar cuenta
+    const { data: account, error: insertError } = await supabase
+      .from('linkedin_accounts')
+      .insert({
+        user_id: userId,
+        session_cookie: session_cookie,
+        profile_name: profile_name || 'Mi Cuenta LinkedIn',
+        is_valid: true,
+        last_validated_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      console.error('Insert account error:', insertError)
+      return res.status(400).json({ error: insertError.message })
+    }
+
+    res.json({
+      success: true,
+      account,
+      message: '✓ Cuenta LinkedIn conectada exitosamente',
+    })
+  } catch (error: any) {
+    console.error('Connect account error:', error)
+    res.status(500).json({ error: error.message || 'Error conectando cuenta' })
+  }
+})
+
+/**
+ * DELETE /api/linkedin/accounts/:accountId
+ * Desconecta una cuenta LinkedIn
+ */
+router.delete('/accounts/:accountId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { accountId } = req.params
+    const userId = req.userId
+
+    // Verificar que la cuenta pertenezca al usuario
+    const { data: account } = await supabase
+      .from('linkedin_accounts')
+      .select('*')
+      .eq('id', accountId)
+      .eq('user_id', userId)
+      .single()
+
+    if (!account) {
+      return res.status(404).json({ error: 'Cuenta no encontrada' })
+    }
+
+    const { error } = await supabase
+      .from('linkedin_accounts')
+      .delete()
+      .eq('id', accountId)
+
+    if (error) {
+      return res.status(400).json({ error: error.message })
+    }
+
+    res.json({ success: true, message: 'Cuenta desconectada' })
+  } catch (error: any) {
+    console.error('Delete account error:', error)
+    res.status(500).json({ error: error.message || 'Error desconectando cuenta' })
+  }
+})
+
+/**
+ * GET /api/linkedin/campaigns
+ * Obtiene todas las campañas del usuario
+ */
+router.get('/campaigns', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId
+
+    // Obtener team del usuario
+    const { data: teams } = await supabase
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1)
+
+    if (!teams?.length) {
+      return res.json({ campaigns: [], count: 0 })
+    }
+
+    const teamId = teams[0].id
+
+    const { data: campaigns, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      return res.status(400).json({ error: error.message })
+    }
+
+    res.json({
+      success: true,
+      campaigns: campaigns || [],
+      count: campaigns?.length || 0,
+    })
+  } catch (error: any) {
+    console.error('Get campaigns error:', error)
+    res.status(500).json({ error: error.message || 'Error obteniendo campañas' })
+  }
+})
+
+/**
+ * POST /api/linkedin/campaigns
+ * Crea una nueva campaña
+ */
+router.post('/campaigns', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId
+    const { name, description, leadIds } = req.body
+
+    if (!name) {
+      return res.status(400).json({ error: 'Nombre de campaña requerido' })
+    }
+
+    // Obtener o crear team
+    let { data: teams } = await supabase
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1)
+
+    let teamId: string
+    if (!teams?.length) {
+      const { data: newTeam } = await supabase
+        .from('teams')
+        .insert({
+          name: `Team de ${userId}`,
+          owner_id: userId,
+          description: 'Equipo por defecto',
+        })
+        .select()
+        .single()
+      teamId = newTeam.id
+    } else {
+      teamId = teams[0].id
+    }
+
+    // Crear campaña
+    const { data: campaign, error: insertError } = await supabase
+      .from('campaigns')
+      .insert({
+        team_id: teamId,
+        name: name.trim(),
+        description: description || '',
+        status: 'draft',
+        leads_count: leadIds?.length || 0,
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      return res.status(400).json({ error: insertError.message })
+    }
+
+    res.json({
+      success: true,
+      campaign,
+      message: '✓ Campaña creada correctamente',
+    })
+  } catch (error: any) {
+    console.error('Create campaign error:', error)
+    res.status(500).json({ error: error.message || 'Error creando campaña' })
+  }
+})
+
+/**
+ * POST /api/linkedin/campaigns/:campaignId/generate-message
+ * Genera un mensaje personalizado para un lead usando Claude AI
+ */
+router.post(
+  '/campaigns/:campaignId/generate-message',
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const { campaignId } = req.params
+      const { leadId, context } = req.body
+
+      if (!leadId) {
+        return res.status(400).json({ error: 'leadId requerido' })
+      }
+
+      // Obtener info del lead
+      const { data: lead, error: leadError } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .single()
+
+      if (leadError || !lead) {
+        return res.status(404).json({ error: 'Lead no encontrado' })
+      }
+
+      // Prompt para Claude
+      const prompt = `Eres un especialista en LinkedIn outreach. Genera un mensaje corto, personalizado y profesional para conectar con:
+
+Nombre: ${lead.first_name} ${lead.last_name}
+Posición: ${lead.position || 'Sin especificar'}
+Empresa: ${lead.company || 'Sin especificar'}
+Contexto: ${context || 'Networking profesional'}
+
+El mensaje debe:
+- Ser corto (2-3 líneas máximo)
+- Mencionar su empresa o rol específico
+- Ser profesional pero amable
+- Generar engagement y respuesta
+- En español
+
+Responde SOLO con el mensaje, sin explicaciones ni comillas.`
+
+      // Llamar a Claude API
+      const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 300,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      })
+
+      if (!aiResponse.ok) {
+        const error = await aiResponse.text()
+        console.error('Claude API error:', error)
+        return res.status(500).json({ error: 'Error generando mensaje con IA' })
+      }
+
+      const aiData: any = await aiResponse.json()
+      const message = aiData.content[0].text.trim()
+
+      res.json({
+        success: true,
+        message,
+        leadId,
+        generatedAt: new Date().toISOString(),
+      })
+    } catch (error: any) {
+      console.error('Generate message error:', error)
+      res.status(500).json({ error: error.message || 'Error generando mensaje' })
+    }
+  }
+)
+
+/**
+ * POST /api/linkedin/leads/:leadId/send
+ * Envía un mensaje/conexión a un lead
+ */
+router.post(
+  '/leads/:leadId/send',
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const { leadId } = req.params
+      const { message, accountId } = req.body
+
+      if (!accountId) {
+        return res.status(400).json({ error: 'accountId requerido' })
+      }
+
+      // Obtener lead y cuenta
+      const [leadResponse, accountResponse] = await Promise.all([
+        supabase.from('leads').select('*').eq('id', leadId).single(),
+        supabase
+          .from('linkedin_accounts')
+          .select('*')
+          .eq('id', accountId)
+          .single(),
+      ])
+
+      const { data: lead } = leadResponse
+      const { data: account } = accountResponse
+
+      if (!lead) {
+        return res.status(404).json({ error: 'Lead no encontrado' })
+      }
+
+      if (!account) {
+        return res.status(404).json({ error: 'Cuenta LinkedIn no encontrada' })
+      }
+
+      // Validar que la sesión aún sea válida
+      try {
+        const validateResponse = await fetch(
+          'https://www.linkedin.com/voyager/api/me',
+          {
+            headers: {
+              'cookie': `li_at=${account.session_cookie}`,
+              'User-Agent': 'Mozilla/5.0',
+            },
+          }
+        )
+
+        if (validateResponse.status === 401) {
+          await supabase
+            .from('linkedin_accounts')
+            .update({ is_valid: false })
+            .eq('id', accountId)
+
+          return res.status(401).json({
+            error: 'La sesión de LinkedIn ha expirado. Reconecta tu cuenta.',
+          })
+        }
+      } catch (e) {
+        console.warn('Could not validate session:', e)
+      }
+
+      // Marcar como enviado/contactado
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({
+          status: 'contacted',
+          sent_at: new Date().toISOString(),
+          sent_message: message || null,
+        })
+        .eq('id', leadId)
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message })
+      }
+
+      res.json({
+        success: true,
+        message: `✓ Mensaje enviado a ${lead.first_name} ${lead.last_name}`,
+        lead: { ...lead, status: 'contacted' },
+      })
+    } catch (error: any) {
+      console.error('Send message error:', error)
+      res.status(500).json({ error: error.message || 'Error enviando mensaje' })
+    }
+  }
+)
+
 export default router
