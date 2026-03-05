@@ -3,17 +3,15 @@ import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
-import { ProgressRing } from "@/src/components/ui/progress-ring"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, MoreHorizontal, Flame, AlertCircle, Trash2, Loader } from "lucide-react"
-import { api } from "@/src/lib/api"
+import { Plus, Flame, AlertCircle, Trash2, Loader, CheckCircle2, Chrome } from "lucide-react"
 
 interface LinkedInAccount {
   id: string
-  user_id: string
+  team_id: string
+  username: string
   profile_name: string
-  session_cookie: string
   is_valid: boolean
   created_at: string
 }
@@ -22,20 +20,28 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [success, setSuccess] = React.useState<string | null>(null)
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [isConnecting, setIsConnecting] = React.useState(false)
-  const [useCredentials, setUseCredentials] = React.useState(true) // Default: usar credenciales
+  const [connectingStep, setConnectingStep] = React.useState("")
 
   const fetchAccounts = async () => {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await api.getLinkedInAccounts()
-      setAccounts(response.accounts || [])
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch('/api/linkedin/accounts', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error cargando cuentas')
+      }
+      const data = await response.json()
+      setAccounts(data.accounts || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error loading accounts")
-      console.error("Error fetching accounts:", err)
     } finally {
       setIsLoading(false)
     }
@@ -47,74 +53,75 @@ export default function AccountsPage() {
 
   const handleConnectAccount = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    if (useCredentials) {
-      // Validar credenciales
-      if (!email.trim() || !password.trim()) {
-        setError("Por favor ingresa email y contraseña de LinkedIn")
-        return
-      }
-
-      try {
-        setIsConnecting(true)
-        setError(null)
-        const token = localStorage.getItem('auth_token')
-        
-        const response = await fetch(`/api/linkedin/accounts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            linkedin_email: email,
-            linkedin_password: password
-          })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Error conectando cuenta')
-        }
-
-        const data = await response.json()
-        alert(`✓ ${data.message || 'Cuenta conectada exitosamente'}`)
-        setEmail("")
-        setPassword("")
-        await fetchAccounts()
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "Error connecting account"
-        setError(errorMsg)
-        console.error("Error connecting account:", err)
-      } finally {
-        setIsConnecting(false)
-      }
-    }
-  }
-
-  const handleDisconnect = async (accountId: string) => {
-    if (!confirm("¿Estás seguro de que deseas desconectar esta cuenta?")) {
+    if (!email.trim() || !password.trim()) {
+      setError("Por favor ingresa email y contraseña de LinkedIn")
       return
     }
 
     try {
+      setIsConnecting(true)
       setError(null)
-      await api.deleteLinkedInAccount(accountId)
-      alert('✓ Cuenta desconectada')
+      setSuccess(null)
+      setConnectingStep("Iniciando navegador en la nube...")
+
+      const token = localStorage.getItem('auth_token')
+
+      setTimeout(() => setConnectingStep("Abriendo LinkedIn..."), 3000)
+      setTimeout(() => setConnectingStep("Verificando credenciales..."), 8000)
+      setTimeout(() => setConnectingStep("Obteniendo sesión..."), 15000)
+
+      const response = await fetch('/api/linkedin/accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ linkedin_email: email, linkedin_password: password })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error conectando cuenta')
+      }
+
+      setSuccess(data.message || '✓ Cuenta conectada exitosamente')
+      setEmail("")
+      setPassword("")
+      await fetchAccounts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error connecting account")
+    } finally {
+      setIsConnecting(false)
+      setConnectingStep("")
+    }
+  }
+
+  const handleDisconnect = async (accountId: string) => {
+    if (!confirm("¿Desconectar esta cuenta?")) return
+    try {
+      setError(null)
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`/api/linkedin/accounts/${accountId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error desconectando cuenta')
+      }
+      setSuccess('✓ Cuenta desconectada')
       await fetchAccounts()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error disconnecting account")
-      console.error("Error disconnecting account:", err)
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Cuentas LinkedIn</h2>
-          <p className="text-slate-400">Conecta tus cuentas de LinkedIn fácilmente con email y contraseña.</p>
-        </div>
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Cuentas LinkedIn</h2>
+        <p className="text-slate-400">Conecta tus cuentas con email y contraseña. El proceso es 100% automático.</p>
       </div>
 
       {error && (
@@ -126,57 +133,71 @@ export default function AccountsPage() {
         </Card>
       )}
 
-      <Card className="p-6 border-emerald-500/20 bg-emerald-500/5">
-        <h3 className="text-lg font-semibold mb-4 text-emerald-400">✨ Conectar Nueva Cuenta (Tipo Walead)</h3>
+      {success && (
+        <Card className="border-emerald-500/30 bg-emerald-500/5 p-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+            <p className="text-sm text-emerald-400">{success}</p>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-6 border-slate-700">
+        <div className="flex items-center gap-2 mb-4">
+          <Chrome className="w-5 h-5 text-emerald-400" />
+          <h3 className="text-lg font-semibold">Conectar Cuenta LinkedIn</h3>
+        </div>
         <form onSubmit={handleConnectAccount} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Email de LinkedIn
-            </label>
-            <Input
-              type="email"
-              placeholder="tu-email@gmail.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 bg-slate-950"
-              disabled={isConnecting}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Email de LinkedIn
+              </label>
+              <Input
+                type="email"
+                placeholder="tu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-slate-950"
+                disabled={isConnecting}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Contraseña
+              </label>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-slate-950"
+                disabled={isConnecting}
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Contraseña de LinkedIn
-            </label>
-            <Input
-              type="password"
-              placeholder="Tu contraseña segura"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="flex-1 bg-slate-950"
-              disabled={isConnecting}
-            />
-          </div>
+          {isConnecting && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+              <Loader className="w-4 h-4 animate-spin text-emerald-400 flex-shrink-0" />
+              <p className="text-sm text-emerald-400">{connectingStep || "Procesando..."}</p>
+            </div>
+          )}
 
-          <Button 
-            type="submit" 
-            className="gap-2 w-full"
+          <Button
+            type="submit"
+            className="w-full gap-2"
             disabled={isConnecting || !email.trim() || !password.trim()}
           >
             {isConnecting ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                Conectando...
-              </>
+              <><Loader className="w-4 h-4 animate-spin" /> Conectando (puede tardar ~30s)...</>
             ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                Conectar con LinkedIn
-              </>
+              <><Plus className="w-4 h-4" /> Conectar con LinkedIn</>
             )}
           </Button>
 
           <p className="text-xs text-slate-500 text-center">
-            💡 Tus credenciales se guardán encriptadas y solo se usan para conectar tu cuenta.
+            Un navegador automatizado en la nube inicia sesión de forma segura en tu nombre.
           </p>
         </form>
       </Card>
@@ -185,9 +206,9 @@ export default function AccountsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[300px]">NOMBRE DE PERFIL</TableHead>
+              <TableHead>PERFIL</TableHead>
               <TableHead>ESTADO</TableHead>
-              <TableHead>FECHA DE CONEXIÓN</TableHead>
+              <TableHead>CONECTADA</TableHead>
               <TableHead className="text-right">ACCIONES</TableHead>
             </TableRow>
           </TableHeader>
@@ -204,36 +225,29 @@ export default function AccountsPage() {
             ) : accounts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-12 text-slate-400">
-                  <div>
-                    <Flame className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-                    <p className="mb-4">No hay cuentas conectadas</p>
-                    <p className="text-sm">Conecta tu primera cuenta de LinkedIn arriba</p>
-                  </div>
+                  <Flame className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+                  <p className="mb-2">No hay cuentas conectadas</p>
+                  <p className="text-sm">Conecta tu primera cuenta arriba</p>
                 </TableCell>
               </TableRow>
             ) : (
               accounts.map((account) => (
                 <TableRow key={account.id} className="hover:bg-slate-800/50">
-                  <TableCell className="font-medium">
-                    {account.profile_name}
-                  </TableCell>
+                  <TableCell className="font-medium">{account.profile_name || account.username}</TableCell>
                   <TableCell>
-                    <Badge 
-                      variant={account.is_valid ? "success" : "destructive"}
-                      className={`gap-1 ${account.is_valid 
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                        : "bg-red-500/10 border-red-500/20 text-red-400"}`}
-                    >
-                      {account.is_valid ? "✓ Activa" : "⚠️ Inválida"}
+                    <Badge className={`gap-1 ${account.is_valid
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                      : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
+                      {account.is_valid ? "✓ Activa" : "⚠ Inválida"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-300">
                     {new Date(account.created_at).toLocaleDateString("es-ES")}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-8 w-8 text-red-500 hover:text-red-400 hover:bg-red-500/10"
                       onClick={() => handleDisconnect(account.id)}
                     >

@@ -37,6 +37,119 @@ async function getOrCreateTeam(userId) {
   return newTeam?.id || null;
 }
 
+/**
+ * Inicia sesión en LinkedIn usando Browserless.io (cloud headless Chrome).
+ * Requiere BROWSERLESS_TOKEN en las variables de entorno.
+ * Registro gratuito en https://www.browserless.io
+ */
+async function loginWithBrowserless(email, password) {
+  const token = process.env.BROWSERLESS_TOKEN;
+  if (!token) {
+    console.warn('[BROWSERLESS] BROWSERLESS_TOKEN no configurado');
+    return null;
+  }
+
+  // Código Puppeteer que se ejecuta en el navegador cloud
+  const puppeteerCode = `
+    module.exports = async ({ page, context }) => {
+      const { email, password } = context;
+
+      try {
+        // Ir a la página de login
+        await page.goto('https://www.linkedin.com/login', {
+          waitUntil: 'networkidle2',
+          timeout: 30000,
+        });
+
+        // Rellenar email
+        await page.waitForSelector('#username', { timeout: 10000 });
+        await page.type('#username', email, { delay: 50 });
+
+        // Rellenar contraseña
+        await page.waitForSelector('#password', { timeout: 5000 });
+        await page.type('#password', password, { delay: 50 });
+
+        // Hacer click en Sign in
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }),
+          page.click('[type=submit]'),
+        ]);
+
+        const currentUrl = page.url();
+
+        // Detectar si hay verificación adicional (2FA, CAPTCHA, checkpoint)
+        if (
+          currentUrl.includes('/checkpoint/') ||
+          currentUrl.includes('/challenge/') ||
+          currentUrl.includes('verification') ||
+          currentUrl.includes('/authwall')
+        ) {
+          return { error: 'LinkedIn requiere verificación adicional (2FA). Completa la verificación en LinkedIn y vuelve a intentarlo.', needsVerification: true };
+        }
+
+        // Detectar credenciales inválidas
+        if (currentUrl.includes('/login') || currentUrl.includes('/uas/login')) {
+          const errorEl = await page.$('.form__input--error, .alert-content, [role=alert]');
+          const errorText = errorEl ? await page.evaluate(el => el.textContent, errorEl) : 'Credenciales incorrectas';
+          return { error: errorText.trim() || 'Email o contraseña incorrectos. Verifica tus credenciales.', invalidCredentials: true };
+        }
+
+        // Éxito — obtener cookie li_at
+        const cookies = await page.cookies('https://www.linkedin.com');
+        const liAt = cookies.find(c => c.name === 'li_at');
+
+        if (!liAt?.value) {
+          return { error: 'No se pudo obtener la sesión de LinkedIn. Por favor intenta de nuevo.' };
+        }
+
+        // Intentar obtener nombre del perfil
+        let profileName = email.split('@')[0];
+        try {
+          await page.goto('https://www.linkedin.com/in/me/', { waitUntil: 'domcontentloaded', timeout: 10000 });
+          const nameEl = await page.$('h1.text-heading-xlarge, h1.inline');
+          if (nameEl) {
+            profileName = await page.evaluate(el => el.textContent.trim(), nameEl);
+          }
+        } catch { /* ignorar, no bloqueo */ }
+
+        return { liAt: liAt.value, profileName };
+
+      } catch (err) {
+        return { error: 'Error durante la autenticación: ' + err.message };
+      }
+    };
+  `;
+
+  try {
+    // Browserless v1 (más compatible con free tier)
+    const browserlessUrl = `https://chrome.browserless.io/function?token=${token}`;
+
+    const response = await fetch(browserlessUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: puppeteerCode,
+        context: { email, password },
+      }),
+      signal: AbortSignal.timeout(60000), // 60 segundos máximo
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[BROWSERLESS] Error HTTP:', response.status, errorText.slice(0, 200));
+      return null;
+    }
+
+    const result = await response.json();
+    console.log('[BROWSERLESS] Result:', JSON.stringify({ ...result, liAt: result.liAt ? '[REDACTED]' : undefined }));
+    return result;
+
+  } catch (err) {
+    console.error('[BROWSERLESS] Fetch error:', err.message);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -62,141 +175,59 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, accounts: accounts || [] });
   }
 
-  // POST - conectar nueva cuenta (acepta email+password o session_cookie)
+  // POST - conectar nueva cuenta con email + contraseña (headless browser)
   if (req.method === 'POST') {
-    const { linkedin_email, linkedin_password, session_cookie, profile_name } = req.body || {};
+    const { linkedin_email, linkedin_password } = req.body || {};
 
-    // Modo credenciales: intentar login directo
-    if (linkedin_email && linkedin_password) {
-      // En Vercel no podemos usar Playwright, hacemos login HTTP
-      let obtainedCookie = null;
+    if (!linkedin_email || !linkedin_password) {
+      return res.status(400).json({ error: 'Email y contraseña de LinkedIn requeridos' });
+    }
 
-      try {
-        // Paso 1: Obtener CSRF token
-        const loginPageRes = await fetch('https://www.linkedin.com/login', {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml',
-          },
-        });
+    // Usar Browserless.io para login con navegador real en la nube
+    const browserResult = await loginWithBrowserless(linkedin_email, linkedin_password);
 
-        const loginPageCookies = loginPageRes.headers.get('set-cookie') || '';
-        const jsessionMatch = loginPageCookies.match(/JSESSIONID="?([^;"\s]+)/);
-        const jsessionId = jsessionMatch ? jsessionMatch[1] : '';
-
-        const loginPageHtml = await loginPageRes.text();
-        const csrfMatch = loginPageHtml.match(/loginCsrfParam.*?value="([^"]+)"/);
-        const csrfToken = csrfMatch ? csrfMatch[1] : '';
-
-        // Paso 2: Enviar credenciales
-        const loginRes = await fetch('https://www.linkedin.com/checkpoint/lg/login-submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Cookie': `JSESSIONID="${jsessionId}"`,
-            'Csrf-Token': jsessionId,
-          },
-          body: new URLSearchParams({
-            session_key: linkedin_email,
-            session_password: linkedin_password,
-            loginCsrfParam: csrfToken,
-          }).toString(),
-          redirect: 'manual',
-        });
-
-        const loginCookies = loginRes.headers.get('set-cookie') || '';
-        const liAtMatch = loginCookies.match(/li_at=([^;]+)/);
-        if (liAtMatch) {
-          obtainedCookie = liAtMatch[1];
-        }
-      } catch (e) {
-        console.error('[LINKEDIN] Login HTTP error:', e.message);
-      }
-
-      if (!obtainedCookie) {
-        return res.status(401).json({
-          error: 'No se pudo autenticar con LinkedIn. LinkedIn requiere verificación adicional. Por favor ingresa la cookie li_at manualmente (Instrucciones abajo).',
-          needsCookie: true,
-        });
-      }
-
-      // Guardar cuenta
-      const teamIdForInsert = await getOrCreateTeam(userId);
-      if (!teamIdForInsert) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
-
-      const usernameFromEmail = linkedin_email.split('@')[0] || 'linkedin';
-      const { data: account, error: insertError } = await supabaseAdmin
-        .from('linkedin_accounts')
-        .insert({
-          team_id: teamIdForInsert,
-          username: usernameFromEmail,
-          profile_name: usernameFromEmail,
-          session_cookie: obtainedCookie,
-          is_valid: true,
-          last_validated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (insertError) return res.status(400).json({ error: insertError.message });
-      return res.status(200).json({
-        success: true,
-        account,
-        message: '✓ Cuenta LinkedIn conectada exitosamente',
+    if (!browserResult) {
+      return res.status(503).json({
+        error: 'El servicio de automatización no está disponible. Configura BROWSERLESS_TOKEN en las variables de entorno (browserless.io - gratis).',
       });
     }
 
-    // Modo cookie manual
-    if (session_cookie) {
-      // Validar cookie rápidamente
-      let isValid = false;
-      let profileName = profile_name || 'Mi Cuenta LinkedIn';
-      try {
-        const validateRes = await fetch('https://www.linkedin.com/voyager/api/me', {
-          headers: {
-            'cookie': `li_at=${session_cookie}`,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'csrf-token': 'ajax:0',
-          },
-        });
-        if (validateRes.status === 200) {
-          isValid = true;
-          try {
-            const data = await validateRes.json();
-            profileName = `${data.firstName || ''} ${data.lastName || ''}`.trim() || profileName;
-          } catch { /* ignorar */ }
-        }
-      } catch (e) {
-        isValid = true; // Si no podemos validar, la guardamos de todos modos
-      }
-
-      if (!isValid && session_cookie.length < 10) {
-        return res.status(401).json({ error: 'Cookie li_at inválida o muy corta' });
-      }
-
-      const teamIdCookie = await getOrCreateTeam(userId);
-      if (!teamIdCookie) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
-
-      const usernameForCookie = profile_name || 'mi-cuenta-linkedin';
-      const { data: account, error: insertError } = await supabaseAdmin
-        .from('linkedin_accounts')
-        .insert({
-          team_id: teamIdCookie,
-          username: usernameForCookie,
-          profile_name: profileName,
-          session_cookie,
-          is_valid: true,
-          last_validated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (insertError) return res.status(400).json({ error: insertError.message });
-      return res.status(200).json({ success: true, account, message: '✓ Cuenta conectada' });
+    if (browserResult.error) {
+      const statusCode = browserResult.invalidCredentials ? 401 : 422;
+      return res.status(statusCode).json({ error: browserResult.error, ...browserResult });
     }
 
-    return res.status(400).json({ error: 'Se requiere linkedin_email+linkedin_password o session_cookie' });
+    if (!browserResult.liAt) {
+      return res.status(401).json({ error: 'No se pudo obtener la sesión de LinkedIn. Intenta de nuevo.' });
+    }
+
+    // Guardar cuenta en Supabase
+    const teamId = await getOrCreateTeam(userId);
+    if (!teamId) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
+
+    const usernameSlug = linkedin_email.split('@')[0] || 'linkedin';
+    const profileName = browserResult.profileName || usernameSlug;
+
+    const { data: account, error: insertError } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .insert({
+        team_id: teamId,
+        username: usernameSlug,
+        profile_name: profileName,
+        session_cookie: browserResult.liAt,
+        is_valid: true,
+        last_validated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (insertError) return res.status(400).json({ error: insertError.message });
+
+    return res.status(200).json({
+      success: true,
+      account,
+      message: `✓ Cuenta de ${profileName} conectada exitosamente`,
+    });
   }
 
   return res.status(405).json({ error: 'Método no permitido' });
