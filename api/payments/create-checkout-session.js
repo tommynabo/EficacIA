@@ -51,7 +51,6 @@ export default async function handler(req, res) {
         metadata: { plan },
       },
       metadata: { plan },
-      customer_creation: 'always',
       billing_address_collection: 'auto',
       success_url: `${baseUrl}/register?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
       cancel_url: `${baseUrl}/pricing`,
