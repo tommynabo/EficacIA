@@ -76,11 +76,11 @@ export default function AccountsPage() {
       setLiveViewerUrl(data.liveViewerUrl)
       setSessionStatus("open")
       setStatusMessage("Inicia sesión en la ventana que se acaba de abrir — lo detectaremos automáticamente")
-      // Abrir en ventana nueva (el inspector de Browserless bloquea iframes)
+      // Abrir nuestro propio viewer (screenshot-based, sin CSP issues)
       popupRef.current = window.open(
-        data.liveViewerUrl,
+        `/linkedin-live?pageId=${data.pageId}`,
         'linkedin-login',
-        'width=1280,height=800,scrollbars=yes,resizable=yes'
+        'width=1320,height=820,scrollbars=no,resizable=yes'
       )
       startPolling(data.pageId)
     } catch (err) {
@@ -94,7 +94,7 @@ export default function AccountsPage() {
     pollingRef.current = setInterval(async () => {
       try {
         const token = localStorage.getItem("auth_token")
-        const res = await fetch(`/api/linkedin/browser-session?pageId=${pid}`, {
+        const res = await fetch(`/api/linkedin/browser-session?pageId=${pid}&_=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
@@ -280,7 +280,7 @@ export default function AccountsPage() {
                     size="sm"
                     className="text-xs gap-1"
                     onClick={() => {
-                      if (liveViewerUrl) popupRef.current = window.open(liveViewerUrl, 'linkedin-login', 'width=1280,height=800,scrollbars=yes,resizable=yes')
+                      if (pageId) popupRef.current = window.open(`/linkedin-live?pageId=${pageId}`, 'linkedin-login', 'width=1320,height=820,scrollbars=no,resizable=yes')
                     }}
                   >
                     <Monitor className="w-3 h-3" /> Reabrir ventana

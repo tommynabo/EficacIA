@@ -127,6 +127,27 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'BROWSERLESS_TOKEN no configurado en Vercel' });
   }
 
+  // POST — input proxy (click / text / key) ← debe ir antes de la creación de sesión
+  if (req.method === 'POST' && req.body?.action === 'input') {
+    const { pageId: pid, type, x, y, text, key, keyCode } = req.body;
+    if (!pid) return res.status(400).json({ error: 'pageId requerido' });
+    const cdpUrl = `wss://chrome.browserless.io/devtools/page/${pid}?token=${token}`;
+    try {
+      if (type === 'click') {
+        await sendCDP(cdpUrl, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, modifiers: 0 });
+        await sendCDP(cdpUrl, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1, modifiers: 0 });
+      } else if (type === 'text') {
+        await sendCDP(cdpUrl, 'Input.insertText', { text });
+      } else if (type === 'key') {
+        await sendCDP(cdpUrl, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: keyCode, modifiers: 0 });
+        await sendCDP(cdpUrl, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode, modifiers: 0 });
+      }
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   // POST — crear sesión de browser y navegar a LinkedIn login
   if (req.method === 'POST') {
     try {
@@ -183,11 +204,24 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
-  // GET — estado de sesión (polling, reemplaza session-status.js)
+  // GET — screenshot o estado de sesión
   if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
     const { pageId } = req.query;
     if (!pageId) return res.status(400).json({ error: 'pageId requerido' });
     const cdpWsUrl = `wss://chrome.browserless.io/devtools/page/${pageId}?token=${token}`;
+
+    // Screenshot
+    if (req.query.screenshot === '1') {
+      try {
+        const result = await sendCDP(cdpWsUrl, 'Page.captureScreenshot', { format: 'jpeg', quality: 65 });
+        return res.status(200).json({ image: result.data });
+      } catch (err) {
+        return res.status(200).json({ error: err.message });
+      }
+    }
+
+    // Estado de sesión (polling)
     try {
       const { cookies, url } = await getSessionState(cdpWsUrl);
       const liAtCookie = cookies.find(c => c.name === 'li_at');

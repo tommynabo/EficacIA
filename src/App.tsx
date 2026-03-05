@@ -11,6 +11,7 @@ import LeadsPage from "./pages/dashboard/leads"
 import UniboxPage from "./pages/dashboard/unibox"
 import AnalyticsPage from "./pages/dashboard/analytics"
 import SettingsPage from "./pages/dashboard/settings"
+import LinkedInLivePage from "./pages/linkedin-live"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <AuthPage mode="login" />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <AuthPage mode="register" />} />
       <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/linkedin-live" element={<LinkedInLivePage />} />
       
       <Route
         path="/dashboard"
