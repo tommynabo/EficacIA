@@ -391,61 +391,162 @@ router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * POST /api/linkedin/accounts
- * Conecta una nueva cuenta LinkedIn
+ * Conecta una nueva cuenta LinkedIn usando email + contraseña (tipo Walead)
  */
 router.post('/accounts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
-    const { session_cookie, profile_name } = req.body
+    // Soporta dos formatos:
+    // 1. Nuevo: { linkedin_email, linkedin_password } - credenciales
+    // 2. Antiguo: { session_cookie } - para compatibilidad
+    const { linkedin_email, linkedin_password, session_cookie, profile_name } = req.body
 
-    if (!session_cookie) {
-      return res.status(400).json({ error: 'Session cookie requerido' })
+    // Si viene con credenciales, hacer login automático
+    if (linkedin_email && linkedin_password) {
+      console.log('[LINKEDIN] Autenticando con credenciales para:', linkedin_email)
+      
+      // Primero, validar credenciales con LinkedIn
+      let sessionCookie = null
+      try {
+        const loginResponse = await fetch('https://www.linkedin.com/checkpoint/lg/login-submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          body: new URLSearchParams({
+            'session_key': linkedin_email,
+            'session_password': linkedin_password,
+            'trk': 'guest_homepage-basic_sign-in-submit_button',
+          }).toString(),
+          redirect: 'manual',
+        })
+
+        // LinkedIn retorna un redirect si el login es exitoso
+        const setCookieHeader = loginResponse.headers.get('set-cookie')
+        if (setCookieHeader && setCookieHeader.includes('li_at')) {
+          // Extraer cookie
+          const match = setCookieHeader.match(/li_at=([^;]+)/)
+          if (match) {
+            sessionCookie = match[1]
+            console.log('[LINKEDIN] ✓ Login exitoso, cookie obtenida')
+          }
+        }
+      } catch (loginError) {
+        console.error('[LINKEDIN] Error en login:', loginError)
+        return res.status(401).json({ 
+          error: 'Credenciales incorrectas o LinkedIn no responde. Verifica email/contraseña.' 
+        })
+      }
+
+      if (!sessionCookie) {
+        return res.status(401).json({ 
+          error: 'No se pudo obtener sesión de LinkedIn. Verifica que email y contraseña sean correctos.' 
+        })
+      }
+
+      // Validar que la sesión sea válida
+      try {
+        const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
+          headers: {
+            'cookie': `li_at=${sessionCookie}`,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          },
+        })
+        
+        if (validateResponse.status !== 200) {
+          console.error('[LINKEDIN] Validación falló, status:', validateResponse.status)
+          return res.status(401).json({ error: 'Sesión de LinkedIn rechazada. Intenta de nuevo.' })
+        }
+
+        // Obtener perfil para guardar nombre
+        const profileData = await validateResponse.json()
+        const profileName = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() || 'Mi Cuenta LinkedIn'
+
+        // Guardar cuenta con la sesión obtenida
+        const { data: account, error: insertError } = await supabase
+          .from('linkedin_accounts')
+          .insert({
+            user_id: userId,
+            session_cookie: sessionCookie,
+            profile_name: profileName,
+            is_valid: true,
+            last_validated_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (insertError) {
+          console.error('Insert account error:', insertError)
+          return res.status(400).json({ error: 'No se pudo guardar la cuenta' })
+        }
+
+        console.log('[LINKEDIN] ✓ Cuenta conectada:', profileName)
+        return res.json({
+          success: true,
+          account,
+          message: `✓ Cuenta LinkedIn de ${profileName} conectada exitosamente`,
+        })
+      } catch (validateError) {
+        console.error('[LINKEDIN] Validation error:', validateError)
+        return res.status(401).json({ error: 'No se pudo validar la sesión de LinkedIn' })
+      }
     }
+    
+    // Modo antiguo: si viene con cookie (para compatibilidad)
+    else if (session_cookie) {
+      console.log('[LINKEDIN] Conectando con cookie (modo legacy)')
+      
+      // Validar que la sesión sea válida haciendo ping a LinkedIn
+      let isValid = true
+      try {
+        const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
+          headers: {
+            'cookie': `li_at=${session_cookie}`,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          },
+        })
+        isValid = validateResponse.status === 200
+      } catch (e) {
+        console.warn('[LINKEDIN] Could not validate cookie:', e)
+      }
 
-    // Validar que la sesión sea válida haciendo ping a LinkedIn
-    let isValid = true
-    try {
-      const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
-        headers: {
-          'cookie': `li_at=${session_cookie}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        },
+      if (!isValid) {
+        return res.status(401).json({ error: 'Cookie de LinkedIn inválida o expirada' })
+      }
+
+      // Guardar cuenta
+      const { data: account, error: insertError } = await supabase
+        .from('linkedin_accounts')
+        .insert({
+          user_id: userId,
+          session_cookie: session_cookie,
+          profile_name: profile_name || 'Mi Cuenta LinkedIn',
+          is_valid: true,
+          last_validated_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('Insert account error:', insertError)
+        return res.status(400).json({ error: insertError.message })
+      }
+
+      return res.json({
+        success: true,
+        account,
+        message: '✓ Cuenta LinkedIn conectada exitosamente',
       })
-      isValid = validateResponse.status === 200
-    } catch (e) {
-      // Si no podemos validar, asumimos que es válida por ahora
-      console.warn('Could not validate LinkedIn session:', e)
     }
-
-    if (!isValid) {
-      return res.status(401).json({ error: 'Sesión de LinkedIn inválida o expirada' })
-    }
-
-    // Guardar cuenta
-    const { data: account, error: insertError } = await supabase
-      .from('linkedin_accounts')
-      .insert({
-        user_id: userId,
-        session_cookie: session_cookie,
-        profile_name: profile_name || 'Mi Cuenta LinkedIn',
-        is_valid: true,
-        last_validated_at: new Date().toISOString(),
+    
+    else {
+      return res.status(400).json({ 
+        error: 'Se requiere (linkedin_email + linkedin_password) o session_cookie' 
       })
-      .select()
-      .single()
-
-    if (insertError) {
-      console.error('Insert account error:', insertError)
-      return res.status(400).json({ error: insertError.message })
     }
-
-    res.json({
-      success: true,
-      account,
-      message: '✓ Cuenta LinkedIn conectada exitosamente',
-    })
   } catch (error: any) {
-    console.error('Connect account error:', error)
+    console.error('[LINKEDIN] Connect account error:', error)
     res.status(500).json({ error: error.message || 'Error conectando cuenta' })
   }
 })

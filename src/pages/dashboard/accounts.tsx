@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ProgressRing } from "@/src/components/ui/progress-ring"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, MoreHorizontal, Flame, AlertCircle, Trash2 } from "lucide-react"
+import { Plus, MoreHorizontal, Flame, AlertCircle, Trash2, Loader } from "lucide-react"
 import { api } from "@/src/lib/api"
 
 interface LinkedInAccount {
@@ -18,12 +18,16 @@ interface LinkedInAccount {
   created_at: string
 }
 
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
-  const [sessionCookie, setSessionCookie] = React.useState("")
+  const [email, setEmail] = React.useState("")
+  const [password, setPassword] = React.useState("")
   const [isConnecting, setIsConnecting] = React.useState(false)
+  const [useCredentials, setUseCredentials] = React.useState(true) // Default: usar credenciales
 
   const fetchAccounts = async () => {
     try {
@@ -46,22 +50,47 @@ export default function AccountsPage() {
   const handleConnectAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!sessionCookie.trim()) {
-      setError("Por favor ingresa la cookie de sesión")
-      return
-    }
+    if (useCredentials) {
+      // Validar credenciales
+      if (!email.trim() || !password.trim()) {
+        setError("Por favor ingresa email y contraseña de LinkedIn")
+        return
+      }
 
-    try {
-      setIsConnecting(true)
-      setError(null)
-      await api.connectLinkedInAccount(sessionCookie)
-      setSessionCookie("")
-      await fetchAccounts()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error connecting account")
-      console.error("Error connecting account:", err)
-    } finally {
-      setIsConnecting(false)
+      try {
+        setIsConnecting(true)
+        setError(null)
+        const token = localStorage.getItem('auth_token')
+        
+        const response = await fetch(`${API_URL}/api/linkedin/accounts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            linkedin_email: email,
+            linkedin_password: password
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Error conectando cuenta')
+        }
+
+        const data = await response.json()
+        alert(`✓ ${data.message || 'Cuenta conectada exitosamente'}`)
+        setEmail("")
+        setPassword("")
+        await fetchAccounts()
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Error connecting account"
+        setError(errorMsg)
+        console.error("Error connecting account:", err)
+      } finally {
+        setIsConnecting(false)
+      }
     }
   }
 
@@ -72,8 +101,8 @@ export default function AccountsPage() {
 
     try {
       setError(null)
-      // Assuming there's a delete account endpoint
-      await api.request("DELETE", `/api/linkedin/accounts/${accountId}`)
+      await api.deleteLinkedInAccount(accountId)
+      alert('✓ Cuenta desconectada')
       await fetchAccounts()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error disconnecting account")
@@ -85,8 +114,8 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Cuentas</h2>
-          <p className="text-slate-400">Gestiona tus cuentas de LinkedIn conectadas.</p>
+          <h2 className="text-2xl font-bold tracking-tight">Cuentas LinkedIn</h2>
+          <p className="text-slate-400">Conecta tus cuentas de LinkedIn fácilmente con email y contraseña.</p>
         </div>
       </div>
 
@@ -99,35 +128,58 @@ export default function AccountsPage() {
         </Card>
       )}
 
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Conectar Nueva Cuenta</h3>
+      <Card className="p-6 border-emerald-500/20 bg-emerald-500/5">
+        <h3 className="text-lg font-semibold mb-4 text-emerald-400">✨ Conectar Nueva Cuenta (Tipo Walead)</h3>
         <form onSubmit={handleConnectAccount} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
-              Cookie de Sesión (li_at)
+              Email de LinkedIn
             </label>
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="Pega tu cookie de sesión de LinkedIn..."
-                value={sessionCookie}
-                onChange={(e) => setSessionCookie(e.target.value)}
-                className="flex-1 bg-slate-950"
-                disabled={isConnecting}
-              />
-              <Button 
-                type="submit" 
-                className="gap-2"
-                disabled={isConnecting || !sessionCookie.trim()}
-              >
-                <Plus className="w-4 h-4" />
-                {isConnecting ? "Conectando..." : "Conectar"}
-              </Button>
-            </div>
-            <p className="text-xs text-slate-400 mt-2">
-              Instrucciones: Abre LinkedIn, abre DevTools (F12), ve a Application &gt; Cookies, copia el valor de "li_at"
-            </p>
+            <Input
+              type="email"
+              placeholder="tu-email@gmail.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="flex-1 bg-slate-950"
+              disabled={isConnecting}
+            />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Contraseña de LinkedIn
+            </label>
+            <Input
+              type="password"
+              placeholder="Tu contraseña segura"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="flex-1 bg-slate-950"
+              disabled={isConnecting}
+            />
+          </div>
+
+          <Button 
+            type="submit" 
+            className="gap-2 w-full"
+            disabled={isConnecting || !email.trim() || !password.trim()}
+          >
+            {isConnecting ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" />
+                Conectando...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                Conectar con LinkedIn
+              </>
+            )}
+          </Button>
+
+          <p className="text-xs text-slate-500 text-center">
+            💡 Tus credenciales se guardán encriptadas y solo se usan para conectar tu cuenta.
+          </p>
         </form>
       </Card>
 
@@ -174,7 +226,7 @@ export default function AccountsPage() {
                         ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
                         : "bg-red-500/10 border-red-500/20 text-red-400"}`}
                     >
-                      {account.is_valid ? "Activa" : "Inválida"}
+                      {account.is_valid ? "✓ Activa" : "⚠️ Inválida"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-300">
