@@ -1,30 +1,98 @@
 import * as React from "react"
-import { Link } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
+import { Input } from "@/src/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, Play, Pause, MoreHorizontal, Clock, ArrowUpRight, CheckCircle2, AlertCircle } from "lucide-react"
-import { useCampaigns } from "@/src/lib/hooks"
+import { Plus, MoreHorizontal, AlertCircle } from "lucide-react"
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+
+interface Campaign {
+  id: string
+  team_id: string
+  name: string
+  description: string
+  status: 'draft' | 'active' | 'paused' | 'completed'
+  leads_count: number
+  created_at: string
+  updated_at: string
+}
 
 export default function CampaignsPage() {
-  const { campaigns, isLoading, error, fetchCampaigns, pauseCampaign, resumeCampaign } = useCampaigns()
+  const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
+  const [isLoading, setIsLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+  const [campaignName, setCampaignName] = React.useState("")
+  const [campaignDescription, setCampaignDescription] = React.useState("")
+  const [isCreating, setIsCreating] = React.useState(false)
+
+  const fetchCampaigns = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const response = await fetch(`${API_URL}/api/linkedin/campaigns`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      })
+
+      if (!response.ok) throw new Error('Error cargando campañas')
+      
+      const data = await response.json()
+      setCampaigns(data.campaigns || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error loading campaigns")
+      console.error("Error fetching campaigns:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   React.useEffect(() => {
     fetchCampaigns()
-  }, [fetchCampaigns])
+  }, [])
 
-  const handleToggleStatus = async (campaignId: string, currentStatus: string) => {
+  const handleCreateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!campaignName.trim()) {
+      setError("Por favor ingresa un nombre de campaña")
+      return
+    }
+
     try {
-      if (currentStatus === "running") {
-        await pauseCampaign(campaignId)
-      } else {
-        await resumeCampaign(campaignId)
+      setIsCreating(true)
+      setError(null)
+      
+      const response = await fetch(`${API_URL}/api/linkedin/campaigns`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: JSON.stringify({
+          name: campaignName,
+          description: campaignDescription
+        })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Error creando campaña')
       }
+
+      const data = await response.json()
+      alert('✓ Campaña creada correctamente')
+      setCampaignName("")
+      setCampaignDescription("")
       await fetchCampaigns()
     } catch (err) {
-      console.error("Error updating campaign status:", err)
+      setError(err instanceof Error ? err.message : "Error creating campaign")
+      console.error("Error creating campaign:", err)
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -33,14 +101,8 @@ export default function CampaignsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Campañas</h2>
-          <p className="text-slate-400">Monitoriza el rendimiento de tus secuencias.</p>
+          <p className="text-slate-400">Crea y gestiona tus campañas de outreach en LinkedIn.</p>
         </div>
-        <Button className="gap-2" asChild>
-          <Link to="/dashboard/campaigns/new">
-            <Plus className="w-4 h-4" />
-            Crear Campaña
-          </Link>
-        </Button>
       </div>
 
       {error && (
@@ -52,15 +114,48 @@ export default function CampaignsPage() {
         </Card>
       )}
 
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold mb-4">Crear Nueva Campaña</h3>
+        <form onSubmit={handleCreateCampaign} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Nombre de la Campaña
+            </label>
+            <Input
+              placeholder="Ej: Prospecting Startups Tech 2026"
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              className="bg-slate-950"
+              disabled={isCreating}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Descripción (opcional)
+            </label>
+            <Input
+              placeholder="Ej: Campaña dirigida a CTOs de startups en España"
+              value={campaignDescription}
+              onChange={(e) => setCampaignDescription(e.target.value)}
+              className="bg-slate-950"
+              disabled={isCreating}
+            />
+          </div>
+          <Button type="submit" className="gap-2" disabled={isCreating || !campaignName.trim()}>
+            <Plus className="w-4 h-4" />
+            {isCreating ? "Creando..." : "Crear Campaña"}
+          </Button>
+        </form>
+      </Card>
+
       <Card>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-[400px]">NOMBRE</TableHead>
               <TableHead>ESTADO</TableHead>
-              <TableHead>PROGRESO</TableHead>
-              <TableHead>ACEPTADAS</TableHead>
-              <TableHead>TASA ACEPTACIÓN</TableHead>
+              <TableHead>LEADS</TableHead>
+              <TableHead>CREADA</TableHead>
               <TableHead className="text-right">ACCIONES</TableHead>
             </TableRow>
           </TableHeader>
@@ -70,87 +165,56 @@ export default function CampaignsPage() {
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-5 w-64" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-8" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
             ) : campaigns.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-slate-400">
+                <TableCell colSpan={5} className="text-center py-12 text-slate-400">
                   <div>
-                    <p className="mb-4">No hay campañas aún</p>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to="/dashboard/campaigns/new">Crear Primera Campaña</Link>
-                    </Button>
+                    <p className="mb-2">No hay campañas aún</p>
+                    <p className="text-sm">Crea tu primera campaña arriba para empezar</p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
-              campaigns.map((campaign) => {
-                const acceptanceRate = campaign.sent_count > 0 
-                  ? ((campaign.accepted_count / campaign.sent_count) * 100).toFixed(1)
-                  : 0
-                
-                return (
-                  <TableRow key={campaign.id} className="cursor-pointer hover:bg-slate-800/50">
-                    <TableCell className="font-medium">
-                      <Link to={`/dashboard/campaigns/${campaign.id}`} className="hover:underline">
-                        {campaign.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant={campaign.status === "running" ? "success" : campaign.status === "paused" ? "secondary" : "destructive"} 
-                        className="uppercase"
-                      >
-                        {campaign.status === "running" ? "Activa" : campaign.status === "paused" ? "Pausada" : "Error"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="gap-1 bg-slate-900">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          {campaign.leads_count}
-                        </Badge>
-                        <Badge variant="outline" className="gap-1 bg-blue-500/10 border-blue-500/20 text-blue-400">
-                          <ArrowUpRight className="w-3 h-3" />
-                          {campaign.sent_count}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="gap-1 bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
-                        <CheckCircle2 className="w-3 h-3" />
-                        {campaign.accepted_count}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono">{acceptanceRate}%</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
-                          onClick={() => handleToggleStatus(campaign.id, campaign.status)}
-                        >
-                          {campaign.status === "running" ? (
-                            <Pause className="w-4 h-4" />
-                          ) : (
-                            <Play className="w-4 h-4" />
-                          )}
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                          <Link to={`/dashboard/campaigns/${campaign.id}`}>
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
+              campaigns.map((campaign) => (
+                <TableRow key={campaign.id} className="hover:bg-slate-800/50">
+                  <TableCell className="font-medium">
+                    {campaign.name}
+                  </TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant="outline"
+                      className={`${
+                        campaign.status === 'active' 
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                          : campaign.status === 'draft'
+                          ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                          : 'bg-slate-500/10 border-slate-500/20 text-slate-400'
+                      }`}
+                    >
+                      {campaign.status === 'draft' ? '📝 Borrador' : campaign.status === 'active' ? '🚀 Activa' : '⏸️ Pausada'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{campaign.leads_count || 0}</TableCell>
+                  <TableCell className="text-slate-300 text-sm">
+                    {new Date(campaign.created_at).toLocaleDateString('es-ES')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8"
+                      title="Opciones"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
