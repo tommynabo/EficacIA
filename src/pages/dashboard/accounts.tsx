@@ -5,7 +5,7 @@ import { Input } from "@/src/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, Flame, AlertCircle, Trash2, Loader, CheckCircle2, Key, ChevronDown, ChevronUp, ExternalLink } from "lucide-react"
+import { Plus, Flame, AlertCircle, Trash2, Loader, CheckCircle2, Puzzle, Download, ChevronDown, ChevronUp } from "lucide-react"
 
 interface LinkedInAccount {
   id: string
@@ -16,65 +16,75 @@ interface LinkedInAccount {
   created_at: string
 }
 
-const STEPS = [
-  {
-    num: "1",
-    title: "Entra en LinkedIn",
-    desc: (
-      <p className="text-slate-300 text-sm">
-        Abre{" "}
-        <a href="https://www.linkedin.com" target="_blank" rel="noopener noreferrer"
-          className="text-blue-400 hover:underline inline-flex items-center gap-1">
-          linkedin.com <ExternalLink className="w-3 h-3" />
-        </a>{" "}
-        en tu navegador y asegúrate de estar logueado con la cuenta que quieres conectar.
-      </p>
-    ),
-  },
-  {
-    num: "2",
-    title: "Abre las DevTools",
-    desc: (
-      <p className="text-slate-300 text-sm">
-        Pulsa <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs font-mono">F12</kbd> en Windows/Linux
-        o <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs font-mono">Cmd + Option + I</kbd> en Mac.
-      </p>
-    ),
-  },
-  {
-    num: "3",
-    title: "Ve a Application → Cookies",
-    desc: (
-      <div className="space-y-1">
-        <p className="text-slate-300 text-sm">
-          <strong className="text-slate-100">Chrome/Edge:</strong> Pestaña "Application" → "Cookies" → "https://www.linkedin.com"
-        </p>
-        <p className="text-slate-300 text-sm">
-          <strong className="text-slate-100">Firefox:</strong> Pestaña "Storage" → "Cookies" → "https://www.linkedin.com"
-        </p>
-      </div>
-    ),
-  },
-  {
-    num: "4",
-    title: "Copia el valor de li_at",
-    desc: (
-      <p className="text-slate-300 text-sm">
-        Busca la cookie llamada <code className="px-1 py-0.5 bg-slate-700 rounded text-xs font-mono text-emerald-400">li_at</code>.
-        Haz doble clic en su valor, cópialo todo (<kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs font-mono">Ctrl+A</kbd> → <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs font-mono">Ctrl+C</kbd>) y pégalo abajo.
-      </p>
-    ),
-  },
-]
+type ExtStatus = 'checking' | 'ready' | 'not-installed'
+
+// Detectar la extensión enviando un ping y esperando respuesta
+function useExtensionDetect(): ExtStatus {
+  const [status, setStatus] = React.useState<ExtStatus>('checking')
+
+  React.useEffect(() => {
+    let resolved = false
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return
+      if (event.data?.type === 'EFICACIA_EXT_READY') {
+        resolved = true
+        setStatus('ready')
+      }
+    }
+    window.addEventListener('message', onMessage)
+
+    // Enviar ping por si la extensión ya estaba cargada antes que React
+    window.postMessage({ type: 'EFICACIA_PING' }, '*')
+
+    // Timeout: si no responde en 800ms, no está instalada
+    const timer = setTimeout(() => {
+      if (!resolved) setStatus('not-installed')
+    }, 800)
+
+    return () => {
+      window.removeEventListener('message', onMessage)
+      clearTimeout(timer)
+    }
+  }, [])
+
+  return status
+}
+
+// Pedir la cookie li_at a la extensión
+function requestLiAt(): Promise<{ success: boolean; liAt?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const requestId = Math.random().toString(36).slice(2)
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return
+      if (event.data?.type === 'EFICACIA_LI_AT_RESPONSE' && event.data.requestId === requestId) {
+        window.removeEventListener('message', onMessage)
+        clearTimeout(timer)
+        resolve(event.data)
+      }
+    }
+    window.addEventListener('message', onMessage)
+
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onMessage)
+      resolve({ success: false, error: 'La extensión no respondió. Recarga la página e inténtalo de nuevo.' })
+    }, 5000)
+
+    window.postMessage({ type: 'EFICACIA_GET_LI_AT', requestId }, '*')
+  })
+}
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
-  const [liAt, setLiAt] = React.useState("")
   const [isConnecting, setIsConnecting] = React.useState(false)
-  const [showGuide, setShowGuide] = React.useState(true)
+  const [showManual, setShowManual] = React.useState(false)
+  const [manualLiAt, setManualLiAt] = React.useState('')
+
+  const extStatus = useExtensionDetect()
 
   const fetchAccounts = async () => {
     try {
@@ -91,58 +101,74 @@ export default function AccountsPage() {
       const data = await response.json()
       setAccounts(data.accounts || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error loading accounts")
+      setError(err instanceof Error ? err.message : 'Error loading accounts')
     } finally {
       setIsLoading(false)
     }
   }
 
-  React.useEffect(() => {
-    fetchAccounts()
-  }, [])
+  React.useEffect(() => { fetchAccounts() }, [])
 
-  const handleConnectAccount = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = liAt.trim()
-    if (!trimmed || trimmed.length < 20) {
-      setError("Pega el valor completo de la cookie li_at (suele tener más de 100 caracteres)")
-      return
-    }
-
+  // Conectar usando la extensión (1 click)
+  const handleConnectWithExtension = async () => {
     try {
       setIsConnecting(true)
       setError(null)
       setSuccess(null)
 
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch('/api/linkedin/accounts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ li_at: trimmed })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error conectando cuenta')
+      const result = await requestLiAt()
+      if (!result.success || !result.liAt) {
+        throw new Error(result.error || 'No se pudo obtener la sesión de LinkedIn. Asegúrate de estar logueado en linkedin.com')
       }
 
-      setSuccess(data.message || '✓ Cuenta conectada exitosamente')
-      setLiAt("")
-      setShowGuide(false)
-      await fetchAccounts()
+      await submitLiAt(result.liAt)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error connecting account")
+      setError(err instanceof Error ? err.message : 'Error')
     } finally {
       setIsConnecting(false)
     }
   }
 
+  // Conectar pegando la cookie manualmente (fallback)
+  const handleConnectManual = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = manualLiAt.trim()
+    if (!trimmed || trimmed.length < 20) {
+      setError('Pega el valor completo de la cookie li_at (mínimo 20 caracteres)')
+      return
+    }
+    try {
+      setIsConnecting(true)
+      setError(null)
+      setSuccess(null)
+      await submitLiAt(trimmed)
+      setManualLiAt('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error')
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  const submitLiAt = async (liAt: string) => {
+    const token = localStorage.getItem('auth_token')
+    const response = await fetch('/api/linkedin/accounts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ li_at: liAt })
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Error conectando cuenta')
+    setSuccess(data.message || '✓ Cuenta conectada exitosamente')
+    setShowManual(false)
+    await fetchAccounts()
+  }
+
   const handleDisconnect = async (accountId: string) => {
-    if (!confirm("¿Desconectar esta cuenta?")) return
+    if (!confirm('¿Desconectar esta cuenta?')) return
     try {
       setError(null)
       const token = localStorage.getItem('auth_token')
@@ -157,15 +183,17 @@ export default function AccountsPage() {
       setSuccess('✓ Cuenta desconectada')
       await fetchAccounts()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error disconnecting account")
+      setError(err instanceof Error ? err.message : 'Error disconnecting account')
     }
   }
+
+  const extensionZipUrl = '/eficacia-extension.zip'
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Cuentas LinkedIn</h2>
-        <p className="text-slate-400">Conecta tu cuenta LinkedIn usando la cookie de sesión. Funciona sin 2FA y dura semanas.</p>
+        <p className="text-slate-400">Conecta tu cuenta LinkedIn en un clic con la extensión de Chrome.</p>
       </div>
 
       {error && (
@@ -186,75 +214,121 @@ export default function AccountsPage() {
         </Card>
       )}
 
-      {/* Guía de cómo obtener li_at */}
-      <Card className="border-slate-700 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowGuide(v => !v)}
-          className="w-full flex items-center justify-between p-5 hover:bg-slate-800/50 transition-colors"
-        >
+      {/* Estado de la extensión */}
+      {extStatus === 'checking' && (
+        <Card className="p-5 border-slate-700">
           <div className="flex items-center gap-3">
-            <Key className="w-5 h-5 text-blue-400" />
-            <div className="text-left">
-              <p className="font-semibold text-slate-100">Cómo obtener tu cookie li_at</p>
-              <p className="text-xs text-slate-400 mt-0.5">Proceso de 60 segundos · Sin instalar nada · Sin 2FA</p>
+            <Loader className="w-4 h-4 animate-spin text-slate-400" />
+            <p className="text-sm text-slate-400">Detectando extensión...</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Extensión instalada → 1 click */}
+      {extStatus === 'ready' && (
+        <Card className="p-6 border-emerald-500/20 bg-emerald-500/5">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <Puzzle className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-100">Extensión detectada</p>
+                <p className="text-sm text-slate-400">Asegúrate de estar logueado en linkedin.com</p>
+              </div>
+            </div>
+            <Button
+              onClick={handleConnectWithExtension}
+              disabled={isConnecting}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-500"
+            >
+              {isConnecting
+                ? <><Loader className="w-4 h-4 animate-spin" /> Conectando...</>
+                : <><Plus className="w-4 h-4" /> Conectar LinkedIn</>
+              }
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Extensión NO instalada → Install CTA */}
+      {extStatus === 'not-installed' && (
+        <Card className="p-6 border-blue-500/20 bg-blue-500/5">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Puzzle className="w-5 h-5 text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-slate-100 mb-1">Instala la extensión de Chrome (30 segundos)</p>
+              <p className="text-sm text-slate-400 mb-4">Permite conectar LinkedIn con 1 clic. Sin pegar cookies, sin pasos manuales.</p>
+
+              <div className="space-y-3 mb-4">
+                {[
+                  { n: '1', text: <>Descarga el ZIP y guárdalo en tu ordenador</> },
+                  { n: '2', text: <>Abre <strong className="text-slate-200">chrome://extensions</strong> en Chrome y activa "Modo desarrollador" (esquina superior derecha)</> },
+                  { n: '3', text: <>Haz clic en <strong className="text-slate-200">"Cargar sin empaquetar"</strong> y selecciona la carpeta del ZIP descomprimido</> },
+                  { n: '4', text: <>Vuelve aquí y pulsa <strong className="text-slate-200">"Conectar LinkedIn"</strong></> },
+                ].map(({ n, text }) => (
+                  <div key={n} className="flex gap-3">
+                    <div className="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-xs font-bold text-blue-400">{n}</span>
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3 flex-wrap">
+                <a href={extensionZipUrl} download="eficacia-extension.zip">
+                  <Button className="gap-2 bg-blue-600 hover:bg-blue-500">
+                    <Download className="w-4 h-4" /> Descargar extensión (.zip)
+                  </Button>
+                </a>
+                <Button
+                  variant="ghost"
+                  className="text-slate-400 gap-1"
+                  onClick={() => window.location.reload()}
+                >
+                  Ya la instalé — recargar
+                </Button>
+              </div>
             </div>
           </div>
-          {showGuide ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </Card>
+      )}
+
+      {/* Fallback manual (siempre disponible, colapsado) */}
+      <div>
+        <button
+          onClick={() => setShowManual(v => !v)}
+          className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          {showManual ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          Conectar manualmente (pegar cookie li_at)
         </button>
 
-        {showGuide && (
-          <div className="px-5 pb-5 border-t border-slate-700/50">
-            <div className="space-y-4 mt-4">
-              {STEPS.map((step) => (
-                <div key={step.num} className="flex gap-3">
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-400">{step.num}</span>
-                  </div>
-                  <div className="pt-0.5">
-                    <p className="font-medium text-slate-100 text-sm mb-1">{step.title}</p>
-                    {step.desc}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Formulario pegar li_at */}
-      <Card className="p-6 border-slate-700">
-        <form onSubmit={handleConnectAccount} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Valor de la cookie <code className="px-1 py-0.5 bg-slate-700 rounded text-xs font-mono text-emerald-400">li_at</code>
-            </label>
-            <Input
-              type="text"
-              placeholder="AQEDATxxxxxxxxxxxxxxxx..."
-              value={liAt}
-              onChange={(e) => setLiAt(e.target.value)}
-              className="bg-slate-950 font-mono text-sm"
-              disabled={isConnecting}
-            />
-            <p className="text-xs text-slate-500 mt-1.5">
-              El valor suele empezar por "AQED" y tiene más de 100 caracteres. Es tu contraseña de sesión — no la compartas con nadie más.
+        {showManual && (
+          <Card className="p-5 border-slate-700 mt-3">
+            <p className="text-xs text-slate-500 mb-3">
+              Ve a linkedin.com → F12 → Application → Cookies → copia el valor de <code className="text-emerald-400 font-mono">li_at</code>
             </p>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full gap-2"
-            disabled={isConnecting || liAt.trim().length < 20}
-          >
-            {isConnecting ? (
-              <><Loader className="w-4 h-4 animate-spin" /> Validando con LinkedIn...</>
-            ) : (
-              <><Plus className="w-4 h-4" /> Conectar cuenta</>
-            )}
-          </Button>
-        </form>
-      </Card>
+            <form onSubmit={handleConnectManual} className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="AQEDATxxxxxxxxxxxxxxxx..."
+                value={manualLiAt}
+                onChange={(e) => setManualLiAt(e.target.value)}
+                className="bg-slate-950 font-mono text-xs flex-1"
+                disabled={isConnecting}
+              />
+              <Button type="submit" disabled={isConnecting || manualLiAt.trim().length < 20} className="gap-1">
+                {isConnecting ? <Loader className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Conectar
+              </Button>
+            </form>
+          </Card>
+        )}
+      </div>
 
       {/* Tabla de cuentas */}
       <Card>
@@ -282,7 +356,7 @@ export default function AccountsPage() {
                 <TableCell colSpan={4} className="text-center py-12 text-slate-400">
                   <Flame className="w-12 h-12 mx-auto mb-4 text-slate-600" />
                   <p className="mb-2">No hay cuentas conectadas</p>
-                  <p className="text-sm">Sigue los pasos de arriba para conectar tu primera cuenta</p>
+                  <p className="text-sm">Instala la extensión y conecta tu primera cuenta</p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -291,13 +365,13 @@ export default function AccountsPage() {
                   <TableCell className="font-medium">{account.profile_name || account.username}</TableCell>
                   <TableCell>
                     <Badge className={`gap-1 ${account.is_valid
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                      : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
-                      {account.is_valid ? "✓ Activa" : "⚠ Inválida"}
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                      : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                      {account.is_valid ? '✓ Activa' : '⚠ Inválida'}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-300">
-                    {new Date(account.created_at).toLocaleDateString("es-ES")}
+                    {new Date(account.created_at).toLocaleDateString('es-ES')}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
