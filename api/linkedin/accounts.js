@@ -51,10 +51,9 @@ async function loginWithBrowserless(email, password) {
 
   console.log('[BROWSERLESS] Token presente, longitud:', token.length);
 
-  // Código Puppeteer que se ejecuta en el navegador cloud
-  // Compatible con Browserless v1 (chrome.browserless.io) formato CommonJS
+  // Código Puppeteer en formato ESM (Browserless actual requiere export default)
   const puppeteerCode = `
-    module.exports = async ({ page, context }) => {
+    export default async ({ page, context }) => {
       const { email, password } = context;
       try {
         await page.goto('https://www.linkedin.com/login', {
