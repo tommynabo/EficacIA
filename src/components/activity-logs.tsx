@@ -1,5 +1,5 @@
 import * as React from "react"
-import { CheckCircle2, Loader2, AlertCircle } from "lucide-react"
+import { CheckCircle2, Loader2, AlertCircle, Info } from "lucide-react"
 
 type LogStatus = "loading" | "success" | "error"
 
@@ -12,42 +12,30 @@ interface LogEntry {
 
 export function ActivityLogs() {
   const [logs, setLogs] = React.useState<LogEntry[]>([
-    { id: "1", message: "Iniciando secuencia para 'Product Engineer'...", status: "success", timestamp: new Date(Date.now() - 10000) },
-    { id: "2", message: "Extrayendo perfiles de búsqueda...", status: "success", timestamp: new Date(Date.now() - 8000) },
-    { id: "3", message: "Generando mensaje personalizado para Juan Pérez...", status: "loading", timestamp: new Date(Date.now() - 2000) },
+    { 
+      id: "0", 
+      message: "Las secuencias de automatización se mostrarán aquí cuando estén habilitadas", 
+      status: "success", 
+      timestamp: new Date() 
+    },
   ])
-
-  // Simulate real-time logs
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setLogs(prev => {
-        const newLogs = [...prev]
-        const loadingIndex = newLogs.findIndex(l => l.status === "loading")
-        if (loadingIndex !== -1) {
-          newLogs[loadingIndex] = { ...newLogs[loadingIndex], status: "success" }
-        }
-        newLogs.push({
-          id: Date.now().toString(),
-          message: "Enviando invitación a Juan Pérez...",
-          status: "loading",
-          timestamp: new Date()
-        })
-        return newLogs.slice(-10) // Keep last 10
-      })
-    }, 5000)
-    return () => clearTimeout(timer)
-  }, [logs])
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3 font-mono text-xs">
-      {logs.map((log) => (
-        <div
-          key={log.id}
-          className="flex items-start gap-3 p-3 rounded-md bg-slate-900/50 border border-slate-800"
-        >
-          <div className="mt-0.5 shrink-0">
-            {log.status === "loading" && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />}
-            {log.status === "success" && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+      {logs.length === 0 ? (
+        <div className="flex items-center gap-2 p-4 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400">
+          <Info className="w-4 h-4 flex-shrink-0" />
+          <p>No hay actividad en este momento</p>
+        </div>
+      ) : (
+        logs.map((log) => (
+          <div
+            key={log.id}
+            className="flex items-start gap-3 p-3 rounded-md bg-slate-900/50 border border-slate-800"
+          >
+            <div className="mt-0.5 shrink-0">
+              {log.status === "loading" && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />}
+              {log.status === "success" && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
             {log.status === "error" && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
           </div>
           <div className="flex-1 min-w-0">

@@ -1,5 +1,5 @@
 export class LinkedInService {
-  private static baseUrl = '/api/linkedin'
+  private static baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
   /**
    * Obtiene todos los leads del usuario
@@ -12,13 +12,17 @@ export class LinkedInService {
       search,
     })
 
-    const response = await fetch(`${this.baseUrl}/leads?${params}`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/leads?${params}`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
       },
     })
 
-    if (!response.ok) throw new Error('Error obteniendo leads')
+    if (!response.ok) {
+      const text = await response.text()
+      console.error('Response not OK:', response.status, text)
+      throw new Error(`Error obteniendo leads: ${response.status}`)
+    }
     return response.json()
   }
 
@@ -26,7 +30,7 @@ export class LinkedInService {
    * Busca leads en LinkedIn
    */
   static async searchLeads(keywords: string, location?: string, title?: string, limit = 10) {
-    const response = await fetch(`${this.baseUrl}/search-leads`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/search-leads`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -48,7 +52,7 @@ export class LinkedInService {
    * Importa leads manualmente
    */
   static async importLeads(leads: any[]) {
-    const response = await fetch(`${this.baseUrl}/import-leads`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/import-leads`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,7 +69,7 @@ export class LinkedInService {
    * Importa leads desde CSV
    */
   static async bulkImportCSV(csvData: string) {
-    const response = await fetch(`${this.baseUrl}/bulk-import`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/bulk-import`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,7 +86,7 @@ export class LinkedInService {
    * Actualiza el estado de un lead
    */
   static async updateLead(leadId: string, updates: any) {
-    const response = await fetch(`${this.baseUrl}/leads/${leadId}`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/leads/${leadId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -99,7 +103,7 @@ export class LinkedInService {
    * Elimina un lead
    */
   static async deleteLead(leadId: string) {
-    const response = await fetch(`${this.baseUrl}/leads/${leadId}`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/leads/${leadId}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
