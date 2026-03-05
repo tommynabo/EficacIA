@@ -57,18 +57,22 @@ export default async function handler(req, res) {
     if (!teamId) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
 
     // Preparar leads para inserción
-    const leadsToInsert = leads.map((lead) => ({
-      team_id: teamId,
-      campaign_id: campaign_id || null,
-      first_name: lead.first_name || lead.firstName || '',
-      last_name: lead.last_name || lead.lastName || '',
-      company: lead.company || '',
-      job_title: lead.job_title || lead.jobTitle || lead.title || '',
-      linkedin_url: lead.linkedin_url || lead.linkedinUrl || lead.url || '',
-      email: lead.email || null,
-      status: 'pending',
-      sent_message: false,
-    }));
+    const leadsToInsert = leads.map((lead) => {
+      const title = lead.job_title || lead.jobTitle || lead.position || lead.title || '';
+      return {
+        team_id: teamId,
+        campaign_id: campaign_id || null,
+        first_name: lead.first_name || lead.firstName || '',
+        last_name: lead.last_name || lead.lastName || '',
+        company: lead.company || '',
+        position: title,       // columna original del schema
+        job_title: title,      // columna añadida en migración
+        linkedin_url: lead.linkedin_url || lead.linkedinUrl || lead.url || '',
+        email: lead.email || null,
+        status: 'new',
+        sent_message: false,
+      };
+    });
 
     const { data: inserted, error } = await supabaseAdmin
       .from('leads')

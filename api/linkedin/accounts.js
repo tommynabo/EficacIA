@@ -18,6 +18,25 @@ function getUserId(req) {
   }
 }
 
+async function getOrCreateTeam(userId) {
+  const { data: teams } = await supabaseAdmin
+    .from('teams')
+    .select('id')
+    .eq('owner_id', userId)
+    .limit(1);
+
+  if (teams && teams.length > 0) return teams[0].id;
+
+  const { data: newTeam, error } = await supabaseAdmin
+    .from('teams')
+    .insert({ owner_id: userId, name: 'Mi Equipo' })
+    .select()
+    .single();
+
+  if (error) { console.error('[TEAM]', error.message); return null; }
+  return newTeam?.id || null;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -28,12 +47,15 @@ export default async function handler(req, res) {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
-  // GET - listar cuentas
+  // GET - listar cuentas LinkedIn del usuario
   if (req.method === 'GET') {
+    const teamId = await getOrCreateTeam(userId);
+    if (!teamId) return res.status(200).json({ success: true, accounts: [] });
+
     const { data: accounts, error } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id, user_id, profile_name, is_valid, created_at, last_validated_at')
-      .eq('user_id', userId)
+      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at')
+      .eq('team_id', teamId)
       .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ error: error.message });
@@ -100,12 +122,17 @@ export default async function handler(req, res) {
       }
 
       // Guardar cuenta
+      const teamIdForInsert = await getOrCreateTeam(userId);
+      if (!teamIdForInsert) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
+
+      const usernameFromEmail = linkedin_email.split('@')[0] || 'linkedin';
       const { data: account, error: insertError } = await supabaseAdmin
         .from('linkedin_accounts')
         .insert({
-          user_id: userId,
+          team_id: teamIdForInsert,
+          username: usernameFromEmail,
+          profile_name: usernameFromEmail,
           session_cookie: obtainedCookie,
-          profile_name: linkedin_email.split('@')[0] || 'Mi Cuenta LinkedIn',
           is_valid: true,
           last_validated_at: new Date().toISOString(),
         })
@@ -148,12 +175,17 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Cookie li_at inválida o muy corta' });
       }
 
+      const teamIdCookie = await getOrCreateTeam(userId);
+      if (!teamIdCookie) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
+
+      const usernameForCookie = profile_name || 'mi-cuenta-linkedin';
       const { data: account, error: insertError } = await supabaseAdmin
         .from('linkedin_accounts')
         .insert({
-          user_id: userId,
-          session_cookie,
+          team_id: teamIdCookie,
+          username: usernameForCookie,
           profile_name: profileName,
+          session_cookie,
           is_valid: true,
           last_validated_at: new Date().toISOString(),
         })

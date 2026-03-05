@@ -37,7 +37,7 @@ async function generateAIMessage(lead, campaignName) {
         messages: [
           {
             role: 'user',
-            content: `Escribe un mensaje de LinkedIn corto y personalizado (máximo 150 chars) para conectar con ${lead.first_name} ${lead.last_name}, que trabaja en ${lead.company || 'su empresa'} como ${lead.job_title || 'profesional'}. Campaña: ${campaignName || 'general'}. Solo el mensaje, sin comillas.`,
+            content: `Escribe un mensaje de LinkedIn corto y personalizado (máximo 150 chars) para conectar con ${lead.first_name} ${lead.last_name}, que trabaja en ${lead.company || 'su empresa'} como ${lead.job_title || lead.position || 'profesional'}. Campaña: ${campaignName || 'general'}. Solo el mensaje, sin comillas.`,
           },
         ],
       }),
