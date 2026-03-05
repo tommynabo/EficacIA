@@ -164,12 +164,6 @@ async function loginWithBrowserless(email, password) {
   }
 }
 
-  } catch (err) {
-    console.error('[BROWSERLESS] Fetch error:', err.message);
-    return null;
-  }
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
