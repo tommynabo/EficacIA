@@ -30,6 +30,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
     email: "",
     password: "",
     fullName: "",
+    promoCode: "",
   })
 
   // Redirige si ya está autenticado
@@ -106,6 +107,30 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
             localStorage.setItem('user', JSON.stringify(data.user))
           }
           // Login para actualizar el contexto
+          await login(formData.email, formData.password)
+        } else if (formData.promoCode) {
+          // Registro con código de prueba
+          const res = await fetch(`${API_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: formData.email,
+              password: formData.password,
+              fullName: formData.fullName,
+              promoCode: formData.promoCode,
+            }),
+          })
+
+          if (!res.ok) {
+            const errorData = await res.json()
+            throw new Error(errorData.error || 'Error en registro')
+          }
+
+          const data = await res.json()
+          if (data.token) {
+            localStorage.setItem('auth_token', data.token)
+            localStorage.setItem('user', JSON.stringify(data.user))
+          }
           await login(formData.email, formData.password)
         } else {
           await signup(formData.email, formData.password, formData.fullName)
@@ -233,6 +258,24 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                 />
               </div>
             </div>
+
+            {mode === "register" && !stripeData && (
+              <div>
+                <label htmlFor="promoCode" className="block text-sm font-medium text-slate-300">
+                  Código de prueba gratuita (opcional)
+                </label>
+                <div className="mt-2">
+                  <Input
+                    id="promoCode"
+                    name="promoCode"
+                    type="text"
+                    placeholder="Ingresa un código promocional"
+                    value={formData.promoCode}
+                    onChange={handleChange}
+                  />
+                </div>
+              </div>
+            )}
 
             {mode === "login" && (
               <div className="flex items-center justify-between">

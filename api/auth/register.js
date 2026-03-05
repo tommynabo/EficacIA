@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { email, password, name, fullName, stripeCustomerId, stripeSubscriptionId, plan } = req.body || {};
+    const { email, password, name, fullName, stripeCustomerId, stripeSubscriptionId, plan, promoCode } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email y contraseña son requeridos' });
@@ -27,9 +27,17 @@ export default async function handler(req, res) {
     if (authError) throw new Error(authError.message);
 
     const userId = authData.user.id;
-    const insertData = { id: userId, email, name: userName, subscription_status: 'free', settings: {} };
+    const insertData = { id: userId, email, full_name: userName, subscription_status: 'free' };
 
-    if (stripeCustomerId && stripeSubscriptionId) {
+    // Código de prueba gratis: EficaciaEsLoMejor2026
+    if (promoCode === 'EficaciaEsLoMejor2026') {
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+      insertData.subscription_plan = 'pro';
+      insertData.subscription_status = 'trial';
+      insertData.trial_ends_at = trialEndsAt.toISOString();
+    } else if (stripeCustomerId && stripeSubscriptionId) {
+      // Trial a través de Stripe
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 7);
       insertData.stripe_customer_id = stripeCustomerId;
