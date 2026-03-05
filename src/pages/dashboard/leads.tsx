@@ -18,7 +18,7 @@ import {
   MoreHorizontal
 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+
 
 interface Lead {
   id: string
@@ -59,7 +59,7 @@ export default function LeadsPage() {
         limit: '100'
       })
 
-      const response = await fetch(`${API_URL}/api/linkedin/leads?${query}`, {
+      const response = await fetch(`/api/linkedin/leads?${query}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
@@ -88,7 +88,7 @@ export default function LeadsPage() {
       setImporting(true)
       setError(null)
 
-      const response = await fetch(`${API_URL}/api/linkedin/bulk-import`, {
+      const response = await fetch(`/api/linkedin/bulk-import`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -121,7 +121,7 @@ export default function LeadsPage() {
       setSendingLeadId(leadId)
       setError(null)
 
-      const response = await fetch(`${API_URL}/api/linkedin/leads/${leadId}/send`, {
+      const response = await fetch(`/api/linkedin/leads/${leadId}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -150,7 +150,7 @@ export default function LeadsPage() {
 
     try {
       setError(null)
-      const response = await fetch(`${API_URL}/api/linkedin/leads/${leadId}`, {
+      const response = await fetch(`/api/linkedin/leads/${leadId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`

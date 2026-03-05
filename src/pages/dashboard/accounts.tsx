@@ -18,8 +18,6 @@ interface LinkedInAccount {
   created_at: string
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-
 export default function AccountsPage() {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -62,7 +60,7 @@ export default function AccountsPage() {
         setError(null)
         const token = localStorage.getItem('auth_token')
         
-        const response = await fetch(`${API_URL}/api/linkedin/accounts`, {
+        const response = await fetch(`/api/linkedin/accounts`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

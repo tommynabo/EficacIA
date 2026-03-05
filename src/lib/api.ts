@@ -1,4 +1,7 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+// Determina la URL base del API
+// - En Vercel/producción: las rutas relativas /api funcionan
+// - En desarrollo: también usa relativas (y el dev server las redirige si es necesario)
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 let token: string | null = localStorage.getItem('auth_token');
 

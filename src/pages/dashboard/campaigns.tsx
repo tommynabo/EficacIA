@@ -7,8 +7,6 @@ import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
 import { Plus, MoreHorizontal, AlertCircle } from "lucide-react"
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-
 interface Campaign {
   id: string
   team_id: string
@@ -66,7 +64,7 @@ export default function CampaignsPage() {
       setIsCreating(true)
       setError(null)
       
-      const response = await fetch(`${API_URL}/api/linkedin/campaigns`, {
+      const response = await fetch(`/api/linkedin/campaigns`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
