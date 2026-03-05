@@ -87,7 +87,7 @@ export default function AccountsPage() {
     pollingRef.current = setInterval(async () => {
       try {
         const token = localStorage.getItem("auth_token")
-        const res = await fetch(`/api/linkedin/session-status?pageId=${pid}`, {
+        const res = await fetch(`/api/linkedin/browser-session?pageId=${pid}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()

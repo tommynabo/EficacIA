@@ -13,11 +13,34 @@ const PLANS = {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // GET — recuperar sesión completada por sessionId
+  if (req.method === 'GET') {
+    try {
+      const secretKey = process.env.STRIPE_SECRET_KEY;
+      if (!secretKey) return res.status(500).json({ error: 'Stripe secret key not configured' });
+      const stripe = new Stripe(secretKey);
+      const sessionId = req.query.sessionId;
+      if (!sessionId) return res.status(400).json({ error: 'sessionId es requerido' });
+      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['customer', 'subscription'] });
+      if (session.status !== 'complete') return res.status(400).json({ error: 'Sesión no completada' });
+      const customer = session.customer;
+      return res.status(200).json({
+        email: (customer && customer.email) || session.customer_details?.email || '',
+        name: (customer && customer.name) || session.customer_details?.name || '',
+        customerId: typeof session.customer === 'string' ? session.customer : customer?.id,
+        subscriptionId: typeof session.subscription === 'string' ? session.subscription : session.subscription?.id,
+        plan: session.metadata?.plan || '',
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message || 'Error recuperando sesión' });
+    }
   }
 
   if (req.method !== 'POST') {
