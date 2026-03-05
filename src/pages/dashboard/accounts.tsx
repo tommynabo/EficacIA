@@ -29,6 +29,7 @@ export default function AccountsPage() {
   const [pageId, setPageId] = React.useState<string | null>(null)
   const [statusMessage, setStatusMessage] = React.useState("")
   const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
+  const popupRef = React.useRef<Window | null>(null)
 
   const fetchAccounts = async () => {
     try {
@@ -74,7 +75,13 @@ export default function AccountsPage() {
       setPageId(data.pageId)
       setLiveViewerUrl(data.liveViewerUrl)
       setSessionStatus("open")
-      setStatusMessage("Inicia sesión en LinkedIn — detectaremos automáticamente cuando termines")
+      setStatusMessage("Inicia sesión en la ventana que se acaba de abrir — lo detectaremos automáticamente")
+      // Abrir en ventana nueva (el inspector de Browserless bloquea iframes)
+      popupRef.current = window.open(
+        data.liveViewerUrl,
+        'linkedin-login',
+        'width=1280,height=800,scrollbars=yes,resizable=yes'
+      )
       startPolling(data.pageId)
     } catch (err) {
       setSessionStatus("error")
@@ -94,6 +101,8 @@ export default function AccountsPage() {
         if (data.status === "connected") {
           clearInterval(pollingRef.current!)
           pollingRef.current = null
+          if (popupRef.current && !popupRef.current.closed) popupRef.current.close()
+          popupRef.current = null
           setSessionStatus("connected")
           setSuccess(data.message || "✓ Cuenta conectada exitosamente")
           setLiveViewerUrl(null)
@@ -106,6 +115,8 @@ export default function AccountsPage() {
 
   const closeModal = async () => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
+    if (popupRef.current && !popupRef.current.closed) popupRef.current.close()
+    popupRef.current = null
     if (pageId) {
       try {
         const token = localStorage.getItem("auth_token")
@@ -240,60 +251,51 @@ export default function AccountsPage() {
         </Table>
       </Card>
 
-      {/* Modal Cloud Login */}
+      {/* Banner Cloud Login */}
       {(sessionStatus === "starting" || sessionStatus === "open") && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div
-            className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl flex flex-col shadow-2xl"
-            style={{ height: "min(90vh, 720px)" }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-700 flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center">
-                  <Monitor className="w-4 h-4 text-blue-400" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-100 text-sm">Login en LinkedIn</p>
-                  <p className="text-xs text-slate-400">{statusMessage}</p>
-                </div>
+        <Card className="border-blue-500/30 bg-blue-500/5 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
+                {sessionStatus === "starting"
+                  ? <Loader className="w-5 h-5 animate-spin text-blue-400" />
+                  : <Monitor className="w-5 h-5 text-blue-400" />}
               </div>
-              <div className="flex items-center gap-3">
-                {sessionStatus === "open" && (
+              <div>
+                <p className="font-semibold text-slate-100 text-sm">
+                  {sessionStatus === "starting" ? "Iniciando navegador en la nube..." : "Ventana de LinkedIn abierta"}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">{statusMessage}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {sessionStatus === "open" && (
+                <>
                   <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     Esperando login...
                   </div>
-                )}
-                <button
-                  onClick={closeModal}
-                  className="w-7 h-7 rounded-full hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Cuerpo */}
-            <div className="flex-1 relative bg-slate-950 rounded-b-2xl overflow-hidden">
-              {sessionStatus === "starting" && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                  <Loader className="w-8 h-8 animate-spin text-blue-400" />
-                  <p className="text-slate-400 text-sm">Iniciando navegador en la nube...</p>
-                  <p className="text-xs text-slate-600">Suele tardar 5-10 segundos</p>
-                </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1"
+                    onClick={() => {
+                      if (liveViewerUrl) popupRef.current = window.open(liveViewerUrl, 'linkedin-login', 'width=1280,height=800,scrollbars=yes,resizable=yes')
+                    }}
+                  >
+                    <Monitor className="w-3 h-3" /> Reabrir ventana
+                  </Button>
+                </>
               )}
-              {sessionStatus === "open" && liveViewerUrl && (
-                <iframe
-                  src={liveViewerUrl}
-                  className="w-full h-full border-0"
-                  title="LinkedIn Login"
-                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"
-                />
-              )}
+              <button
+                onClick={closeModal}
+                className="w-7 h-7 rounded-full hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   )

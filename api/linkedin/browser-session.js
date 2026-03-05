@@ -153,18 +153,10 @@ export default async function handler(req, res) {
         url: 'https://www.linkedin.com/login',
       });
 
-      // 3. Construir la URL del viewer live (DevTools frontend de Browserless)
+      // 3. Construir la URL del viewer live (abre en ventana nueva, no iframe)
       const liveViewerUrl =
         `https://chrome.browserless.io/devtools/inspector.html` +
         `?wss=chrome.browserless.io/devtools/page/${pageId}%3Ftoken%3D${token}`;
-
-      // 4. Guardar sessionId en Supabase (temporal) para polling
-      await supabaseAdmin.from('linkedin_browser_sessions').upsert({
-        user_id: userId,
-        page_id: pageId,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' }).select();
 
       return res.status(200).json({
         success: true,
