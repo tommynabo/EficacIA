@@ -194,6 +194,20 @@ export default function PricingPage() {
           </p>
         </div>
 
+        {/* Promo Code Section */}
+        <div className="mt-12 max-w-3xl mx-auto p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+          <Zap className="w-6 h-6 text-blue-400 mb-3" />
+          <h3 className="text-xl font-bold text-white mb-3">¿Tienes un código de prueba?</h3>
+          <p className="text-slate-400 mb-4">
+            Si tienes un código promocional para una prueba gratuita, puedes registrarte completamente gratis sin ingresar una tarjeta.
+          </p>
+          <Link to="/register">
+            <Button className="w-full sm:w-auto" variant="default">
+              Registrarse con Código Gratis
+            </Button>
+          </Link>
+        </div>
+
         {/* FAQ */}
         <div className="mt-16 max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold text-white mb-8">Preguntas Frecuentes</h2>

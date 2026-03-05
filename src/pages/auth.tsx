@@ -177,11 +177,36 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           </div>
         )}
 
-        {!stripeData && (
+        {mode === "login" && (
           <p className="mt-2 text-center text-sm text-slate-400">
-            O{" "}
-            <Link to={mode === "login" ? "/pricing" : "/login"} className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
-              {mode === "login" ? "comienza tu prueba gratuita de 7 días" : "inicia sesión si ya tienes cuenta"}
+            ¿No tienes cuenta?{" "}
+            <Link to="/register" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              Regístrate aquí
+            </Link>
+            {" "}o{" "}
+            <Link to="/pricing" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              comienza un trial gratis
+            </Link>
+          </p>
+        )}
+
+        {mode === "register" && !stripeData && (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            ¿Ya tienes cuenta?{" "}
+            <Link to="/login" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              Inicia sesión aquí
+            </Link>
+            {" "}o{" "}
+            <Link to="/pricing" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              prueba Stripe gratis
+            </Link>
+          </p>
+        )}
+
+        {mode === "register" && stripeData && (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            <Link to="/login" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+              Ir a iniciar sesión
             </Link>
           </p>
         )}
@@ -260,16 +285,14 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
             </div>
 
             {mode === "register" && !stripeData && (
-              <div>
-                <label htmlFor="promoCode" className="block text-sm font-medium text-slate-300">
-                  Código de prueba gratuita (opcional)
-                </label>
-                <div className="mt-2">
+              <div className="border-t border-slate-700 pt-6">
+                <p className="text-xs text-slate-400 mb-4">¿Tienes un código de prueba gratuita? Ingresalo aquí para obtener 7 días gratis:</p>
+                <div>
                   <Input
                     id="promoCode"
                     name="promoCode"
                     type="text"
-                    placeholder="Ingresa un código promocional"
+                    placeholder="Ejemplo: EficaciaEsLoMejor2026"
                     value={formData.promoCode}
                     onChange={handleChange}
                   />
@@ -307,6 +330,8 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                   ? "Iniciar Sesión"
                   : stripeData
                   ? "Activar Trial de 7 Días"
+                  : formData.promoCode
+                  ? "Registrarse con Código Gratis"
                   : "Crear Cuenta"}
               </Button>
             </div>
