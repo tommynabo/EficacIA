@@ -44,85 +44,83 @@ async function getOrCreateTeam(userId) {
  */
 async function loginWithBrowserless(email, password) {
   const token = process.env.BROWSERLESS_TOKEN;
-  if (!token) {
+  if (!token || token.trim() === '') {
     console.warn('[BROWSERLESS] BROWSERLESS_TOKEN no configurado');
-    return null;
+    return { tokenMissing: true };
   }
 
+  console.log('[BROWSERLESS] Token presente, longitud:', token.length);
+
   // Código Puppeteer que se ejecuta en el navegador cloud
+  // Compatible con Browserless v1 (chrome.browserless.io) formato CommonJS
   const puppeteerCode = `
     module.exports = async ({ page, context }) => {
       const { email, password } = context;
-
       try {
-        // Ir a la página de login
         await page.goto('https://www.linkedin.com/login', {
           waitUntil: 'networkidle2',
           timeout: 30000,
         });
 
-        // Rellenar email
         await page.waitForSelector('#username', { timeout: 10000 });
-        await page.type('#username', email, { delay: 50 });
-
-        // Rellenar contraseña
+        await page.type('#username', email, { delay: 60 });
         await page.waitForSelector('#password', { timeout: 5000 });
-        await page.type('#password', password, { delay: 50 });
+        await page.type('#password', password, { delay: 60 });
 
-        // Hacer click en Sign in
         await Promise.all([
-          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }),
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 25000 }),
           page.click('[type=submit]'),
         ]);
 
         const currentUrl = page.url();
 
-        // Detectar si hay verificación adicional (2FA, CAPTCHA, checkpoint)
         if (
           currentUrl.includes('/checkpoint/') ||
           currentUrl.includes('/challenge/') ||
           currentUrl.includes('verification') ||
           currentUrl.includes('/authwall')
         ) {
-          return { error: 'LinkedIn requiere verificación adicional (2FA). Completa la verificación en LinkedIn y vuelve a intentarlo.', needsVerification: true };
+          return { error: 'LinkedIn requiere verificación adicional (2FA o email de confirmación). Por favor activa la cuenta en LinkedIn y vuelve a intentarlo.', needsVerification: true };
         }
 
-        // Detectar credenciales inválidas
         if (currentUrl.includes('/login') || currentUrl.includes('/uas/login')) {
           const errorEl = await page.$('.form__input--error, .alert-content, [role=alert]');
-          const errorText = errorEl ? await page.evaluate(el => el.textContent, errorEl) : 'Credenciales incorrectas';
-          return { error: errorText.trim() || 'Email o contraseña incorrectos. Verifica tus credenciales.', invalidCredentials: true };
+          const errorText = errorEl ? await page.evaluate(el => el.textContent.trim(), errorEl) : '';
+          return { error: errorText || 'Email o contraseña incorrectos.', invalidCredentials: true };
         }
 
-        // Éxito — obtener cookie li_at
         const cookies = await page.cookies('https://www.linkedin.com');
         const liAt = cookies.find(c => c.name === 'li_at');
 
         if (!liAt?.value) {
-          return { error: 'No se pudo obtener la sesión de LinkedIn. Por favor intenta de nuevo.' };
+          return { error: 'No se pudo obtener la sesión de LinkedIn. Intenta de nuevo.' };
         }
 
-        // Intentar obtener nombre del perfil
         let profileName = email.split('@')[0];
         try {
           await page.goto('https://www.linkedin.com/in/me/', { waitUntil: 'domcontentloaded', timeout: 10000 });
-          const nameEl = await page.$('h1.text-heading-xlarge, h1.inline');
+          const nameEl = await page.$('h1.text-heading-xlarge, h1.inline, h1');
           if (nameEl) {
             profileName = await page.evaluate(el => el.textContent.trim(), nameEl);
           }
-        } catch { /* ignorar, no bloqueo */ }
+        } catch { /* ignorar */ }
 
         return { liAt: liAt.value, profileName };
-
       } catch (err) {
         return { error: 'Error durante la autenticación: ' + err.message };
       }
     };
   `;
 
+  // Timeout manual (AbortSignal.timeout no disponible en todos los entornos)
+  const timeoutMs = 65000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    // Browserless v1 (más compatible con free tier)
+    // Probar primero Browserless v1
     const browserlessUrl = `https://chrome.browserless.io/function?token=${token}`;
+    console.log('[BROWSERLESS] Llamando a:', browserlessUrl.replace(token, '[TOKEN]'));
 
     const response = await fetch(browserlessUrl, {
       method: 'POST',
@@ -131,18 +129,40 @@ async function loginWithBrowserless(email, password) {
         code: puppeteerCode,
         context: { email, password },
       }),
-      signal: AbortSignal.timeout(60000), // 60 segundos máximo
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[BROWSERLESS] Error HTTP:', response.status, errorText.slice(0, 200));
-      return null;
+      console.error('[BROWSERLESS] Error HTTP:', response.status, errorText.slice(0, 500));
+      return {
+        browserlessError: true,
+        status: response.status,
+        message: errorText.slice(0, 300),
+      };
     }
 
     const result = await response.json();
-    console.log('[BROWSERLESS] Result:', JSON.stringify({ ...result, liAt: result.liAt ? '[REDACTED]' : undefined }));
+    console.log('[BROWSERLESS] Resultado:', JSON.stringify({
+      ...result,
+      liAt: result.liAt ? '[OBTENIDO]' : undefined,
+    }));
     return result;
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    console.error('[BROWSERLESS] Error:', isTimeout ? 'Timeout' : err.message);
+    return {
+      browserlessError: true,
+      message: isTimeout
+        ? 'Timeout: El navegador tardó demasiado. Intenta de nuevo.'
+        : `Error de conexión con Browserless: ${err.message}`,
+    };
+  }
+}
 
   } catch (err) {
     console.error('[BROWSERLESS] Fetch error:', err.message);
@@ -186,12 +206,21 @@ export default async function handler(req, res) {
     // Usar Browserless.io para login con navegador real en la nube
     const browserResult = await loginWithBrowserless(linkedin_email, linkedin_password);
 
-    if (!browserResult) {
+    // Token no configurado
+    if (browserResult.tokenMissing) {
       return res.status(503).json({
-        error: 'El servicio de automatización no está disponible. Configura BROWSERLESS_TOKEN en las variables de entorno (browserless.io - gratis).',
+        error: 'BROWSERLESS_TOKEN no está configurado en las variables de entorno de Vercel. Ve a Vercel → Settings → Environment Variables y añade BROWSERLESS_TOKEN.',
       });
     }
 
+    // Error del servicio Browserless
+    if (browserResult.browserlessError) {
+      return res.status(503).json({
+        error: `Error del servicio de automatización: ${browserResult.message || 'Error desconocido'}. Estado HTTP: ${browserResult.status || 'N/A'}`,
+      });
+    }
+
+    // LinkedIn devolvió un error (2FA, credenciales, etc.)
     if (browserResult.error) {
       const statusCode = browserResult.invalidCredentials ? 401 : 422;
       return res.status(statusCode).json({ error: browserResult.error, ...browserResult });
