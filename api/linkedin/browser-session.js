@@ -1,3 +1,4 @@
+import WebSocket from 'ws';
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 

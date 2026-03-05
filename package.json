@@ -21,6 +21,7 @@
     "@anthropic-ai/sdk": "^0.24.3",
     "@supabase/supabase-js": "^2.45.4",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
@@ -39,6 +40,7 @@
     "stripe": "^17.7.0",
     "tailwind-merge": "^3.5.0",
     "vite": "^6.2.0",
+    "ws": "^8.19.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
