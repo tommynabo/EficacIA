@@ -36,16 +36,17 @@ export function ActivityLogs() {
             <div className="mt-0.5 shrink-0">
               {log.status === "loading" && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />}
               {log.status === "success" && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
-            {log.status === "error" && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
+              {log.status === "error" && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-slate-300 leading-relaxed">{log.message}</p>
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                {log.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-slate-300 leading-relaxed">{log.message}</p>
-            <span className="text-[10px] text-slate-500 mt-1 block">
-              {log.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          </div>
-        </div>
-      ))}
+        ))
+      )}
     </div>
   )
 }
