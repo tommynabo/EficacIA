@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { initSupabase, supabase } from '../lib/supabase.js'
 import { authMiddleware } from '../middleware/index.js'
+import { linkedInAuthService } from '../services/linkedin-auth.service.js'
 
 const router = Router()
 
@@ -401,96 +402,67 @@ router.post('/accounts', authMiddleware, async (req: Request, res: Response) => 
     // 2. Antiguo: { session_cookie } - para compatibilidad
     const { linkedin_email, linkedin_password, session_cookie, profile_name } = req.body
 
-    // Si viene con credenciales, hacer login automático
+    // Si viene con credenciales, hacer login automático con Playwright
     if (linkedin_email && linkedin_password) {
-      console.log('[LINKEDIN] Autenticando con credenciales para:', linkedin_email)
-      
-      // Primero, validar credenciales con LinkedIn
-      let sessionCookie = null
-      try {
-        const loginResponse = await fetch('https://www.linkedin.com/checkpoint/lg/login-submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-          body: new URLSearchParams({
-            'session_key': linkedin_email,
-            'session_password': linkedin_password,
-            'trk': 'guest_homepage-basic_sign-in-submit_button',
-          }).toString(),
-          redirect: 'manual',
-        })
+      console.log('[LINKEDIN] Usando Playwright para login con credenciales:', linkedin_email)
 
-        // LinkedIn retorna un redirect si el login es exitoso
-        const setCookieHeader = loginResponse.headers.get('set-cookie')
-        if (setCookieHeader && setCookieHeader.includes('li_at')) {
-          // Extraer cookie
-          const match = setCookieHeader.match(/li_at=([^;]+)/)
-          if (match) {
-            sessionCookie = match[1]
-            console.log('[LINKEDIN] ✓ Login exitoso, cookie obtenida')
-          }
-        }
-      } catch (loginError) {
-        console.error('[LINKEDIN] Error en login:', loginError)
-        return res.status(401).json({ 
-          error: 'Credenciales incorrectas o LinkedIn no responde. Verifica email/contraseña.' 
-        })
-      }
+      // Usar Playwright para obtener session cookie válida
+      const sessionCookie = await linkedInAuthService.authenticateAndGetSession(
+        linkedin_email,
+        linkedin_password
+      )
 
       if (!sessionCookie) {
-        return res.status(401).json({ 
-          error: 'No se pudo obtener sesión de LinkedIn. Verifica que email y contraseña sean correctos.' 
+        return res.status(401).json({
+          error:
+            'No se pudo autenticar con LinkedIn. Verifica email/contraseña o si LinkedIn solicitó verificación adicional.',
         })
       }
 
-      // Validar que la sesión sea válida
+      console.log('[LINKEDIN] ✓ Session obtenida con Playwright')
+
+      // Obtener perfil para guardar nombre
+      let profileName = 'Mi Cuenta LinkedIn'
       try {
-        const validateResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
+        const profileResponse = await fetch('https://www.linkedin.com/voyager/api/me', {
           headers: {
             'cookie': `li_at=${sessionCookie}`,
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           },
         })
-        
-        if (validateResponse.status !== 200) {
-          console.error('[LINKEDIN] Validación falló, status:', validateResponse.status)
-          return res.status(401).json({ error: 'Sesión de LinkedIn rechazada. Intenta de nuevo.' })
+
+        if (profileResponse.status === 200) {
+          const profileData = await profileResponse.json()
+          profileName = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() || 'Mi Cuenta LinkedIn'
         }
-
-        // Obtener perfil para guardar nombre
-        const profileData = await validateResponse.json()
-        const profileName = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() || 'Mi Cuenta LinkedIn'
-
-        // Guardar cuenta con la sesión obtenida
-        const { data: account, error: insertError } = await supabase
-          .from('linkedin_accounts')
-          .insert({
-            user_id: userId,
-            session_cookie: sessionCookie,
-            profile_name: profileName,
-            is_valid: true,
-            last_validated_at: new Date().toISOString(),
-          })
-          .select()
-          .single()
-
-        if (insertError) {
-          console.error('Insert account error:', insertError)
-          return res.status(400).json({ error: 'No se pudo guardar la cuenta' })
-        }
-
-        console.log('[LINKEDIN] ✓ Cuenta conectada:', profileName)
-        return res.json({
-          success: true,
-          account,
-          message: `✓ Cuenta LinkedIn de ${profileName} conectada exitosamente`,
-        })
-      } catch (validateError) {
-        console.error('[LINKEDIN] Validation error:', validateError)
-        return res.status(401).json({ error: 'No se pudo validar la sesión de LinkedIn' })
+      } catch (e) {
+        console.warn('[LINKEDIN] Could not fetch profile:', e)
       }
+
+      // Guardar cuenta con la sesión obtenida
+      const { data: account, error: insertError } = await supabase
+        .from('linkedin_accounts')
+        .insert({
+          user_id: userId,
+          session_cookie: sessionCookie,
+          profile_name: profileName,
+          is_valid: true,
+          last_validated_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('[LINKEDIN] Insert account error:', insertError)
+        return res.status(400).json({ error: 'No se pudo guardar la cuenta' })
+      }
+
+      console.log('[LINKEDIN] ✓ Cuenta conectada:', profileName)
+      return res.json({
+        success: true,
+        account,
+        message: `✓ Cuenta LinkedIn de ${profileName} conectada exitosamente`,
+      })
     }
     
     // Modo antiguo: si viene con cookie (para compatibilidad)
