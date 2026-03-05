@@ -29,18 +29,18 @@ async function getOrCreateTeam(userId) {
 }
 
 /**
- * Obtiene cookies y URL actual de la sesión Browserless via CDP
+ * Una sola conexión CDP que capta screenshot + cookies + URL simultáneamente
  */
-function getSessionState(cdpWsUrl) {
+function getFullState(cdpWsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(cdpWsUrl);
     const results = {};
-    let cookiesReceived = false;
-    let urlReceived = false;
+    const needed = new Set([1, 2, 3]);
+    const got = new Set();
     let closed = false;
 
     function tryResolve() {
-      if (cookiesReceived && urlReceived && !closed) {
+      if (got.size === needed.size && !closed) {
         closed = true;
         try { ws.close(); } catch { /* */ }
         resolve(results);
@@ -48,25 +48,35 @@ function getSessionState(cdpWsUrl) {
     }
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ id: 1, method: 'Network.getCookies' }));
-      ws.send(JSON.stringify({ id: 2, method: 'Runtime.evaluate', params: { expression: 'window.location.href' } }));
+      ws.send(JSON.stringify({ id: 1, method: 'Page.captureScreenshot', params: { format: 'jpeg', quality: 60 } }));
+      ws.send(JSON.stringify({ id: 2, method: 'Network.getCookies' }));
+      ws.send(JSON.stringify({ id: 3, method: 'Runtime.evaluate', params: { expression: 'window.location.href' } }));
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.id === 1) { results.cookies = msg.result?.cookies || []; cookiesReceived = true; tryResolve(); }
-        if (msg.id === 2) { results.url = msg.result?.result?.value || ''; urlReceived = true; tryResolve(); }
+        if (msg.id === 1) { results.screenshot = msg.result?.data || null; got.add(1); tryResolve(); }
+        if (msg.id === 2) { results.cookies = msg.result?.cookies || []; got.add(2); tryResolve(); }
+        if (msg.id === 3) { results.url = msg.result?.result?.value || ''; got.add(3); tryResolve(); }
       } catch { /* */ }
     };
 
     ws.onerror = () => { if (!closed) { closed = true; reject(new Error('CDP error')); } };
     ws.onclose = () => {
-      if (!closed && (!cookiesReceived || !urlReceived)) { closed = true; reject(new Error('CDP cerrado sin resultado')); }
+      if (!closed) {
+        closed = true;
+        // resolve with whatever we have rather than rejecting (screenshot may be slow)
+        if (got.size > 0) resolve(results); else reject(new Error('CDP cerrado sin datos'));
+      }
     };
     setTimeout(() => {
-      if (!closed) { closed = true; try { ws.close(); } catch { /* */ } reject(new Error('CDP timeout')); }
-    }, 8000);
+      if (!closed) {
+        closed = true;
+        try { ws.close(); } catch { /* */ }
+        if (got.size > 0) resolve(results); else reject(new Error('CDP timeout'));
+      }
+    }, 9000);
   });
 }
 
@@ -204,27 +214,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
-  // GET — screenshot o estado de sesión
+  // GET — screenshot + detección de login en UN SOLO WebSocket
   if (req.method === 'GET') {
     res.setHeader('Cache-Control', 'no-store');
     const { pageId } = req.query;
     if (!pageId) return res.status(400).json({ error: 'pageId requerido' });
     const cdpWsUrl = `wss://chrome.browserless.io/devtools/page/${pageId}?token=${token}`;
-
-    // Screenshot
-    if (req.query.screenshot === '1') {
-      try {
-        const result = await sendCDP(cdpWsUrl, 'Page.captureScreenshot', { format: 'jpeg', quality: 65 });
-        return res.status(200).json({ image: result.data });
-      } catch (err) {
-        return res.status(200).json({ error: err.message });
-      }
-    }
-
-    // Estado de sesión (polling)
     try {
-      const { cookies, url } = await getSessionState(cdpWsUrl);
-      const liAtCookie = cookies.find(c => c.name === 'li_at');
+      const { screenshot, cookies, url } = await getFullState(cdpWsUrl);
+      const liAtCookie = (cookies || []).find(c => c.name === 'li_at');
       const isAtFeed = url && (
         url.includes('linkedin.com/feed') ||
         url.includes('linkedin.com/in/') ||
@@ -232,7 +230,7 @@ export default async function handler(req, res) {
         url.includes('linkedin.com/sales')
       );
       if (!liAtCookie || !isAtFeed) {
-        return res.status(200).json({ status: 'pending', url, hasLiAt: !!liAtCookie });
+        return res.status(200).json({ image: screenshot || null, status: 'pending', url });
       }
       const liAt = liAtCookie.value;
       let profileName = 'Usuario LinkedIn';
@@ -280,6 +278,7 @@ export default async function handler(req, res) {
         await fetch(`https://chrome.browserless.io/json/close/${pageId}?token=${token}`, { method: 'DELETE' });
       } catch { /* ignorar */ }
       return res.status(200).json({
+        image: screenshot || null,
         status: 'connected', profileName,
         message: `✓ Cuenta de ${profileName} conectada exitosamente`,
       });
