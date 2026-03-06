@@ -119,20 +119,23 @@ async function handleGenerateLink(req, res) {
       return res.status(500).json({ error: 'Error de configuración del servidor. Contacta al administrador.' });
     }
 
-    // Debug: log para verificar credenciales (primeros/últimos chars)
-    console.log(`[UNIPILE] DSN: "${unipileDsn}", API Key: "${unipileApiKey.slice(0,6)}...${unipileApiKey.slice(-4)}" (len: ${unipileApiKey.length})`);
-
     const unipileUrl = `https://${unipileDsn}/api/v1/hosted/accounts/link`;
-    console.log(`[UNIPILE] URL: ${unipileUrl}`);
-    const expiresOn = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-    const successRedirectUrl = (process.env.FRONTEND_URL || 'http://localhost:5173') 
-      + '/dashboard/accounts?unipile=success';
+    // expiresOn: formato estricto YYYY-MM-DDTHH:MM:SS.sssZ (30 min desde ahora)
+    const expires = new Date(Date.now() + 30 * 60 * 1000);
+    const expiresOn = expires.toISOString().replace(/(\.\d{3})\d*Z$/, '$1Z');
 
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const successRedirectUrl = frontendUrl + '/dashboard/accounts?unipile=success';
+
+    // notify_url: donde Unipile nos avisa cuando el usuario completa el login
     const webhookUrl = (process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
-      : process.env.FRONTEND_URL || 'http://localhost:3001')
+      : frontendUrl)
       + '/api/unipile?action=webhook';
+
+    // api_url: URL del servidor Unipile (NO nuestro webhook)
+    const unipileServerUrl = `https://${unipileDsn}`;
 
     const response = await fetch(unipileUrl, {
       method: 'POST',
@@ -144,11 +147,11 @@ async function handleGenerateLink(req, res) {
       body: JSON.stringify({
         type: 'create',
         providers: ['LINKEDIN'],
-        externalId: userId,
-        notify_url: successRedirectUrl,
-        name: user.email,
+        api_url: unipileServerUrl,
         expiresOn: expiresOn,
-        api_url: webhookUrl,
+        name: `${userId}`,
+        success_redirect_url: successRedirectUrl,
+        notify_url: webhookUrl,
       }),
     });
 
@@ -196,9 +199,10 @@ async function handleWebhook(req, res) {
     }
 
     const unipileAccountId = data.account_id || data.accountId || data.id;
-    const externalId = data.external_id || data.externalId;
+    // name lleva nuestro userId (lo pasamos en generate-link)
+    const externalId = data.name || data.external_id || data.externalId;
     const provider = data.provider || 'LINKEDIN';
-    const accountName = data.name || data.account_name || null;
+    const accountName = data.account_name || null;
 
     if (!unipileAccountId) {
       console.error('[WEBHOOK] account_id no encontrado:', JSON.stringify(data));
@@ -206,8 +210,8 @@ async function handleWebhook(req, res) {
     }
 
     if (!externalId) {
-      console.error('[WEBHOOK] external_id (user_id) no encontrado:', JSON.stringify(data));
-      return res.status(400).json({ error: 'Falta external_id (user_id) en el payload.' });
+      console.error('[WEBHOOK] user_id no encontrado en name/external_id:', JSON.stringify(data));
+      return res.status(400).json({ error: 'Falta user_id en el payload.' });
     }
 
     const { data: user, error: userError } = await supabaseAdmin
