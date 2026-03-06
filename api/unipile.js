@@ -189,45 +189,97 @@ async function handleWebhook(req, res) {
     const payload = req.body;
     console.log('[WEBHOOK] Evento recibido de Unipile:', JSON.stringify(payload, null, 2));
 
+    // Unipile envía: { "AccountStatus": { "account_id": "...", "message": "OK", "account_type": "LINKEDIN" } }
+    const accountStatus = payload.AccountStatus || payload.account_status;
+    
+    // También soportar formato alternativo con event/data
     const event = payload.event || payload.type;
-    const data = payload.data || payload;
+    const eventData = payload.data || payload;
 
-    const eventosConexion = ['account.created', 'account.connected', 'account_connected'];
-    if (!eventosConexion.includes(event)) {
-      console.log(`[WEBHOOK] Evento "${event}" ignorado (no es de conexión).`);
+    let unipileAccountId;
+    let provider;
+
+    if (accountStatus) {
+      // Formato real de Unipile
+      if (accountStatus.message !== 'OK') {
+        console.log(`[WEBHOOK] AccountStatus con message="${accountStatus.message}", ignorado.`);
+        return res.status(200).json({ received: true, processed: false });
+      }
+      unipileAccountId = accountStatus.account_id;
+      provider = accountStatus.account_type || 'LINKEDIN';
+    } else if (event) {
+      // Formato alternativo documentado
+      const eventosConexion = ['account.created', 'account.connected', 'account_connected'];
+      if (!eventosConexion.includes(event)) {
+        console.log(`[WEBHOOK] Evento "${event}" ignorado (no es de conexión).`);
+        return res.status(200).json({ received: true, processed: false });
+      }
+      unipileAccountId = eventData.account_id || eventData.accountId || eventData.id;
+      provider = eventData.provider || eventData.account_type || 'LINKEDIN';
+    } else {
+      console.log('[WEBHOOK] Formato de payload no reconocido, ignorado.');
       return res.status(200).json({ received: true, processed: false });
     }
 
-    const unipileAccountId = data.account_id || data.accountId || data.id;
-    // name lleva nuestro userId (lo pasamos en generate-link)
-    const externalId = data.name || data.external_id || data.externalId;
-    const provider = data.provider || 'LINKEDIN';
-    const accountName = data.account_name || null;
-
     if (!unipileAccountId) {
-      console.error('[WEBHOOK] account_id no encontrado:', JSON.stringify(data));
+      console.error('[WEBHOOK] account_id no encontrado:', JSON.stringify(payload));
       return res.status(400).json({ error: 'Falta account_id en el payload.' });
     }
 
-    if (!externalId) {
-      console.error('[WEBHOOK] user_id no encontrado en name/external_id:', JSON.stringify(data));
-      return res.status(400).json({ error: 'Falta user_id en el payload.' });
+    // Consultar la API de Unipile para obtener los detalles de la cuenta
+    // (incluido el name que contiene nuestro userId)
+    const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+    const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+    
+    let userId = null;
+    let profileName = null;
+
+    if (unipileDsn && unipileApiKey) {
+      try {
+        const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${unipileAccountId}`, {
+          headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+        });
+        if (accountRes.ok) {
+          const accountData = await accountRes.json();
+          console.log('[WEBHOOK] Datos de cuenta Unipile:', JSON.stringify(accountData, null, 2));
+          // name contiene nuestro userId (lo pasamos en generate-link)
+          userId = accountData.name || null;
+          profileName = accountData.connection_params?.user?.first_name 
+            ? `${accountData.connection_params.user.first_name} ${accountData.connection_params.user.last_name || ''}`.trim()
+            : null;
+        } else {
+          console.error('[WEBHOOK] Error obteniendo cuenta de Unipile:', accountRes.status);
+        }
+      } catch (fetchErr) {
+        console.error('[WEBHOOK] Error al consultar API Unipile:', fetchErr.message);
+      }
     }
 
+    // Fallback: buscar en campos del payload
+    if (!userId) {
+      userId = eventData?.name || eventData?.external_id || eventData?.externalId || null;
+    }
+
+    if (!userId) {
+      console.error('[WEBHOOK] No se pudo determinar el user_id para account:', unipileAccountId);
+      return res.status(400).json({ error: 'No se pudo vincular la cuenta al usuario.' });
+    }
+
+    // Verificar que el usuario existe
     const { data: user, error: userError } = await supabaseAdmin
       .from('users')
       .select('id')
-      .eq('id', externalId)
+      .eq('id', userId)
       .single();
 
     if (userError || !user) {
-      console.error(`[WEBHOOK] Usuario ${externalId} no encontrado.`);
+      console.error(`[WEBHOOK] Usuario ${userId} no encontrado.`);
       return res.status(404).json({ error: 'Usuario no encontrado.' });
     }
 
-    const teamId = await getOrCreateTeam(externalId);
+    const teamId = await getOrCreateTeam(userId);
     if (!teamId) {
-      console.error(`[WEBHOOK] No se pudo obtener/crear equipo para ${externalId}`);
+      console.error(`[WEBHOOK] No se pudo obtener/crear equipo para ${userId}`);
       return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
     }
 
@@ -244,7 +296,7 @@ async function handleWebhook(req, res) {
         .update({
           status: 'active',
           is_valid: true,
-          profile_name: accountName || undefined,
+          profile_name: profileName || undefined,
           last_validated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -255,19 +307,19 @@ async function handleWebhook(req, res) {
         return res.status(500).json({ error: 'Error al actualizar la cuenta.' });
       }
 
-      console.log(`[WEBHOOK] Cuenta reconectada: ${unipileAccountId} → usuario ${externalId}`);
+      console.log(`[WEBHOOK] ✓ Cuenta reconectada: ${unipileAccountId} → usuario ${userId}`);
       return res.status(200).json({ received: true, action: 'updated' });
     }
 
     // Crear nueva cuenta
-    const username = (accountName || 'linkedin').toLowerCase().replace(/\s+/g, '-');
+    const username = (profileName || 'linkedin').toLowerCase().replace(/\s+/g, '-');
     const { data: newAccount, error: insertError } = await supabaseAdmin
       .from('linkedin_accounts')
       .insert({
         team_id: teamId,
         username: username,
         unipile_account_id: unipileAccountId,
-        profile_name: accountName || `LinkedIn (${provider})`,
+        profile_name: profileName || `LinkedIn (${provider})`,
         connection_method: 'unipile',
         status: 'active',
         is_valid: true,
@@ -282,7 +334,7 @@ async function handleWebhook(req, res) {
       return res.status(500).json({ error: 'Error al guardar la cuenta de LinkedIn.' });
     }
 
-    console.log(`[WEBHOOK] ✓ Cuenta creada: ${newAccount.id} (Unipile: ${unipileAccountId}) → usuario ${externalId}`);
+    console.log(`[WEBHOOK] ✓ Cuenta creada: ${newAccount.id} (Unipile: ${unipileAccountId}) → usuario ${userId}`);
     return res.status(200).json({ received: true, action: 'created', accountId: newAccount.id });
 
   } catch (err) {
