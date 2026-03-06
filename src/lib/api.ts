@@ -84,6 +84,10 @@ export const api = {
   deleteLinkedInAccount: (accountId: string) =>
     request('DELETE', `/api/linkedin/accounts/${accountId}`),
 
+  // Unipile – Conexión segura de LinkedIn
+  generateUnipileLink: () =>
+    request('POST', '/api/unipile/generate-link'),
+
   // Campaigns
   createCampaign: (name: string, linkedInAccountId: string, settings?: any) =>
     request('POST', '/api/linkedin/campaigns', { name, linkedInAccountId, settings }),

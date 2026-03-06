@@ -4,7 +4,8 @@ import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key } from "lucide-react"
+import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key, Linkedin } from "lucide-react"
+import ConnectLinkedInButton from "@/src/components/connect-linkedin-button"
 
 interface LinkedInAccount {
   id: string
@@ -62,6 +63,18 @@ export default function AccountsPage() {
   React.useEffect(() => { fetchAccounts() }, [])
   React.useEffect(() => {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+  }, [])
+
+  // Detectar retorno desde Unipile (?unipile=success en la URL)
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("unipile") === "success") {
+      setSuccess("✓ Cuenta conectada vía Unipile. Actualizando lista...")
+      // Limpiar parámetro de la URL sin recargar
+      window.history.replaceState({}, "", window.location.pathname)
+      // Refrescar la lista de cuentas (el webhook puede tardar unos segundos)
+      setTimeout(() => fetchAccounts(), 2000)
+    }
   }, [])
 
   const startCloudLogin = async () => {
@@ -247,6 +260,12 @@ export default function AccountsPage() {
           >
             <Key className="w-3.5 h-3.5" /> Conectar por cookie
           </Button>
+          <ConnectLinkedInButton
+            onSuccess={() => {
+              setSuccess("Enlace generado. Completa el login en la pestaña abierta.")
+            }}
+            onError={(msg) => setError(msg)}
+          />
           <Button
             onClick={startCloudLogin}
             disabled={sessionStatus === "starting" || sessionStatus === "open"}
@@ -254,7 +273,7 @@ export default function AccountsPage() {
           >
             {sessionStatus === "starting"
               ? <><Loader className="w-4 h-4 animate-spin" /> Iniciando...</>
-              : <><Plus className="w-4 h-4" /> Conectar cuenta</>}
+              : <><Plus className="w-4 h-4" /> Cloud Login</>}
           </Button>
         </div>
       </div>
@@ -300,12 +319,13 @@ export default function AccountsPage() {
             ) : accounts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-16 text-slate-400">
-                  <Monitor className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+                  <Linkedin className="w-12 h-12 mx-auto mb-4 text-slate-600" />
                   <p className="mb-2 font-medium">No hay cuentas conectadas</p>
-                  <p className="text-sm mb-4">Haz clic en "Conectar cuenta" — se abre LinkedIn aquí mismo</p>
-                  <Button onClick={startCloudLogin} variant="outline" className="gap-2">
-                    <Plus className="w-4 h-4" /> Conectar primera cuenta
-                  </Button>
+                  <p className="text-sm mb-4">Conecta tu LinkedIn de forma segura con Unipile</p>
+                  <ConnectLinkedInButton
+                    onSuccess={() => setSuccess("Enlace generado. Completa el login en la pestaña abierta.")}
+                    onError={(msg) => setError(msg)}
+                  />
                 </TableCell>
               </TableRow>
             ) : (
