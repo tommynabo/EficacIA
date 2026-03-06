@@ -140,7 +140,6 @@ async function handleGenerateLink(req, res) {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         'X-API-KEY': unipileApiKey,
-        'Authorization': `Bearer ${unipileApiKey}`,
       },
       body: JSON.stringify({
         type: 'create',
