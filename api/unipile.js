@@ -111,15 +111,19 @@ async function handleGenerateLink(req, res) {
       return res.status(404).json({ error: 'Usuario no encontrado.' });
     }
 
-    const unipileDsn = process.env.UNIPILE_DSN;
-    const unipileApiKey = process.env.UNIPILE_API_KEY;
+    const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+    const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
 
     if (!unipileDsn || !unipileApiKey) {
       console.error('[UNIPILE] Faltan variables de entorno UNIPILE_DSN o UNIPILE_API_KEY');
       return res.status(500).json({ error: 'Error de configuración del servidor. Contacta al administrador.' });
     }
 
+    // Debug: log para verificar credenciales (primeros/últimos chars)
+    console.log(`[UNIPILE] DSN: "${unipileDsn}", API Key: "${unipileApiKey.slice(0,6)}...${unipileApiKey.slice(-4)}" (len: ${unipileApiKey.length})`);
+
     const unipileUrl = `https://${unipileDsn}/api/v1/hosted/accounts/link`;
+    console.log(`[UNIPILE] URL: ${unipileUrl}`);
     const expiresOn = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     const successRedirectUrl = (process.env.FRONTEND_URL || 'http://localhost:5173') 
