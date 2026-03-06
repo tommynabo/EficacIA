@@ -49,7 +49,7 @@ export default function ConnectLinkedInButton({
       }
 
       // Llamar al endpoint para generar el link de Unipile
-      const response = await fetch("/api/unipile/generate-link", {
+      const response = await fetch("/api/unipile", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

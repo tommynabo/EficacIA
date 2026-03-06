@@ -86,7 +86,7 @@ export const api = {
 
   // Unipile – Conexión segura de LinkedIn
   generateUnipileLink: () =>
-    request('POST', '/api/unipile/generate-link'),
+    request('POST', '/api/unipile'),
 
   // Campaigns
   createCampaign: (name: string, linkedInAccountId: string, settings?: any) =>
