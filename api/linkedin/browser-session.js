@@ -29,7 +29,8 @@ async function getOrCreateTeam(userId) {
 }
 
 /**
- * Una sola conexión CDP que capta screenshot + cookies + URL simultáneamente
+ * Una sola conexión CDP que capta screenshot + cookies + URL simultáneamente.
+ * Activa Network/Page antes de los comandos de datos (CDP procesa en orden).
  */
 function getFullState(cdpWsUrl) {
   return new Promise((resolve, reject) => {
@@ -48,7 +49,11 @@ function getFullState(cdpWsUrl) {
     }
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ id: 1, method: 'Page.captureScreenshot', params: { format: 'jpeg', quality: 60 } }));
+      // Enable domains first — CDP processes in order so these run before data commands
+      ws.send(JSON.stringify({ id: 10, method: 'Network.enable' }));
+      ws.send(JSON.stringify({ id: 11, method: 'Page.enable' }));
+      // Data commands (will execute after enables in the same queue)
+      ws.send(JSON.stringify({ id: 1, method: 'Page.captureScreenshot', params: { format: 'jpeg', quality: 55 } }));
       ws.send(JSON.stringify({ id: 2, method: 'Network.getCookies' }));
       ws.send(JSON.stringify({ id: 3, method: 'Runtime.evaluate', params: { expression: 'window.location.href' } }));
     };
@@ -66,7 +71,6 @@ function getFullState(cdpWsUrl) {
     ws.onclose = () => {
       if (!closed) {
         closed = true;
-        // resolve with whatever we have rather than rejecting (screenshot may be slow)
         if (got.size > 0) resolve(results); else reject(new Error('CDP cerrado sin datos'));
       }
     };
@@ -84,7 +88,7 @@ function getFullState(cdpWsUrl) {
  * Conectar a CDP de Browserless via WebSocket nativo (Node 18+)
  * Envía un comando CDP y espera la respuesta
  */
-function sendCDP(wsUrl, method, params = {}) {
+function sendCDP(wsUrl, method, params = {}, timeoutMs = 6000) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     const id = 1;
@@ -99,18 +103,19 @@ function sendCDP(wsUrl, method, params = {}) {
         const msg = JSON.parse(event.data);
         if (msg.id === id) {
           done = true;
-          ws.close();
-          resolve(msg.result);
+          try { ws.close(); } catch { /* */ }
+          if (msg.error) reject(new Error(msg.error.message || 'CDP error'));
+          else resolve(msg.result);
         }
       } catch { /* ignorar */ }
     };
 
     ws.onerror = (err) => {
-      if (!done) reject(new Error('CDP WebSocket error: ' + err.message));
+      if (!done) { done = true; reject(new Error('CDP WebSocket error: ' + (err.message || 'unknown'))); }
     };
 
     ws.onclose = () => {
-      if (!done) reject(new Error('CDP WebSocket cerrado sin respuesta'));
+      if (!done) { done = true; reject(new Error('CDP WebSocket cerrado sin respuesta')); }
     };
 
     setTimeout(() => {
@@ -119,7 +124,7 @@ function sendCDP(wsUrl, method, params = {}) {
         try { ws.close(); } catch { /* */ }
         reject(new Error('CDP timeout'));
       }
-    }, 8000);
+    }, timeoutMs);
   });
 }
 
@@ -168,23 +173,36 @@ export default async function handler(req, res) {
       );
 
       if (!newPageRes.ok) {
-        const text = await newPageRes.text();
+        const errText = await newPageRes.text().catch(() => '');
+        console.error('[BROWSER-SESSION] Browserless /json/new failed:', newPageRes.status, errText.slice(0, 200));
         return res.status(502).json({
-          error: `Browserless no disponible: ${newPageRes.status} ${text.slice(0, 200)}`
+          error: `Browserless no disponible (${newPageRes.status}): ${errText.slice(0, 200) || 'sin respuesta'}`
         });
       }
 
       const page = await newPageRes.json();
       const pageId = page.id;
+      if (!pageId) {
+        return res.status(502).json({ error: 'Browserless no devolvió pageId. Respuesta: ' + JSON.stringify(page).slice(0, 200) });
+      }
+
       // El wsDebuggerUrl viene como ws://... pero necesitamos wss:// para chrome.browserless.io
       const cdpWsUrl = `wss://chrome.browserless.io/devtools/page/${pageId}?token=${token}`;
 
-      // 2. Navegar a LinkedIn login
-      await sendCDP(cdpWsUrl, 'Page.navigate', {
-        url: 'https://www.linkedin.com/login',
-      });
+      // 2. Navegar a LinkedIn login — NON-FATAL: si falla, el browser está abierto pero sin navegar.
+      //    El polling empezará igualmente y el usuario verá la página en blanco o podrá navegar.
+      try {
+        // Pequeña pausa para que el endpoint CDP esté listo después de crear la pestaña
+        await new Promise(r => setTimeout(r, 600));
+        await sendCDP(cdpWsUrl, 'Page.navigate', {
+          url: 'https://www.linkedin.com/login',
+        }, 7000);
+      } catch (navErr) {
+        // Loguear pero no abortar — devolvemos el pageId para que el cliente pueda mostrar el navegador
+        console.error('[BROWSER-SESSION] Page.navigate falló (non-fatal):', navErr.message);
+      }
 
-      // 3. Construir la URL del viewer live (abre en ventana nueva, no iframe)
+      // 3. Construir la URL del viewer live
       const liveViewerUrl =
         `https://chrome.browserless.io/devtools/inspector.html` +
         `?wss=chrome.browserless.io/devtools/page/${pageId}%3Ftoken%3D${token}`;
@@ -196,7 +214,7 @@ export default async function handler(req, res) {
         cdpWsUrl,
       });
     } catch (err) {
-      console.error('[BROWSER-SESSION] Error:', err.message);
+      console.error('[BROWSER-SESSION] Error fatal en POST:', err.message);
       return res.status(500).json({ error: err.message });
     }
   }

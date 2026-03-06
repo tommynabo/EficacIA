@@ -4,7 +4,7 @@ import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X } from "lucide-react"
+import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key } from "lucide-react"
 
 interface LinkedInAccount {
   id: string
@@ -32,6 +32,11 @@ export default function AccountsPage() {
   const imgRef = React.useRef<HTMLImageElement>(null)
   const BROWSER_W = 1280
   const BROWSER_H = 720
+
+  // Manual cookie state
+  const [showCookieForm, setShowCookieForm] = React.useState(false)
+  const [cookieValue, setCookieValue] = React.useState("")
+  const [cookieLoading, setCookieLoading] = React.useState(false)
 
   const fetchAccounts = async () => {
     try {
@@ -71,27 +76,39 @@ export default function AccountsPage() {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Error iniciando sesión")
+      if (!response.ok) {
+        const msg = data.error || `Error ${response.status} al iniciar sesión`
+        setSessionStatus("error")
+        setError(`No se pudo abrir el navegador: ${msg}`)
+        return
+      }
 
       setPageId(data.pageId)
       setSessionStatus("open")
       startPolling(data.pageId)
     } catch (err) {
       setSessionStatus("error")
-      setError(err instanceof Error ? err.message : "Error")
+      setError(err instanceof Error ? `Error de red: ${err.message}` : "Error desconocido")
     }
   }
 
   const startPolling = (pid: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current)
+    let pollCount = 0
+    const MAX_POLLS = 30 // ~36 seconds before giving up
+
     pollingRef.current = setInterval(async () => {
+      pollCount++
       try {
         const token = localStorage.getItem("auth_token")
         const res = await fetch(`/api/linkedin/browser-session?pageId=${pid}&_=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
-        if (data.image) setScreenshot(data.image)
+        if (data.image) {
+          setScreenshot(data.image)
+          pollCount = 0 // reset timeout when we get a screenshot
+        }
         if (data.status === "connected") {
           clearInterval(pollingRef.current!)
           pollingRef.current = null
@@ -100,8 +117,26 @@ export default function AccountsPage() {
           setScreenshot(null)
           setPageId(null)
           await fetchAccounts()
+        } else if (!res.ok && pollCount > 5) {
+          // After 5 consecutive errors, abort
+          clearInterval(pollingRef.current!)
+          pollingRef.current = null
+          setSessionStatus("error")
+          setError(`El navegador en la nube no responde: ${data.error || `HTTP ${res.status}`}. Prueba "Conectar por cookie" como alternativa.`)
+          setScreenshot(null)
+          setPageId(null)
         }
-      } catch { /* ignorar */ }
+      } catch { /* ignorar errores de red transitorios */ }
+
+      // If we've been polling too long without a screenshot, suggest manual
+      if (pollCount >= MAX_POLLS) {
+        clearInterval(pollingRef.current!)
+        pollingRef.current = null
+        setSessionStatus("error")
+        setError("El navegador en la nube tardó demasiado. Usa 'Conectar por cookie' para conectar tu cuenta directamente.")
+        setScreenshot(null)
+        setPageId(null)
+      }
     }, 1200)
   }
 
@@ -170,6 +205,32 @@ export default function AccountsPage() {
     }
   }
 
+  const submitCookieManually = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const val = cookieValue.trim()
+    if (!val) return
+    try {
+      setCookieLoading(true)
+      setError(null)
+      const token = localStorage.getItem("auth_token")
+      const response = await fetch("/api/linkedin/accounts", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ li_at: val }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Error al conectar")
+      setSuccess(data.message || "✓ Cuenta conectada")
+      setShowCookieForm(false)
+      setCookieValue("")
+      await fetchAccounts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido")
+    } finally {
+      setCookieLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -177,15 +238,25 @@ export default function AccountsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Cuentas LinkedIn</h2>
           <p className="text-slate-400">Conecta tu cuenta LinkedIn. El sistema captura la sesión automáticamente.</p>
         </div>
-        <Button
-          onClick={startCloudLogin}
-          disabled={sessionStatus === "starting" || sessionStatus === "open"}
-          className="gap-2"
-        >
-          {sessionStatus === "starting"
-            ? <><Loader className="w-4 h-4 animate-spin" /> Iniciando...</>
-            : <><Plus className="w-4 h-4" /> Conectar cuenta</>}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setShowCookieForm(true); setError(null) }}
+            className="gap-1.5 text-slate-400 hover:text-slate-200 text-xs"
+          >
+            <Key className="w-3.5 h-3.5" /> Conectar por cookie
+          </Button>
+          <Button
+            onClick={startCloudLogin}
+            disabled={sessionStatus === "starting" || sessionStatus === "open"}
+            className="gap-2"
+          >
+            {sessionStatus === "starting"
+              ? <><Loader className="w-4 h-4 animate-spin" /> Iniciando...</>
+              : <><Plus className="w-4 h-4" /> Conectar cuenta</>}
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -267,6 +338,58 @@ export default function AccountsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Modal: conectar por cookie manual */}
+      {showCookieForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-blue-400" />
+                <h3 className="font-semibold text-slate-100 text-sm">Conectar con cookie li_at</h3>
+              </div>
+              <button onClick={() => setShowCookieForm(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={submitCookieManually} className="p-5 space-y-4">
+              <div className="bg-slate-800/60 rounded-lg p-3 text-xs text-slate-400 space-y-1.5 border border-slate-700/50">
+                <p className="font-medium text-slate-300">Cómo obtener tu cookie li_at:</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Abre LinkedIn en tu navegador e inicia sesión</li>
+                  <li>Pulsa F12 → pestaña <span className="font-mono bg-slate-700 px-1 rounded">Application</span></li>
+                  <li>En el menú lateral: <span className="font-mono bg-slate-700 px-1 rounded">Cookies → https://www.linkedin.com</span></li>
+                  <li>Busca la cookie <span className="font-mono bg-slate-700 px-1 rounded">li_at</span> y copia su valor</li>
+                </ol>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Pega el valor de la cookie li_at:</label>
+                <textarea
+                  value={cookieValue}
+                  onChange={e => setCookieValue(e.target.value)}
+                  placeholder="AQEDARxxxxxx..."
+                  rows={3}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none font-mono"
+                />
+              </div>
+              {error && (
+                <div className="flex items-start gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <div className="flex gap-2 justify-end">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowCookieForm(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" size="sm" disabled={cookieLoading || !cookieValue.trim()} className="gap-1.5">
+                  {cookieLoading ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Validando...</> : "Conectar cuenta"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Overlay de viewer en pantalla completa */}
       {(sessionStatus === "starting" || sessionStatus === "open") && (
