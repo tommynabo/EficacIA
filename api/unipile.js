@@ -125,14 +125,15 @@ async function handleGenerateLink(req, res) {
     const expires = new Date(Date.now() + 30 * 60 * 1000);
     const expiresOn = expires.toISOString().replace(/(\.\d{3})\d*Z$/, '$1Z');
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const successRedirectUrl = frontendUrl + '/dashboard/accounts?unipile=success';
+    // Derivar URL base del host actual (funciona en Vercel y local)
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host; // ej: eficac-ia.vercel.app
+    const baseUrl = `${protocol}://${host}`;
+
+    const successRedirectUrl = baseUrl + '/dashboard/accounts?unipile=success';
 
     // notify_url: donde Unipile nos avisa cuando el usuario completa el login
-    const webhookUrl = (process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : frontendUrl)
-      + '/api/unipile?action=webhook';
+    const webhookUrl = baseUrl + '/api/unipile?action=webhook';
 
     // api_url: URL del servidor Unipile (NO nuestro webhook)
     const unipileServerUrl = `https://${unipileDsn}`;
@@ -168,7 +169,7 @@ async function handleGenerateLink(req, res) {
       return res.status(502).json({ error: 'Respuesta inesperada de Unipile. Inténtalo de nuevo.' });
     }
 
-    console.log(`[UNIPILE] Link generado para usuario ${userId}`);
+    console.log(`[UNIPILE] Link generado para usuario ${userId} | redirect=${successRedirectUrl} | webhook=${webhookUrl}`);
     return res.status(200).json({ url: data.url, message: 'Enlace de conexión generado correctamente.' });
 
   } catch (err) {
