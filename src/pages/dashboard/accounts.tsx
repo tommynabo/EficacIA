@@ -80,7 +80,12 @@ export default function AccountsPage() {
     }
   }
 
-  React.useEffect(() => { fetchAccounts() }, [])
+  React.useEffect(() => {
+    fetchAccounts().then(() => {
+      // Sincronizar cuentas de Unipile automáticamente al cargar la página
+      syncUnipileAccounts()
+    })
+  }, [])
   React.useEffect(() => {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
   }, [])
@@ -92,7 +97,6 @@ export default function AccountsPage() {
       // Limpiar parámetro de la URL sin recargar
       window.history.replaceState({}, "", window.location.pathname)
       setSuccess("Sincronizando cuenta de LinkedIn...")
-      // Sincronizar todas las cuentas de Unipile (método infalible)
       syncUnipileAccounts()
     }
   }, [])
