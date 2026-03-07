@@ -133,7 +133,8 @@ async function handleGenerateLink(req, res) {
     const successRedirectUrl = baseUrl + '/dashboard/accounts?unipile=success';
 
     // notify_url: donde Unipile nos avisa cuando el usuario completa el login
-    const webhookUrl = baseUrl + '/api/unipile?action=webhook';
+    // Incluimos userId en la query porque Unipile sobreescribe el campo 'name'
+    const webhookUrl = baseUrl + `/api/unipile?action=webhook&userId=${userId}`;
 
     // api_url: URL del servidor Unipile (NO nuestro webhook)
     const unipileServerUrl = `https://${unipileDsn}`;
@@ -227,13 +228,14 @@ async function handleWebhook(req, res) {
       return res.status(400).json({ error: 'Falta account_id en el payload.' });
     }
 
-    // Consultar la API de Unipile para obtener los detalles de la cuenta
-    // (incluido el name que contiene nuestro userId)
+    // userId viene en la query del notify_url (lo incluimos al generar el link)
+    // Unipile sobreescribe el campo 'name' con el nombre del perfil de LinkedIn
+    let userId = req.query.userId || null;
+    let profileName = null;
+
+    // Consultar la API de Unipile para obtener el nombre del perfil
     const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
     const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
-    
-    let userId = null;
-    let profileName = null;
 
     if (unipileDsn && unipileApiKey) {
       try {
@@ -243,22 +245,16 @@ async function handleWebhook(req, res) {
         if (accountRes.ok) {
           const accountData = await accountRes.json();
           console.log('[WEBHOOK] Datos de cuenta Unipile:', JSON.stringify(accountData, null, 2));
-          // name contiene nuestro userId (lo pasamos en generate-link)
-          userId = accountData.name || null;
-          profileName = accountData.connection_params?.user?.first_name 
-            ? `${accountData.connection_params.user.first_name} ${accountData.connection_params.user.last_name || ''}`.trim()
-            : null;
+          // Extraer nombre del perfil de LinkedIn
+          profileName = accountData.connection_params?.im?.username
+            || accountData.name
+            || null;
         } else {
           console.error('[WEBHOOK] Error obteniendo cuenta de Unipile:', accountRes.status);
         }
       } catch (fetchErr) {
         console.error('[WEBHOOK] Error al consultar API Unipile:', fetchErr.message);
       }
-    }
-
-    // Fallback: buscar en campos del payload
-    if (!userId) {
-      userId = eventData?.name || eventData?.external_id || eventData?.externalId || null;
     }
 
     if (!userId) {
