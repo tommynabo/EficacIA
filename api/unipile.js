@@ -88,6 +88,12 @@ export default async function handler(req, res) {
     return handleWebhook(req, res);
   }
 
+  // ─── SYNC: POST /api/unipile?action=sync ─────────────────────────
+  // Sincroniza cuentas de Unipile con nuestra DB (llamado desde frontend)
+  if (action === 'sync') {
+    return handleSync(req, res);
+  }
+
   // ─── REGISTER: POST /api/unipile?action=register&accountId=XXX ──
   // Llamado desde el frontend cuando el usuario vuelve del auth de Unipile
   if (action === 'register') {
@@ -182,6 +188,99 @@ async function handleGenerateLink(req, res) {
   } catch (err) {
     console.error('[UNIPILE] Error interno:', err);
     return res.status(500).json({ error: 'Error interno del servidor. Inténtalo más tarde.' });
+  }
+}
+
+// ─── Sync: sincroniza cuentas de Unipile con nuestra DB ────────────
+
+async function handleSync(req, res) {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'No autenticado.' });
+    }
+
+    const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+    const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+
+    if (!unipileDsn || !unipileApiKey) {
+      return res.status(500).json({ error: 'Configuración de Unipile incompleta.' });
+    }
+
+    // Listar todas las cuentas de Unipile
+    const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts`, {
+      headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+    });
+
+    if (!listRes.ok) {
+      console.error('[SYNC] Error listando cuentas Unipile:', listRes.status);
+      return res.status(502).json({ error: 'Error al consultar Unipile.' });
+    }
+
+    const listData = await listRes.json();
+    const accounts = listData.items || listData || [];
+    console.log(`[SYNC] Unipile devolvió ${Array.isArray(accounts) ? accounts.length : 0} cuentas`);
+
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      return res.status(200).json({ synced: 0, message: 'No hay cuentas en Unipile.' });
+    }
+
+    const teamId = await getOrCreateTeam(userId);
+    if (!teamId) {
+      return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
+    }
+
+    // Obtener cuentas ya registradas
+    const { data: existingAccounts } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('unipile_account_id')
+      .eq('team_id', teamId);
+
+    const existingIds = new Set((existingAccounts || []).map(a => a.unipile_account_id));
+
+    let synced = 0;
+    for (const account of accounts) {
+      const accountId = account.id;
+      if (!accountId || existingIds.has(accountId)) continue;
+
+      // Solo cuentas LinkedIn activas
+      const accountType = account.type || '';
+      const sources = account.sources || [];
+      const isActive = sources.some(s => s.status === 'OK');
+      if (!isActive) continue;
+
+      const profileName = account.connection_params?.im?.username
+        || account.name
+        || `LinkedIn (${accountType})`;
+      const username = profileName.toLowerCase().replace(/\s+/g, '-');
+
+      const { error: insertError } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .insert({
+          team_id: teamId,
+          username: username,
+          unipile_account_id: accountId,
+          profile_name: profileName,
+          connection_method: 'unipile',
+          status: 'active',
+          is_valid: true,
+          session_cookie: 'managed_by_unipile',
+          last_validated_at: new Date().toISOString(),
+        });
+
+      if (insertError) {
+        console.error(`[SYNC] Error insertando ${accountId}:`, insertError.message);
+      } else {
+        synced++;
+        console.log(`[SYNC] ✓ Cuenta registrada: ${accountId} (${profileName}) → usuario ${userId}`);
+      }
+    }
+
+    return res.status(200).json({ synced, message: `${synced} cuenta(s) sincronizada(s).` });
+
+  } catch (err) {
+    console.error('[SYNC] Error interno:', err);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 }
 

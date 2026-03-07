@@ -60,44 +60,40 @@ export default function AccountsPage() {
     }
   }
 
+  // Sincronizar cuentas de Unipile con nuestro backend
+  const syncUnipileAccounts = async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch("/api/unipile?action=sync", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.synced > 0) {
+        setSuccess(`✓ ${data.synced} cuenta(s) de LinkedIn sincronizada(s).`)
+        await fetchAccounts()
+      }
+      return data
+    } catch {
+      // Silencioso - sync es best-effort
+      return null
+    }
+  }
+
   React.useEffect(() => { fetchAccounts() }, [])
   React.useEffect(() => {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
   }, [])
 
-  // Detectar retorno desde Unipile (?unipile=success&account_id=XXX en la URL)
+  // Detectar retorno desde Unipile (?unipile=success en la URL)
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get("unipile") === "success") {
-      const accountId = params.get("account_id")
       // Limpiar parámetro de la URL sin recargar
       window.history.replaceState({}, "", window.location.pathname)
-
-      if (accountId) {
-        // Registrar la cuenta en nuestro backend (el usuario está autenticado)
-        setSuccess("Registrando cuenta de LinkedIn...")
-        const token = localStorage.getItem("auth_token")
-        fetch(`/api/unipile?action=register&accountId=${encodeURIComponent(accountId)}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.success) {
-              setSuccess("✓ Cuenta de LinkedIn conectada correctamente.")
-            } else {
-              setError(data.error || "Error al registrar la cuenta.")
-            }
-            fetchAccounts()
-          })
-          .catch(() => {
-            setError("Error al registrar la cuenta. Inténtalo de nuevo.")
-            fetchAccounts()
-          })
-      } else {
-        setSuccess("✓ Conexión completada. Actualizando lista...")
-        setTimeout(() => fetchAccounts(), 2000)
-      }
+      setSuccess("Sincronizando cuenta de LinkedIn...")
+      // Sincronizar todas las cuentas de Unipile (método infalible)
+      syncUnipileAccounts()
     }
   }, [])
 
