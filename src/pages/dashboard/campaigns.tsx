@@ -30,7 +30,7 @@ export default function CampaignsPage() {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await fetch(`${API_URL}/api/linkedin/campaigns`, {
+      const response = await fetch(`/api/linkedin/campaigns`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         }
