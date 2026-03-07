@@ -88,6 +88,9 @@ export const api = {
   generateUnipileLink: () =>
     request('POST', '/api/unipile'),
 
+  registerUnipileAccount: (accountId: string) =>
+    request('POST', `/api/unipile?action=register&accountId=${accountId}`),
+
   // Campaigns
   createCampaign: (name: string, linkedInAccountId: string, settings?: any) =>
     request('POST', '/api/linkedin/campaigns', { name, linkedInAccountId, settings }),

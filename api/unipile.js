@@ -88,6 +88,12 @@ export default async function handler(req, res) {
     return handleWebhook(req, res);
   }
 
+  // ─── REGISTER: POST /api/unipile?action=register&accountId=XXX ──
+  // Llamado desde el frontend cuando el usuario vuelve del auth de Unipile
+  if (action === 'register') {
+    return handleRegister(req, res);
+  }
+
   // ─── GENERATE LINK: POST /api/unipile  (default) ────────────────
   return handleGenerateLink(req, res);
 }
@@ -179,7 +185,108 @@ async function handleGenerateLink(req, res) {
   }
 }
 
-// ─── Webhook: Unipile notifica conexión completada ─────────────────
+// ─── Register: el frontend registra la cuenta tras completar auth ──
+
+async function handleRegister(req, res) {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'No autenticado.' });
+    }
+
+    const unipileAccountId = req.query.accountId;
+    if (!unipileAccountId) {
+      return res.status(400).json({ error: 'Falta accountId en la petición.' });
+    }
+
+    const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+    const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+
+    // Obtener detalles de la cuenta desde Unipile
+    let profileName = null;
+    let provider = 'LINKEDIN';
+
+    if (unipileDsn && unipileApiKey) {
+      try {
+        const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${unipileAccountId}`, {
+          headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+        });
+        if (accountRes.ok) {
+          const accountData = await accountRes.json();
+          console.log('[REGISTER] Datos de cuenta Unipile:', JSON.stringify(accountData, null, 2));
+          profileName = accountData.connection_params?.im?.username
+            || accountData.name
+            || null;
+          provider = accountData.type || 'LINKEDIN';
+        } else {
+          console.error('[REGISTER] Error obteniendo cuenta de Unipile:', accountRes.status);
+        }
+      } catch (fetchErr) {
+        console.error('[REGISTER] Error al consultar API Unipile:', fetchErr.message);
+      }
+    }
+
+    const teamId = await getOrCreateTeam(userId);
+    if (!teamId) {
+      return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
+    }
+
+    // Verificar si ya existe
+    const { data: existingAccount } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('id')
+      .eq('unipile_account_id', unipileAccountId)
+      .single();
+
+    if (existingAccount) {
+      await supabaseAdmin
+        .from('linkedin_accounts')
+        .update({
+          status: 'active',
+          is_valid: true,
+          profile_name: profileName || undefined,
+          last_validated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingAccount.id);
+
+      console.log(`[REGISTER] ✓ Cuenta reconectada: ${unipileAccountId} → usuario ${userId}`);
+      return res.status(200).json({ success: true, action: 'updated' });
+    }
+
+    // Crear nueva cuenta
+    const username = (profileName || 'linkedin').toLowerCase().replace(/\s+/g, '-');
+    const { data: newAccount, error: insertError } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .insert({
+        team_id: teamId,
+        username: username,
+        unipile_account_id: unipileAccountId,
+        profile_name: profileName || `LinkedIn (${provider})`,
+        connection_method: 'unipile',
+        status: 'active',
+        is_valid: true,
+        session_cookie: 'managed_by_unipile',
+        last_validated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[REGISTER] Error al insertar cuenta:', insertError.message);
+      return res.status(500).json({ error: 'Error al guardar la cuenta de LinkedIn.' });
+    }
+
+    console.log(`[REGISTER] ✓ Cuenta creada: ${newAccount.id} (Unipile: ${unipileAccountId}) → usuario ${userId}`);
+    return res.status(200).json({ success: true, action: 'created', accountId: newAccount.id });
+
+  } catch (err) {
+    console.error('[REGISTER] Error interno:', err);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+}
+
+// ─── Webhook: Unipile notifica conexión completada (backup) ────────
 
 async function handleWebhook(req, res) {
   try {

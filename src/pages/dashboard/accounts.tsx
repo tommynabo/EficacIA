@@ -65,15 +65,39 @@ export default function AccountsPage() {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
   }, [])
 
-  // Detectar retorno desde Unipile (?unipile=success en la URL)
+  // Detectar retorno desde Unipile (?unipile=success&account_id=XXX en la URL)
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get("unipile") === "success") {
-      setSuccess("✓ Cuenta conectada vía Unipile. Actualizando lista...")
+      const accountId = params.get("account_id")
       // Limpiar parámetro de la URL sin recargar
       window.history.replaceState({}, "", window.location.pathname)
-      // Refrescar la lista de cuentas (el webhook puede tardar unos segundos)
-      setTimeout(() => fetchAccounts(), 2000)
+
+      if (accountId) {
+        // Registrar la cuenta en nuestro backend (el usuario está autenticado)
+        setSuccess("Registrando cuenta de LinkedIn...")
+        const token = localStorage.getItem("auth_token")
+        fetch(`/api/unipile?action=register&accountId=${encodeURIComponent(accountId)}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success) {
+              setSuccess("✓ Cuenta de LinkedIn conectada correctamente.")
+            } else {
+              setError(data.error || "Error al registrar la cuenta.")
+            }
+            fetchAccounts()
+          })
+          .catch(() => {
+            setError("Error al registrar la cuenta. Inténtalo de nuevo.")
+            fetchAccounts()
+          })
+      } else {
+        setSuccess("✓ Conexión completada. Actualizando lista...")
+        setTimeout(() => fetchAccounts(), 2000)
+      }
     }
   }, [])
 
