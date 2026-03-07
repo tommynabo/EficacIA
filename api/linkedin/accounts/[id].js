@@ -31,15 +31,39 @@ export default async function handler(req, res) {
   const { id } = req.query;
 
   if (req.method === 'DELETE') {
-    // Verificar que la cuenta pertenece al usuario
+    // Obtener el equipo del usuario
+    const { data: teams } = await supabaseAdmin
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1);
+
+    const teamId = teams?.[0]?.id;
+    if (!teamId) return res.status(404).json({ error: 'Cuenta no encontrada' });
+
+    // Verificar que la cuenta pertenece al equipo del usuario
     const { data: account } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id')
+      .select('id, unipile_account_id')
       .eq('id', id)
-      .eq('user_id', userId)
+      .eq('team_id', teamId)
       .single();
 
     if (!account) return res.status(404).json({ error: 'Cuenta no encontrada' });
+
+    // Si es cuenta Unipile, desconectar también en Unipile
+    if (account.unipile_account_id) {
+      const dsn = (process.env.UNIPILE_DSN || '').trim();
+      const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+      if (dsn && apiKey) {
+        try {
+          await fetch(`https://${dsn}/api/v1/accounts/${account.unipile_account_id}`, {
+            method: 'DELETE',
+            headers: { 'X-API-KEY': apiKey },
+          });
+        } catch { /* best-effort */ }
+      }
+    }
 
     const { error } = await supabaseAdmin
       .from('linkedin_accounts')
