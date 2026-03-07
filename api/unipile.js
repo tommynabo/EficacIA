@@ -262,7 +262,6 @@ async function handleSync(req, res) {
           unipile_account_id: accountId,
           profile_name: profileName,
           connection_method: 'unipile',
-          status: 'active',
           is_valid: true,
           session_cookie: 'managed_by_unipile',
           last_validated_at: new Date().toISOString(),
@@ -341,7 +340,6 @@ async function handleRegister(req, res) {
       await supabaseAdmin
         .from('linkedin_accounts')
         .update({
-          status: 'active',
           is_valid: true,
           profile_name: profileName || undefined,
           last_validated_at: new Date().toISOString(),
@@ -363,7 +361,6 @@ async function handleRegister(req, res) {
         unipile_account_id: unipileAccountId,
         profile_name: profileName || `LinkedIn (${provider})`,
         connection_method: 'unipile',
-        status: 'active',
         is_valid: true,
         session_cookie: 'managed_by_unipile',
         last_validated_at: new Date().toISOString(),
@@ -497,7 +494,6 @@ async function handleWebhook(req, res) {
       const { error: updateError } = await supabaseAdmin
         .from('linkedin_accounts')
         .update({
-          status: 'active',
           is_valid: true,
           profile_name: profileName || undefined,
           last_validated_at: new Date().toISOString(),
@@ -524,7 +520,6 @@ async function handleWebhook(req, res) {
         unipile_account_id: unipileAccountId,
         profile_name: profileName || `LinkedIn (${provider})`,
         connection_method: 'unipile',
-        status: 'active',
         is_valid: true,
         session_cookie: 'managed_by_unipile',
         last_validated_at: new Date().toISOString(),
