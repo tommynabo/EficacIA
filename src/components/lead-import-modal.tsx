@@ -29,7 +29,7 @@ interface Account {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getApiHeaders(): Record<string, string> {
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem('auth_token')
   return {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -201,8 +201,8 @@ function FilterTag({ label }: { label: string }) {
 function FilterSection({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null
   return (
-    <div className="flex items-start gap-2 text-xs">
-      <span className="text-slate-500 shrink-0 w-20">{title}</span>
+    <div className="flex items-start gap-2 text-sm">
+      <span className="text-slate-500 shrink-0 w-24">{title}</span>
       <div className="flex flex-wrap gap-1">
         {items.map(item => <FilterTag key={item} label={item} />)}
       </div>
@@ -214,7 +214,7 @@ function AccountSelector({ accounts, value, onChange }: { accounts: Account[]; v
   const valid = accounts.filter(a => a.is_valid)
   if (valid.length === 0) {
     return (
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+      <div className="flex items-center gap-2 p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
         <AlertCircle className="w-4 h-4 shrink-0" />
         No hay cuentas de LinkedIn conectadas. Ve a <strong>Cuentas</strong> para conectar una.
       </div>
@@ -222,7 +222,7 @@ function AccountSelector({ accounts, value, onChange }: { accounts: Account[]; v
   }
   return (
     <div className="space-y-1.5">
-      <label className="text-xs text-slate-400">Cuenta de LinkedIn a usar</label>
+      <label className="text-sm text-slate-400">Cuenta de LinkedIn a usar</label>
       <div className="relative">
         <select
           value={value}
@@ -245,8 +245,8 @@ function LimitSlider({ value, onChange }: { value: number; onChange: (v: number)
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-slate-400">Máximo de leads a importar</label>
-        <span className="text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">{value}</span>
+        <label className="text-sm text-slate-400">Máximo de leads a importar</label>
+        <span className="text-sm font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">{value}</span>
       </div>
       <input
         type="range"
@@ -421,14 +421,14 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       onClick={onClose}
     >
       <div
-        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]"
+        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[92vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between px-7 pt-6 pb-5 border-b border-slate-800 shrink-0">
           <div>
-            <h2 className="text-base font-semibold">Importar Leads</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Elige un método para añadir leads a esta campaña</p>
+            <h2 className="text-lg font-semibold">Importar Leads</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Elige un método para añadir leads a esta campaña</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-200 transition-colors">
             <X className="w-5 h-5" />
@@ -436,7 +436,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         </div>
 
         {/* Method tabs */}
-        <div className="flex gap-1 px-4 pt-3 pb-0 shrink-0 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-1.5 px-5 pt-4 pb-1 shrink-0 overflow-x-auto scrollbar-hide">
           {METHODS.map(m => {
             const Icon = m.icon
             const active = method === m.id
@@ -445,11 +445,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 key={m.id}
                 onClick={() => { setMethod(m.id); resetResult() }}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors",
+                  "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
                   active ? "bg-blue-500/15 text-blue-400 border border-blue-500/30" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
                 )}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-4 h-4" />
                 {m.label}
               </button>
             )
@@ -457,14 +457,14 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-7 py-5 space-y-5">
 
           {/* ── CSV ── */}
           {method === 'csv' && (
             <div className="space-y-4">
-              <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3">
+              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
                 <strong className="text-slate-300">Columnas detectadas automáticamente:</strong>{' '}
-                first_name, last_name, email, company, position/job_title, linkedin_url (en inglés o español)
+                first_name, last_name, email, company, position / job_title, linkedin_url (en inglés o español)
               </div>
 
               {/* Drag & drop zone */}
@@ -484,8 +484,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 onClick={() => document.getElementById('csv-file-input')?.click()}
               >
                 <Upload className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">Arrastra tu CSV aquí o <span className="text-blue-400 underline">haz clic para subir</span></p>
-                <p className="text-xs text-slate-600 mt-1">Soporta .csv y .txt, cualquier separador (coma, punto y coma, tabulación)</p>
+                <p className="text-sm text-slate-300">Arrastra tu CSV aquí o <span className="text-blue-400 underline">haz clic para subir</span></p>
+                <p className="text-sm text-slate-500 mt-1">Soporta .csv y .txt — coma, punto y coma o tabulación</p>
                 <input
                   id="csv-file-input"
                   type="file"
@@ -551,13 +551,13 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           {/* ── Google Sheets ── */}
           {method === 'google_sheets' && (
             <div className="space-y-4">
-              <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3 space-y-1">
+              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5 space-y-1.5">
                 <p><strong className="text-slate-300">Antes de continuar:</strong> La hoja debe ser pública.</p>
                 <p>En Google Sheets: <span className="text-slate-300">Archivo → Compartir → "Cualquiera con el enlace puede ver"</span></p>
                 <p>Las columnas serán detectadas automáticamente (mismo formato que CSV).</p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400">URL de Google Sheets</label>
+                <label className="text-sm text-slate-400">URL de Google Sheets</label>
                 <Input
                   value={sheetsUrl}
                   onChange={e => setSheetsUrl(e.target.value)}
@@ -566,7 +566,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 />
               </div>
               {sheetsUrl && !sheetsUrl.includes('docs.google.com/spreadsheets') && (
-                <div className="flex items-center gap-2 text-xs text-amber-400">
+                <div className="flex items-center gap-2 text-sm text-amber-400">
                   <AlertCircle className="w-3.5 h-3.5" />
                   URL no válida de Google Sheets
                 </div>
@@ -577,12 +577,12 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           {/* ── LinkedIn Search ── */}
           {method === 'linkedin_search' && (
             <div className="space-y-4">
-              <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3">
+              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
                 <p><strong className="text-slate-300">Cómo obtener la URL:</strong> Realiza una búsqueda de personas en LinkedIn, filtra por lo que necesitas y copia la URL del navegador.</p>
                 <p className="mt-1 text-slate-600">Ejemplo: linkedin.com/search/results/people/?keywords=CEO+Spain</p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400">URL de búsqueda de LinkedIn</label>
+                <label className="text-sm text-slate-400">URL de búsqueda de LinkedIn</label>
                 <Input
                   value={liSearchUrl}
                   onChange={e => handleLiSearchUrlChange(e.target.value)}
@@ -591,13 +591,13 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 />
               </div>
               {liSearchParsed?.isValid && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                  <Check className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400">
+                  <Check className="w-4 h-4" />
                   Palabras clave detectadas: <strong>{liSearchParsed.keywords}</strong>
                 </div>
               )}
               {liSearchParsed && !liSearchParsed.isValid && liSearchParsed.error && (
-                <div className="flex items-center gap-2 text-xs text-red-400">
+                <div className="flex items-center gap-2 text-sm text-red-400">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {liSearchParsed.error}
                 </div>
@@ -610,12 +610,12 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           {/* ── Sales Navigator ── */}
           {method === 'sales_navigator' && (
             <div className="space-y-4">
-              <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3">
+              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
                 <p><strong className="text-slate-300">Cómo obtener la URL:</strong> Abre Sales Navigator, realiza tu búsqueda con los filtros deseados y copia la URL completa del navegador.</p>
                 <p className="mt-1 text-slate-600">Funciona con URLs de búsqueda: linkedin.com/sales/search/people?query=...</p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400">URL de Sales Navigator</label>
+                <label className="text-sm text-slate-400">URL de Sales Navigator</label>
                 <Input
                   value={snUrl}
                   onChange={e => handleSnUrlChange(e.target.value)}
@@ -627,8 +627,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               {/* Live filter preview — the key differentiator */}
               {snParsed && snParsed.isValid && !snParsed.error && (
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
-                    <Check className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2 text-sm font-medium text-emerald-400">
+                    <Check className="w-4 h-4" />
                     Filtros detectados correctamente
                   </div>
                   <div className="space-y-1.5">
@@ -643,7 +643,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               )}
 
               {snParsed && snParsed.error && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                <div className="flex items-start gap-2 p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>{snParsed.error}</span>
                 </div>
@@ -688,13 +688,13 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
           {/* Result / Error */}
           {importResult && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400">
+            <div className="flex items-center gap-2 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400">
               <Check className="w-4 h-4 shrink-0" />
               <span>{importResult.message}</span>
             </div>
           )}
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+            <div className="flex items-start gap-2 p-3.5 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -702,7 +702,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-800 shrink-0">
+        <div className="flex items-center justify-between gap-3 px-7 py-5 border-t border-slate-800 shrink-0">
           <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 transition-colors">
             Cancelar
           </button>
