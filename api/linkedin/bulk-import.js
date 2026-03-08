@@ -223,8 +223,8 @@ export default async function handler(req, res) {
     const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters } = req.body || {};
     const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
 
-    if (!leads || !Array.isArray(leads) || leads.length === 0) {
-      return res.status(400).json({ error: 'No se proporcionaron leads' });
+    if (!importType || importType === 'unknown') {
+      return res.status(400).json({ error: 'Tipo de importación no especificado' });
     }
 
     // ── Get or create team ──────────────────────────────────────────────────
@@ -254,7 +254,7 @@ export default async function handler(req, res) {
       // ── CSV / leads array ─────────────────────────────────────────────────
       if (importType === 'csv' || importType === 'leads') {
         if (!leads || !Array.isArray(leads) || leads.length === 0) {
-          return res.status(400).json({ error: 'No se proporcionaron leads' });
+          return res.status(400).json({ error: 'No se proporcionaron leads para importar' });
         }
         rawLeads = leads;
 

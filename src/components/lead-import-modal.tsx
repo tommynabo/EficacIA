@@ -178,13 +178,16 @@ function parseSalesNavUrl(rawUrl: string): ParsedSNFilters {
 
 function parseLinkedInSearchUrl(url: string): { keywords: string; isValid: boolean; error?: string } {
   if (!url.trim()) return { keywords: '', isValid: false }
-  if (!url.includes('linkedin.com/search/results/people')) {
-    return { keywords: '', isValid: false, error: 'URL no válida. Debe ser de linkedin.com/search/results/people' }
+  // Auto-add https:// if missing
+  let normalized = url.trim()
+  if (!normalized.startsWith('http')) normalized = 'https://' + normalized
+  if (!normalized.includes('linkedin.com/search/results/')) {
+    return { keywords: '', isValid: false, error: 'URL no válida. Debe ser de linkedin.com/search/results/' }
   }
   try {
-    const urlObj = new URL(url)
+    const urlObj = new URL(normalized)
     const keywords = decodeURIComponent(urlObj.searchParams.get('keywords') || '')
-    if (!keywords) return { keywords: '', isValid: false, error: 'No se encontró el parámetro "keywords" en la URL' }
+    if (!keywords) return { keywords: '', isValid: false, error: 'No se encontró el parámetro "keywords" en la URL. Ejemplo: ...?keywords=CEO+Spain' }
     return { keywords, isValid: true }
   } catch {
     return { keywords: '', isValid: false, error: 'URL malformada' }
@@ -669,14 +672,14 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             <div className="space-y-4">
               <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
                 <p><strong className="text-slate-300">Cómo obtener la URL:</strong> Realiza una búsqueda de personas en LinkedIn, filtra por lo que necesitas y copia la URL del navegador.</p>
-                <p className="mt-1 text-slate-600">Ejemplo: linkedin.com/search/results/people/?keywords=CEO+Spain</p>
+                <p className="mt-1 text-slate-600">Ejemplo: linkedin.com/search/results/all/?keywords=CEO+Spain</p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm text-slate-400">URL de búsqueda de LinkedIn</label>
                 <Input
                   value={liSearchUrl}
                   onChange={e => handleLiSearchUrlChange(e.target.value)}
-                  placeholder="https://www.linkedin.com/search/results/people/?keywords=..."
+                  placeholder="https://www.linkedin.com/search/results/all/?keywords=..."
                   className="bg-slate-950 border-slate-700 text-sm font-mono"
                 />
               </div>
