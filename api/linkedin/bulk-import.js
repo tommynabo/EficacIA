@@ -167,7 +167,52 @@ function extractProfilesFromApollo(data, limit) {
       linkedin_url: p.linkedin_url || '',
       email: p.email || null,
     });
+  }
   return profiles;
+}
+
+// ─── Apollo structured query search (from native Apollo form) ────────────────
+async function searchViaApolloQuery(q, limit) {
+  const apolloKey = (process.env.APOLLO_API_KEY || '').trim();
+  if (!apolloKey) {
+    throw new Error('Búsqueda con Apollo requiere APOLLO_API_KEY configurada en Vercel.');
+  }
+
+  const splitCsv = (str) => (str || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  const body = {
+    page: 1,
+    per_page: Math.min(limit, 25),
+    ...(q.titles    && { person_titles:      splitCsv(q.titles) }),
+    ...(q.locations && { person_locations:   splitCsv(q.locations) }),
+    ...(q.companies && { organization_names: splitCsv(q.companies) }),
+    ...(q.keywords  && { q_keywords:         q.keywords }),
+  };
+
+  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': apolloKey,
+      'Cache-Control': 'no-cache',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
+  }
+  if (response.status === 429) {
+    throw new Error('Límite de búsquedas alcanzado en Apollo. Espera unos minutos.');
+  }
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    console.error('[APOLLO STRUCTURED SEARCH] Error:', response.status, errText);
+    throw new Error(`Error en la búsqueda (${response.status}). Inténtalo de nuevo.`);
+  }
+
+  const data = await response.json();
+  return extractProfilesFromApollo(data, limit);
 }
 
 // ─── DB helper: insert leads + update campaign counter ────────────────────────
@@ -222,7 +267,7 @@ export default async function handler(req, res) {
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   if (req.method === 'POST') {
-    const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters } = req.body || {};
+    const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters, apollo_query } = req.body || {};
     const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
 
     if (!importType || importType === 'unknown') {
@@ -265,6 +310,17 @@ export default async function handler(req, res) {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de Google Sheets' });
         const csvText = await fetchGoogleSheetsCsv(url);
         rawLeads = parseCsvToLeads(csvText);
+
+      // ── Apollo direct search ───────────────────────────────────────────────
+      } else if (importType === 'apollo') {
+        const q = apollo_query || {};
+        if (!q.titles && !q.keywords && !q.companies) {
+          return res.status(400).json({ error: 'Introduce al menos un cargo, empresa o palabra clave.' });
+        }
+        rawLeads = await searchViaApolloQuery(q, Math.min(limit, 100));
+        if (rawLeads.length === 0) {
+          return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
+        }
 
       // ── LinkedIn Search URL ───────────────────────────────────────────────
       } else if (importType === 'linkedin_search') {

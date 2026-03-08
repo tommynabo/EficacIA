@@ -1,12 +1,12 @@
 import * as React from "react"
-import { X, FileText, Search, Briefcase, UserPlus, Upload, Check, AlertCircle, Link2, ChevronDown } from "lucide-react"
+import { X, FileText, Search, Briefcase, UserPlus, Upload, Check, AlertCircle, Link2, ChevronDown, Zap } from "lucide-react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { cn } from "@/src/lib/utils"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ImportMethod = 'csv' | 'google_sheets' | 'linkedin_search' | 'sales_navigator' | 'manual'
+type ImportMethod = 'csv' | 'google_sheets' | 'linkedin_search' | 'sales_navigator' | 'apollo' | 'manual'
 
 interface ParsedSNFilters {
   titles: string[]
@@ -281,7 +281,8 @@ interface LeadImportModalProps {
 const METHODS: { id: ImportMethod; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'csv', label: 'CSV', icon: FileText, desc: 'Sube o pega un archivo CSV' },
   { id: 'google_sheets', label: 'Google Sheets', icon: Link2, desc: 'Enlace a hoja pública' },
-  { id: 'linkedin_search', label: 'LinkedIn Búsqueda', icon: Search, desc: 'URL de búsqueda de personas' },
+  { id: 'apollo', label: 'Apollo', icon: Zap, desc: 'Búsqueda directa con Apollo' },
+  { id: 'linkedin_search', label: 'LinkedIn URL', icon: Search, desc: 'URL de búsqueda de personas' },
   { id: 'sales_navigator', label: 'Sales Navigator', icon: Briefcase, desc: 'URL de búsqueda SN' },
   { id: 'manual', label: 'Manual', icon: UserPlus, desc: 'Añadir un lead a mano' },
 ]
@@ -320,6 +321,10 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [manualLead, setManualLead] = React.useState({
     first_name: '', last_name: '', company: '', job_title: '', email: '', linkedin_url: '',
   })
+
+  // Apollo
+  const [apolloQuery, setApolloQuery] = React.useState({ titles: '', companies: '', locations: '', keywords: '' })
+  const [apolloLimit, setApolloLimit] = React.useState(25)
 
   React.useEffect(() => {
     fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
@@ -410,6 +415,12 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
         body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit }
 
+      } else if (method === 'apollo') {
+        if (!apolloQuery.titles && !apolloQuery.keywords && !apolloQuery.companies) {
+          throw new Error('Introduce al menos un cargo, empresa o palabra clave para buscar.')
+        }
+        body = { ...body, type: 'apollo', apollo_query: apolloQuery, limit: apolloLimit }
+
       } else if (method === 'manual') {
         if (!manualLead.first_name && !manualLead.linkedin_url) {
           throw new Error('Introduce al menos el nombre o la URL de LinkedIn.')
@@ -430,6 +441,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
       if (method === 'manual') {
         setManualLead({ first_name: '', last_name: '', company: '', job_title: '', email: '', linkedin_url: '' })
+      } else if (method === 'apollo') {
+        // keep apollo form for follow-up searches
       } else {
         // Auto-close after 1.5s showing the success message
         setTimeout(() => onClose(), 1500)
@@ -749,6 +762,63 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             </div>
           )}
 
+          {/* ── Apollo ── */}
+          {method === 'apollo' && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-500/8 border border-blue-500/20">
+                <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <div className="text-sm text-slate-400">
+                  <span className="font-medium text-slate-200">Búsqueda directa con Apollo.io</span>
+                  <span className="text-slate-500"> — base de datos de +270M de personas con emails verificados. </span>
+                  <span>Filtra por cargo, empresa, ubicación e industria.</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-400">Cargos / Títulos</label>
+                  <Input
+                    value={apolloQuery.titles}
+                    onChange={e => setApolloQuery(q => ({ ...q, titles: e.target.value }))}
+                    placeholder="CEO, CTO, Director de Marketing"
+                    className="bg-slate-950 border-slate-700 text-sm"
+                  />
+                  <p className="text-xs text-slate-600">Separa con comas para múltiples</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-400">Empresas</label>
+                  <Input
+                    value={apolloQuery.companies}
+                    onChange={e => setApolloQuery(q => ({ ...q, companies: e.target.value }))}
+                    placeholder="Telefónica, BBVA, Inditex"
+                    className="bg-slate-950 border-slate-700 text-sm"
+                  />
+                  <p className="text-xs text-slate-600">Separa con comas para múltiples</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-400">Ubicaciones</label>
+                  <Input
+                    value={apolloQuery.locations}
+                    onChange={e => setApolloQuery(q => ({ ...q, locations: e.target.value }))}
+                    placeholder="Spain, Madrid, Barcelona"
+                    className="bg-slate-950 border-slate-700 text-sm"
+                  />
+                  <p className="text-xs text-slate-600">País, ciudad o región</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-400">Palabras clave</label>
+                  <Input
+                    value={apolloQuery.keywords}
+                    onChange={e => setApolloQuery(q => ({ ...q, keywords: e.target.value }))}
+                    placeholder="SaaS, startup, fintech"
+                    className="bg-slate-950 border-slate-700 text-sm"
+                  />
+                  <p className="text-xs text-slate-600">Busca en perfil y empresa</p>
+                </div>
+              </div>
+              <LimitSlider value={apolloLimit} onChange={setApolloLimit} />
+            </div>
+          )}
+
           {/* ── Manual ── */}
           {method === 'manual' && (
             <div className="space-y-3">
@@ -816,6 +886,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 <Upload className="w-4 h-4" />
                 {method === 'manual'
                   ? 'Añadir Lead'
+                  : method === 'apollo'
+                  ? `Buscar en Apollo`
                   : method === 'csv' && csvStep === 'map' && csvRawData
                   ? `Importar ${csvRawData.totalRows} leads`
                   : 'Importar Leads'}
