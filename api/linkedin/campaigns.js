@@ -27,6 +27,273 @@ async function getOrCreateTeam(userId) {
 
   if (teams && teams.length > 0) return teams[0].id;
 
+  const { data: newTeam } = await supabaseAdmin
+    .from('teams')
+    .insert({ owner_id: userId, name: 'Mi Equipo', description: 'Equipo principal' })
+    .select()
+    .single();
+
+  return newTeam?.id || null;
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'No autenticado' });
+
+  const teamId = await getOrCreateTeam(userId);
+  if (!teamId) return res.status(500).json({ error: 'Error al obtener equipo' });
+
+  const { id, action } = req.query;
+
+  // ─── DETALLE DE CAMPAÑA ──────────────────────────────────────────────────
+  if (id) {
+    // Verificar que la campaña pertenece al equipo
+    const { data: campaign, error: campError } = await supabaseAdmin
+      .from('campaigns')
+      .select('*')
+      .eq('id', id)
+      .eq('team_id', teamId)
+      .single();
+
+    if (campError || !campaign) return res.status(404).json({ error: 'Campaña no encontrada' });
+
+    // GET ?id=xxx — detalle de campaña
+    if (req.method === 'GET' && !action) {
+      // Obtener leads de la campaña
+      const { data: leads } = await supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('campaign_id', id)
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false });
+
+      return res.status(200).json({
+        success: true,
+        campaign: {
+          ...campaign,
+          sequence: campaign.sequence || [],
+          settings: campaign.settings || {},
+        },
+        leads: leads || [],
+      });
+    }
+
+    // PUT ?id=xxx — actualizar campaña (nombre, estado, secuencia, opciones)
+    if (req.method === 'PUT' && !action) {
+      const updates = req.body || {};
+      const allowed = ['name', 'description', 'status', 'sequence', 'settings', 'started_at', 'ended_at'];
+      const filtered = {};
+      for (const key of allowed) {
+        if (key in updates) filtered[key] = updates[key];
+      }
+      filtered.updated_at = new Date().toISOString();
+
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('campaigns')
+        .update(filtered)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) return res.status(400).json({ error: updateError.message });
+      return res.status(200).json({ success: true, campaign: updated });
+    }
+
+    // DELETE ?id=xxx — eliminar campaña
+    if (req.method === 'DELETE' && !action) {
+      const { error: deleteError } = await supabaseAdmin
+        .from('campaigns')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) return res.status(400).json({ error: deleteError.message });
+      return res.status(200).json({ success: true });
+    }
+
+    // GET ?id=xxx&action=leads — leads de la campaña
+    if (req.method === 'GET' && action === 'leads') {
+      const { search, status: statusFilter } = req.query;
+      let query = supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('campaign_id', id)
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false });
+
+      if (statusFilter) query = query.eq('status', statusFilter);
+      if (search) {
+        query = query.or(
+          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,company.ilike.%${search}%`
+        );
+      }
+
+      const { data: leads, error: leadsError } = await query;
+      if (leadsError) return res.status(400).json({ error: leadsError.message });
+      return res.status(200).json({ success: true, leads: leads || [] });
+    }
+
+    // POST ?id=xxx&action=leads — añadir lead(s) a la campaña
+    if (req.method === 'POST' && action === 'leads') {
+      const { leadIds, lead } = req.body || {};
+
+      if (leadIds && Array.isArray(leadIds)) {
+        // Asignar leads existentes a esta campaña
+        const { error: updateError } = await supabaseAdmin
+          .from('leads')
+          .update({ campaign_id: id })
+          .in('id', leadIds)
+          .eq('team_id', teamId);
+
+        if (updateError) return res.status(400).json({ error: updateError.message });
+
+        // Actualizar contador de leads
+        const { count } = await supabaseAdmin
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('campaign_id', id);
+
+        await supabaseAdmin
+          .from('campaigns')
+          .update({ leads_count: count || 0, updated_at: new Date().toISOString() })
+          .eq('id', id);
+
+        return res.status(200).json({ success: true, added: leadIds.length });
+      }
+
+      if (lead) {
+        // Crear nuevo lead directamente en la campaña
+        const { data: newLead, error: insertError } = await supabaseAdmin
+          .from('leads')
+          .insert({
+            team_id: teamId,
+            campaign_id: id,
+            first_name: lead.first_name || '',
+            last_name: lead.last_name || '',
+            email: lead.email || '',
+            company: lead.company || '',
+            position: lead.position || '',
+            linkedin_url: lead.linkedin_url || '',
+            status: 'new',
+          })
+          .select()
+          .single();
+
+        if (insertError) return res.status(400).json({ error: insertError.message });
+
+        // Actualizar contador
+        await supabaseAdmin.rpc('increment_leads_count', { campaign_id_param: id }).catch(() => {
+          // Si la función RPC no existe, actualizar manualmente
+          return supabaseAdmin
+            .from('campaigns')
+            .update({ leads_count: (campaign.leads_count || 0) + 1, updated_at: new Date().toISOString() })
+            .eq('id', id);
+        });
+
+        return res.status(201).json({ success: true, lead: newLead });
+      }
+
+      return res.status(400).json({ error: 'Debes enviar leadIds o lead' });
+    }
+
+    // DELETE ?id=xxx&action=leads&leadId=yyy — quitar lead de campaña
+    if (req.method === 'DELETE' && action === 'leads') {
+      const { leadId } = req.query;
+      if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
+
+      const { error: updateError } = await supabaseAdmin
+        .from('leads')
+        .update({ campaign_id: null })
+        .eq('id', leadId)
+        .eq('team_id', teamId);
+
+      if (updateError) return res.status(400).json({ error: updateError.message });
+
+      // Actualizar contador
+      const { count } = await supabaseAdmin
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', id);
+
+      await supabaseAdmin
+        .from('campaigns')
+        .update({ leads_count: count || 0, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      return res.status(200).json({ success: true });
+    }
+  }
+
+  // ─── LISTA DE CAMPAÑAS ───────────────────────────────────────────────────
+
+  // GET /api/linkedin/campaigns — listar campañas
+  if (req.method === 'GET') {
+    const { data: campaigns, error } = await supabaseAdmin
+      .from('campaigns')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ success: true, campaigns: campaigns || [] });
+  }
+
+  // POST /api/linkedin/campaigns — crear campaña
+  if (req.method === 'POST') {
+    const { name, description } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'Nombre de campaña requerido' });
+
+    const { data: campaign, error } = await supabaseAdmin
+      .from('campaigns')
+      .insert({
+        team_id: teamId,
+        name,
+        description: description || '',
+        status: 'draft',
+        leads_count: 0,
+      })
+      .select()
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(201).json({ success: true, campaign, message: '✓ Campaña creada' });
+  }
+
+  return res.status(405).json({ error: 'Método no permitido' });
+}
+
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+);
+
+function getUserId(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.replace('Bearer ', '');
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+    return decoded.userId;
+  } catch {
+    return null;
+  }
+}
+
+async function getOrCreateTeam(userId) {
+  const { data: teams } = await supabaseAdmin
+    .from('teams')
+    .select('id')
+    .eq('owner_id', userId)
+    .limit(1);
+
+  if (teams && teams.length > 0) return teams[0].id;
+
   // Crear equipo automáticamente
   const { data: newTeam } = await supabaseAdmin
     .from('teams')

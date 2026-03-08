@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
@@ -19,6 +20,7 @@ interface Campaign {
 }
 
 export default function CampaignsPage() {
+  const navigate = useNavigate()
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -179,7 +181,7 @@ export default function CampaignsPage() {
               </TableRow>
             ) : (
               campaigns.map((campaign) => (
-                <TableRow key={campaign.id} className="hover:bg-slate-800/50">
+                <TableRow key={campaign.id} className="hover:bg-slate-800/50 cursor-pointer" onClick={() => navigate(`/dashboard/campaigns/${campaign.id}`)}>
                   <TableCell className="font-medium">
                     {campaign.name}
                   </TableCell>
