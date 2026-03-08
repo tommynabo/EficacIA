@@ -100,69 +100,76 @@ function parseCsvToLeads(csvText) {
   return leads;
 }
 
-// ─── LinkedIn Voyager API: people search using li_at cookie ──────────────────
-async function searchLinkedInVoyager(sessionCookie, keywords, limit) {
+// ─── Unipile People Search (proxied through Unipile — avoids LinkedIn IP blocks)
+async function searchViaUnipile(unipileAccountId, keywords, limit) {
+  const dsn = (process.env.UNIPILE_DSN || '').trim();
+  const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+
+  if (!dsn || !apiKey) {
+    throw new Error('Unipile no está configurado. Contacta con soporte.');
+  }
+
   const count = Math.max(1, Math.min(limit, 100));
   const params = new URLSearchParams({
+    account_id: unipileAccountId,
     keywords,
-    filters: 'List((key:resultType,value:List(PEOPLE)))',
-    q: 'blended',
-    count: String(count),
-    start: '0',
-    origin: 'SWITCH_SEARCH_VERTICAL',
-    queryContext: 'List((key:spellCorrectionEnabled,value:true))',
+    limit: String(count),
   });
 
-  const response = await fetch(`https://www.linkedin.com/voyager/api/search/blended?${params}`, {
+  const response = await fetch(`https://${dsn}/api/v1/linkedin/search/people?${params}`, {
     headers: {
-      'Cookie': `li_at=${sessionCookie}; JSESSIONID="ajax:0"`,
-      'csrf-token': 'ajax:0',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'x-li-lang': 'es_ES',
-      'x-restli-protocol-version': '2.0.0',
-      'Accept': 'application/vnd.linkedin.normalized+json+2.1',
-      'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-      'Referer': 'https://www.linkedin.com/search/results/people/',
-      'x-li-track': '{"clientVersion":"1.13.23048","osName":"web","timezoneOffset":1}',
+      'X-API-KEY': apiKey,
+      'Accept': 'application/json',
     },
   });
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error('La sesión de LinkedIn ha expirado. Actualiza la cookie li_at en la sección de Cuentas.');
+    throw new Error('Error de autenticación con Unipile. Verifica la API Key.');
   }
   if (response.status === 429) {
-    throw new Error('LinkedIn ha limitado las búsquedas temporalmente. Espera 10-15 minutos y vuelve a intentarlo.');
+    throw new Error('Límite de búsquedas alcanzado. Espera unos minutos y vuelve a intentarlo.');
   }
   if (!response.ok) {
-    throw new Error(`Error de LinkedIn (${response.status}). Inténtalo de nuevo en unos minutos.`);
+    const errText = await response.text().catch(() => '');
+    console.error('[UNIPILE SEARCH] Error:', response.status, errText);
+    throw new Error(`Error en la búsqueda (${response.status}). Inténtalo de nuevo.`);
   }
 
   const data = await response.json();
-  return extractProfilesFromVoyager(data, count);
+  return extractProfilesFromUnipile(data, count);
 }
 
-function extractProfilesFromVoyager(data, limit) {
+function extractProfilesFromUnipile(data, limit) {
+  const items = data.items || data.results || data || [];
   const profiles = [];
   const seen = new Set();
 
-  for (const item of (data.included || [])) {
+  for (const item of (Array.isArray(items) ? items : [])) {
     if (profiles.length >= limit) break;
-    if (item['$type'] !== 'com.linkedin.voyager.identity.shared.MiniProfile') continue;
-    if (!item.publicIdentifier || seen.has(item.publicIdentifier)) continue;
-    seen.add(item.publicIdentifier);
 
-    const occupation = item.occupation || '';
-    const atIdx = occupation.lastIndexOf(' at ');
-    const jobTitle = atIdx > -1 ? occupation.slice(0, atIdx).trim() : occupation.trim();
-    const company = atIdx > -1 ? occupation.slice(atIdx + 4).trim() : '';
+    // Unipile may return profile_url or public_identifier
+    const profileUrl = item.profile_url || item.linkedin_url || item.publicProfileUrl || '';
+    const publicId = item.public_identifier || item.publicIdentifier
+      || profileUrl.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1]
+      || '';
+
+    if (!publicId || seen.has(publicId)) continue;
+    seen.add(publicId);
+
+    const headline = item.headline || item.occupation || '';
+    const atIdx = headline.lastIndexOf(' at ');
+    const jobTitle = atIdx > -1 ? headline.slice(0, atIdx).trim() : headline.trim();
+    const company = atIdx > -1
+      ? headline.slice(atIdx + 4).trim()
+      : (item.company_name || item.company || '');
 
     profiles.push({
-      first_name: item.firstName || '',
-      last_name: item.lastName || '',
-      job_title: jobTitle,
-      company,
-      linkedin_url: `https://www.linkedin.com/in/${item.publicIdentifier}`,
-      email: null,
+      first_name: item.first_name || item.firstName || '',
+      last_name: item.last_name || item.lastName || '',
+      job_title: item.job_title || item.jobTitle || jobTitle,
+      company: item.company_name || item.company || company,
+      linkedin_url: profileUrl || `https://www.linkedin.com/in/${publicId}`,
+      email: item.email || null,
     });
   }
   return profiles;
@@ -271,36 +278,39 @@ export default async function handler(req, res) {
 
         const { data: account, error: accErr } = await supabaseAdmin
           .from('linkedin_accounts')
-          .select('id, session_cookie, is_valid')
+          .select('id, session_cookie, is_valid, unipile_account_id, connection_method')
           .eq('id', account_id)
           .eq('team_id', teamId)
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
-        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Actualiza la cookie en la sección Cuentas.' });
+        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
 
         // Robust keyword extraction — try multiple strategies
         let keywords = '';
         try {
-          // Normalize URL: add https:// if missing
           const normalized = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
           const urlObj = new URL(normalized);
           keywords = decodeURIComponent(urlObj.searchParams.get('keywords') || '');
         } catch { /* fall through to regex */ }
 
-        // Fallback: regex on raw string to find keywords=VALUE
         if (!keywords) {
           const m = url.match(/[?&]keywords=([^&]+)/i);
           if (m) keywords = decodeURIComponent(m[1].replace(/\+/g, ' '));
         }
 
-        // Last resort: use the entire input as search terms if it looks like plain text
         if (!keywords && !url.includes('linkedin.com')) {
           keywords = url.trim();
         }
 
         if (!keywords) return res.status(400).json({ error: 'No se encontraron palabras clave. Usa una URL como: linkedin.com/search/results/all/?keywords=CEO+Spain' });
 
-        rawLeads = await searchLinkedInVoyager(account.session_cookie, keywords, Math.min(limit, 100));
+        // Always use Unipile to proxy the search (direct calls to LinkedIn are blocked from Vercel)
+        const unipileId = account.unipile_account_id;
+        if (!unipileId) {
+          return res.status(400).json({ error: 'Esta cuenta no está conectada via Unipile. Ve a Cuentas y vuelve a conectar tu LinkedIn.' });
+        }
+
+        rawLeads = await searchViaUnipile(unipileId, keywords, Math.min(limit, 100));
         if (rawLeads.length === 0) {
           return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
         }
@@ -311,12 +321,12 @@ export default async function handler(req, res) {
 
         const { data: account, error: accErr } = await supabaseAdmin
           .from('linkedin_accounts')
-          .select('id, session_cookie, is_valid')
+          .select('id, is_valid, unipile_account_id')
           .eq('id', account_id)
           .eq('team_id', teamId)
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
-        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Actualiza la cookie en la sección Cuentas.' });
+        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
 
         // Use pre-parsed filters sent from frontend
         const f = filters || {};
@@ -330,12 +340,15 @@ export default async function handler(req, res) {
         }
 
         let keywords = parts.join(' OR ');
-        // Append company filter if present (as keyword addition)
         if (f.companies && f.companies.length > 0) {
           keywords += ` ${f.companies.join(' ')}`;
         }
 
-        rawLeads = await searchLinkedInVoyager(account.session_cookie, keywords.trim(), Math.min(limit, 100));
+        if (!account.unipile_account_id) {
+          return res.status(400).json({ error: 'Esta cuenta no está conectada via Unipile. Ve a Cuentas y vuelve a conectar tu LinkedIn.' });
+        }
+
+        rawLeads = await searchViaUnipile(account.unipile_account_id, keywords.trim(), Math.min(limit, 100));
         if (rawLeads.length === 0) {
           return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba ajustando los filtros del Sales Navigator.' });
         }
