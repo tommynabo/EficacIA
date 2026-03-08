@@ -348,25 +348,46 @@ export default function CampaignDetailPage() {
             <p className="text-sm text-slate-400">{campaign.description || "Sin descripción"}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className={statusConfig[campaign.status]?.color}>
+        <div className="flex items-center gap-3">
+          {/* Status pill */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border ${statusConfig[campaign.status]?.color}`}>
+            <span className="w-2 h-2 rounded-full bg-current opacity-60 shrink-0" />
             {statusConfig[campaign.status]?.label}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
+          </div>
+
+          <div className="w-px h-7 bg-slate-700 mx-1" />
+
+          {/* Launch / Pause */}
+          <button
             onClick={toggleStatus}
-            className={campaign.status === "active" ? "gap-1.5 text-amber-400 border-amber-500/30" : "gap-1.5 text-emerald-400 border-emerald-500/30"}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+              campaign.status === "active"
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+            }`}
           >
-            {campaign.status === "active" ? <><Pause className="w-3.5 h-3.5" />Pausar</> : <><Play className="w-3.5 h-3.5" />Lanzar</>}
-          </Button>
-          <Button size="sm" onClick={() => saveCampaign()} disabled={saving} className="gap-1.5 min-w-[100px]">
-            <Save className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-            {saving ? "Guardando..." : "Guardar"}
-          </Button>
-          <Button variant="ghost" size="icon" className="text-slate-500 hover:text-red-400" title="Eliminar campaña" onClick={deleteCampaign}>
+            {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
+          </button>
+
+          {/* Save */}
+          <button
+            onClick={() => saveCampaign()}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save className={`w-4 h-4 ${saving ? "animate-spin" : ""}`} />
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+
+          {/* Delete */}
+          <button
+            onClick={deleteCampaign}
+            className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+            title="Eliminar campaña"
+          >
             <Trash2 className="w-4 h-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -384,14 +405,14 @@ export default function CampaignDetailPage() {
 
       {/* Tabs */}
       <div className="border-b border-slate-800 mb-6">
-        <nav className="flex gap-6">
+        <nav className="flex gap-8">
           {(["leads", "sequences", "options", "analytics"] as const).map(tab => {
             const labels = { leads: "Leads", sequences: "Secuencias", options: "Opciones", analytics: "Analítica" }
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? "border-blue-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+                className={`pb-4 text-base font-medium border-b-2 transition-colors ${activeTab === tab ? "border-blue-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"}`}
               >
                 {labels[tab]}
               </button>
@@ -438,44 +459,44 @@ export default function CampaignDetailPage() {
           ) : (
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-900/50">
-                      <th className="text-left px-4 py-3 font-medium text-slate-400">CONTACTO</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-400">ESTADO</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-400">EMPRESA</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-400">CARGO</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-400">EMAIL</th>
-                      <th className="text-right px-4 py-3 font-medium text-slate-400">ACCIONES</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">CONTACTO</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ESTADO</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">EMPRESA</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">CARGO</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">EMAIL</th>
+                      <th className="text-right px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ACCIONES</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredLeads.map(lead => (
                       <tr key={lead.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
                               {(lead.first_name?.[0] || "?").toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-medium text-slate-200">{lead.first_name} {lead.last_name}</p>
+                              <p className="font-semibold text-slate-200 text-sm">{lead.first_name} {lead.last_name}</p>
                               {lead.linkedin_url && (
-                                <a href={lead.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                                <a href={lead.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-0.5">
                                   <Linkedin className="w-3 h-3" /> LinkedIn
                                 </a>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4">
                           <StatusBadge status={lead.status} sent={lead.sent_message} />
                         </td>
-                        <td className="px-4 py-3 text-slate-300">{lead.company || "—"}</td>
-                        <td className="px-4 py-3 text-slate-400 text-xs">{lead.position || "—"}</td>
-                        <td className="px-4 py-3 text-slate-400 text-xs">{lead.email || "—"}</td>
-                        <td className="px-4 py-3 text-right">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-red-400" onClick={() => removeLeadFromCampaign(lead.id)}>
-                            <X className="w-3.5 h-3.5" />
+                        <td className="px-5 py-4 text-slate-300 text-sm">{lead.company || "—"}</td>
+                        <td className="px-5 py-4 text-slate-400 text-sm">{lead.position || "—"}</td>
+                        <td className="px-5 py-4 text-slate-400 text-sm">{lead.email || "—"}</td>
+                        <td className="px-5 py-4 text-right">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-400" onClick={() => removeLeadFromCampaign(lead.id)}>
+                            <X className="w-4 h-4" />
                           </Button>
                         </td>
                       </tr>
@@ -498,8 +519,8 @@ export default function CampaignDetailPage() {
                 {index > 0 && (
                   <div className="flex flex-col items-center py-2 text-slate-500">
                     <div className="h-4 w-px bg-slate-800" />
-                    <div className="flex items-center gap-1.5 text-xs font-mono bg-slate-900 px-3 py-1 rounded-full border border-slate-800 my-1">
-                      <Clock className="w-3 h-3" />
+                    <div className="flex items-center gap-1.5 text-sm font-medium bg-slate-900 px-4 py-1.5 rounded-full border border-slate-800 my-1">
+                      <Clock className="w-3.5 h-3.5" />
                       Esperar {step.delayDays} {step.delayDays === 1 ? "día" : "días"}
                     </div>
                     <div className="h-4 w-px bg-slate-800" />
@@ -507,15 +528,19 @@ export default function CampaignDetailPage() {
                 )}
                 <Card
                   onClick={() => setActiveStepId(step.id)}
-                  className={`p-3 cursor-pointer transition-all ${activeStepId === step.id ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-500"}`}
+                  className={`p-4 cursor-pointer transition-all ${activeStepId === step.id ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-500"}`}
                 >
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs py-0">Paso {index + 1}</Badge>
-                      <span className="text-xs text-slate-400 capitalize">
-                        {step.type === "invitation" ? "Invitación" : "Mensaje"}
+                      <Badge variant="outline" className="font-mono text-xs px-2 py-0.5">Paso {index + 1}</Badge>
+                      <span className="text-sm font-medium text-slate-300">
+                        {step.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"}
                       </span>
-                      {step.useAI && <Bot className="w-3 h-3 text-blue-400" />}
+                      {step.useAI && (
+                        <Badge variant="outline" className="gap-1 text-xs text-blue-400 border-blue-500/30 bg-blue-500/10 py-0.5 px-2">
+                          <Bot className="w-3 h-3" /> IA
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-0.5">
                       {index > 0 && (
@@ -531,7 +556,7 @@ export default function CampaignDetailPage() {
                       )}
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500 truncate">{step.content || "Sin contenido…"}</p>
+                  <p className="text-sm text-slate-400 truncate mt-1">{step.content || "Sin contenido aún…"}</p>
                 </Card>
               </div>
             ))}
@@ -544,9 +569,9 @@ export default function CampaignDetailPage() {
           {/* Panel derecho - editor del paso */}
           <div className="lg:col-span-3">
             {activeStep ? (
-              <Card className="p-5 space-y-4 h-full">
+              <Card className="p-6 space-y-5 h-full">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-slate-200">
+                  <h3 className="text-lg font-semibold text-slate-200">
                     {activeStep.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"} — Paso {steps.findIndex(s => s.id === activeStep.id) + 1}
                   </h3>
                   {steps.findIndex(s => s.id === activeStep.id) > 0 && (
@@ -564,7 +589,7 @@ export default function CampaignDetailPage() {
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Mensaje</label>
                   <textarea
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-36"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-48"
                     placeholder="Escribe tu mensaje aquí... Usa {{nombre}}, {{empresa}}, {{cargo}} como variables."
                     value={activeStep.content}
                     onChange={e => updateStep(activeStep.id, { content: e.target.value })}

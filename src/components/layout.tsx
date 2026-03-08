@@ -7,11 +7,9 @@ import {
   Settings, 
   Users, 
   Zap,
-  LogOut,
-  Activity
+  LogOut
 } from "lucide-react"
 import { cn } from "@/src/lib/utils"
-import { ActivityLogs } from "./activity-logs"
 
 const navItems = [
   { name: "Cuentas", href: "/dashboard", icon: LayoutDashboard },
@@ -84,16 +82,7 @@ export function DashboardLayout() {
         </div>
       </main>
 
-      {/* Activity Logs Sidebar */}
-      <aside className="w-80 border-l border-slate-800 bg-slate-900/30 flex flex-col shrink-0">
-        <div className="p-4 border-b border-slate-800 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-slate-400" />
-          <h2 className="text-sm font-semibold text-slate-300">Actividad del Bot</h2>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <ActivityLogs />
-        </div>
-      </aside>
+
     </div>
   )
 }
