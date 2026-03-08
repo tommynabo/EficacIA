@@ -100,78 +100,73 @@ function parseCsvToLeads(csvText) {
   return leads;
 }
 
-// ─── Unipile People Search (proxied through Unipile — avoids LinkedIn IP blocks)
-async function searchViaUnipile(unipileAccountId, keywords, limit) {
-  const dsn = (process.env.UNIPILE_DSN || '').trim();
-  const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+// ─── Apollo.io People Search (free tier: 600 credits/month) ─────────────────
+// Apollo has a proper people search API that works from server-side.
+// Set APOLLO_API_KEY env var in Vercel. Free at: https://app.apollo.io/settings/integrations/api
+async function searchViaApollo(keywords, limit) {
+  const apolloKey = (process.env.APOLLO_API_KEY || '').trim();
 
-  if (!dsn || !apiKey) {
-    throw new Error('Unipile no está configurado. Contacta con soporte.');
+  // Parse keywords into title / person_titles for Apollo
+  // e.g. "CEO Spain" → person_titles: ["CEO"], person_locations: ["Spain"]
+  const words = keywords.split(/\s+/).filter(Boolean);
+  const locationWords = ['spain','españa','madrid','barcelona','valencia','sevilla',
+    'bilbao','france','germany','uk','italy','usa','mexico','latam','europa','europe'];
+  const titles = words.filter(w => !locationWords.includes(w.toLowerCase()));
+  const locations = words.filter(w => locationWords.includes(w.toLowerCase()));
+
+  const body = {
+    q_keywords: keywords,
+    page: 1,
+    per_page: Math.min(limit, 25),
+    ...(titles.length > 0 && { person_titles: titles }),
+    ...(locations.length > 0 && { person_locations: locations }),
+  };
+
+  // If no Apollo key, fall back to returning a clear error
+  if (!apolloKey) {
+    throw new Error('Búsqueda de LinkedIn requiere una clave Apollo API. Configura APOLLO_API_KEY en las variables de entorno de Vercel.');
   }
 
-  const count = Math.max(1, Math.min(limit, 100));
-  const params = new URLSearchParams({
-    account_id: unipileAccountId,
-    keywords,
-    limit: String(count),
-  });
-
-  const response = await fetch(`https://${dsn}/api/v1/linkedin/search/people?${params}`, {
+  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+    method: 'POST',
     headers: {
-      'X-API-KEY': apiKey,
-      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-Api-Key': apolloKey,
+      'Cache-Control': 'no-cache',
     },
+    body: JSON.stringify(body),
   });
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error('Error de autenticación con Unipile. Verifica la API Key.');
+    throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
   }
   if (response.status === 429) {
-    throw new Error('Límite de búsquedas alcanzado. Espera unos minutos y vuelve a intentarlo.');
+    throw new Error('Límite de búsquedas alcanzado en Apollo. Espera unos minutos o amplía tu plan.');
   }
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
-    console.error('[UNIPILE SEARCH] Error:', response.status, errText);
+    console.error('[APOLLO SEARCH] Error:', response.status, errText);
     throw new Error(`Error en la búsqueda (${response.status}). Inténtalo de nuevo.`);
   }
 
   const data = await response.json();
-  return extractProfilesFromUnipile(data, count);
+  return extractProfilesFromApollo(data, limit);
 }
 
-function extractProfilesFromUnipile(data, limit) {
-  const items = data.items || data.results || data || [];
+function extractProfilesFromApollo(data, limit) {
+  const people = data.people || data.contacts || [];
   const profiles = [];
-  const seen = new Set();
 
-  for (const item of (Array.isArray(items) ? items : [])) {
+  for (const p of people) {
     if (profiles.length >= limit) break;
-
-    // Unipile may return profile_url or public_identifier
-    const profileUrl = item.profile_url || item.linkedin_url || item.publicProfileUrl || '';
-    const publicId = item.public_identifier || item.publicIdentifier
-      || profileUrl.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1]
-      || '';
-
-    if (!publicId || seen.has(publicId)) continue;
-    seen.add(publicId);
-
-    const headline = item.headline || item.occupation || '';
-    const atIdx = headline.lastIndexOf(' at ');
-    const jobTitle = atIdx > -1 ? headline.slice(0, atIdx).trim() : headline.trim();
-    const company = atIdx > -1
-      ? headline.slice(atIdx + 4).trim()
-      : (item.company_name || item.company || '');
-
     profiles.push({
-      first_name: item.first_name || item.firstName || '',
-      last_name: item.last_name || item.lastName || '',
-      job_title: item.job_title || item.jobTitle || jobTitle,
-      company: item.company_name || item.company || company,
-      linkedin_url: profileUrl || `https://www.linkedin.com/in/${publicId}`,
-      email: item.email || null,
+      first_name: p.first_name || '',
+      last_name: p.last_name || '',
+      job_title: p.title || '',
+      company: p.organization_name || p.organization?.name || '',
+      linkedin_url: p.linkedin_url || '',
+      email: p.email || null,
     });
-  }
   return profiles;
 }
 
@@ -278,7 +273,7 @@ export default async function handler(req, res) {
 
         const { data: account, error: accErr } = await supabaseAdmin
           .from('linkedin_accounts')
-          .select('id, session_cookie, is_valid, unipile_account_id, connection_method')
+          .select('id, is_valid')
           .eq('id', account_id)
           .eq('team_id', teamId)
           .single();
@@ -304,13 +299,7 @@ export default async function handler(req, res) {
 
         if (!keywords) return res.status(400).json({ error: 'No se encontraron palabras clave. Usa una URL como: linkedin.com/search/results/all/?keywords=CEO+Spain' });
 
-        // Always use Unipile to proxy the search (direct calls to LinkedIn are blocked from Vercel)
-        const unipileId = account.unipile_account_id;
-        if (!unipileId) {
-          return res.status(400).json({ error: 'Esta cuenta no está conectada via Unipile. Ve a Cuentas y vuelve a conectar tu LinkedIn.' });
-        }
-
-        rawLeads = await searchViaUnipile(unipileId, keywords, Math.min(limit, 100));
+        rawLeads = await searchViaApollo(keywords, Math.min(limit, 100));
         if (rawLeads.length === 0) {
           return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
         }
@@ -348,7 +337,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Esta cuenta no está conectada via Unipile. Ve a Cuentas y vuelve a conectar tu LinkedIn.' });
         }
 
-        rawLeads = await searchViaUnipile(account.unipile_account_id, keywords.trim(), Math.min(limit, 100));
+        rawLeads = await searchViaApollo(keywords.trim(), Math.min(limit, 100));
         if (rawLeads.length === 0) {
           return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba ajustando los filtros del Sales Navigator.' });
         }
