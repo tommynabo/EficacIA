@@ -47,11 +47,20 @@ html.light .text-white {
 }
 
 /* Nav hover states: dark navy bg + white text so they stay visible in light mode */
-html.light .hover\:bg-slate-800\/50:hover {
+html.light nav .hover\:bg-slate-800\/50:hover {
   background-color: #1e3a5f !important;
 }
-html.light .hover\:text-white:hover {
+html.light nav .hover\:text-white:hover {
   color: #ffffff !important;
+}
+
+/* Table rows: subtle light-gray hover, not dark navy */
+html.light table tbody tr:hover {
+  background-color: #e8edf5 !important;
+}
+/* Table header row: no hover background */
+html.light table thead tr:hover {
+  background-color: transparent !important;
 }
 
 /* Input/textarea/select native backgrounds */

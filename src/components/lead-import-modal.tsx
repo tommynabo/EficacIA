@@ -529,87 +529,109 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 </>
               ) : csvRawData && (
                 <>
-                  {/* Column Mapper — like Walead */}
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-slate-300">Asigna cada columna a un campo</p>
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-200">Asigna las columnas del CSV</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{csvRawData.headers.length} columnas detectadas · {csvRawData.totalRows} filas</p>
+                    </div>
                     <button
                       onClick={() => { setCsvStep('upload'); setCsvRawData(null) }}
-                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"
+                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1.5 shrink-0 mt-0.5"
                     >
-                      <X className="w-3 h-3" /> Cambiar archivo
+                      <X className="w-3.5 h-3.5" /> Cambiar archivo
                     </button>
                   </div>
 
-                  <div className="rounded-xl border border-slate-700 overflow-hidden">
-                    {/* Table header */}
-                    <div className="grid grid-cols-[2fr_3fr_2fr] gap-0 bg-slate-800/70 border-b border-slate-700">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide">Columna del CSV</div>
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide border-l border-slate-700">Asignar como</div>
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide border-l border-slate-700">Muestra</div>
-                    </div>
-
+                  {/* Card rows — one per CSV column */}
+                  <div className="space-y-2">
                     {csvRawData.headers.map((header, idx) => {
                       const mapping = colMappings[idx] || { fieldType: 'skip', varName: header }
                       const samples = csvRawData.sampleRows.map(r => r[idx] || '').filter(Boolean).slice(0, 3)
+                      const isSkipped = mapping.fieldType === 'skip'
                       return (
-                        <div key={idx} className="grid grid-cols-[2fr_3fr_2fr] gap-0 border-b border-slate-800 last:border-0 hover:bg-slate-800/20 transition-colors">
-                          {/* Column name */}
-                          <div className="px-4 py-3 flex items-center">
-                            <span className="text-sm text-slate-200 font-mono font-medium">{header}</span>
-                          </div>
-
-                          {/* Type selector */}
-                          <div className="px-3 py-2.5 border-l border-slate-800 flex flex-col gap-1.5 justify-center">
-                            <div className="relative">
-                              <select
-                                value={mapping.fieldType}
-                                onChange={e => {
-                                  const ft = e.target.value as FieldType
-                                  setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, fieldType: ft } : m))
-                                }}
-                                className="w-full appearance-none bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 pr-7 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                              >
-                                <option value="skip">⊘ No importar</option>
-                                <option value="first_name">👤 Nombre</option>
-                                <option value="last_name">👤 Apellido</option>
-                                <option value="email">✉️ Email</option>
-                                <option value="company">🏢 Empresa</option>
-                                <option value="job_title">💼 Cargo / Título</option>
-                                <option value="linkedin_url">🔗 URL de LinkedIn</option>
-                                <option value="custom_var">🔧 Variable personalizada</option>
-                              </select>
-                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                        <div
+                          key={idx}
+                          className={cn(
+                            "rounded-xl border px-5 py-4 transition-all",
+                            isSkipped
+                              ? "border-slate-800 bg-slate-900/20 opacity-55"
+                              : "border-slate-700 bg-slate-800/25"
+                          )}
+                        >
+                          <div className="flex items-center gap-5">
+                            {/* Column info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-100 font-mono">{header}</p>
+                              {samples.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {samples.map((s, si) => (
+                                    <span key={si} className="text-xs bg-slate-700/60 text-slate-400 px-2.5 py-1 rounded-full truncate max-w-[200px]">{s}</span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            {mapping.fieldType === 'custom_var' && (
-                              <input
-                                type="text"
-                                value={mapping.varName}
-                                onChange={e => setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, varName: e.target.value } : m))}
-                                placeholder="nombre_variable"
-                                className="w-full bg-slate-950 border border-blue-500/40 rounded-lg px-3 py-1.5 text-xs font-mono text-blue-300 placeholder:text-slate-600 focus:outline-none"
-                              />
-                            )}
-                            {mapping.fieldType === 'custom_var' && mapping.varName && (
-                              <p className="text-[10px] text-slate-500">Usa <span className="font-mono text-blue-400">{`{{${mapping.varName.toLowerCase().replace(/\s+/g, '_')}}}`}</span> en tus mensajes</p>
-                            )}
+
+                            {/* Dropdown — wider, easier to click */}
+                            <div className="w-56 shrink-0">
+                              <div className="relative">
+                                <select
+                                  value={mapping.fieldType}
+                                  onChange={e => {
+                                    const ft = e.target.value as FieldType
+                                    setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, fieldType: ft, varName: ft === 'custom_var' ? m.varName : m.varName } : m))
+                                  }}
+                                  className={cn(
+                                    "w-full appearance-none rounded-xl px-4 py-3 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer",
+                                    isSkipped
+                                      ? "bg-slate-900 border border-slate-700 text-slate-500"
+                                      : "bg-slate-900 border border-blue-500/25 text-slate-100"
+                                  )}
+                                >
+                                  <option value="skip">⊘ No importar</option>
+                                  <option value="first_name">👤 Nombre</option>
+                                  <option value="last_name">👤 Apellido</option>
+                                  <option value="email">✉️ Email</option>
+                                  <option value="company">🏢 Empresa</option>
+                                  <option value="job_title">💼 Cargo / Título</option>
+                                  <option value="linkedin_url">🔗 URL de LinkedIn</option>
+                                  <option value="custom_var">🔧 Variable personalizada</option>
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                              </div>
+                            </div>
                           </div>
 
-                          {/* Samples */}
-                          <div className="px-3 py-3 border-l border-slate-800 space-y-0.5">
-                            {samples.length > 0 ? samples.map((s, si) => (
-                              <p key={si} className={`text-xs truncate ${si === 1 ? 'text-blue-400' : si === 3 ? 'text-blue-400' : 'text-slate-400'}`}>{s}</p>
-                            )) : <p className="text-xs text-slate-600 italic">—</p>}
-                          </div>
+                          {/* Custom var config — expands within the card */}
+                          {mapping.fieldType === 'custom_var' && (
+                            <div className="mt-3.5 pt-3.5 border-t border-slate-700/50">
+                              <div className="flex items-center gap-3">
+                                <label className="text-xs text-slate-400 shrink-0">Nombre de variable:</label>
+                                <input
+                                  type="text"
+                                  value={mapping.varName}
+                                  onChange={e => setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, varName: e.target.value } : m))}
+                                  placeholder="mi_variable"
+                                  className="flex-1 bg-slate-950 border border-blue-500/30 rounded-lg px-3 py-2 text-sm font-mono text-blue-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                                />
+                                <span className="text-sm font-mono text-blue-400/70 shrink-0">
+                                  {`{{${(mapping.varName || 'variable').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}}}`}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1.5">Usa esta variable en los mensajes de tu secuencia</p>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-emerald-400">
-                    <Check className="w-4 h-4" />
-                    <span>{csvRawData.totalRows} filas detectadas</span>
-                    <span className="text-slate-600">·</span>
-                    <span className="text-slate-400">{colMappings.filter(m => m.fieldType !== 'skip').length} columnas asignadas</span>
+                  {/* Footer summary */}
+                  <div className="flex items-center gap-2 text-sm text-emerald-400 pt-1">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>{colMappings.filter(m => m.fieldType !== 'skip').length} columnas asignadas</span>
+                    <span className="text-slate-700">·</span>
+                    <span className="text-slate-400">{csvRawData.totalRows} leads se importarán</span>
                   </div>
                 </>
               )}

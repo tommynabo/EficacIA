@@ -151,7 +151,7 @@ export default function CampaignsPage() {
       <Card>
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="hover:bg-transparent cursor-default">
               <TableHead className="w-[400px]">NOMBRE</TableHead>
               <TableHead>ESTADO</TableHead>
               <TableHead>LEADS</TableHead>

@@ -66,6 +66,7 @@ interface Lead {
   sent_message: boolean
   sent_at: string | null
   ai_message: string | null
+  custom_vars?: Record<string, string>
 }
 
 interface LinkedInAccount {
@@ -106,6 +107,29 @@ export default function CampaignDetailPage() {
   // Sequence state
   const [steps, setSteps] = React.useState<SequenceStep[]>(DEFAULT_STEPS)
   const [activeStepId, setActiveStepId] = React.useState<string | null>("1")
+  const messageTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+
+  // Compute custom variable names from all loaded leads
+  const customVarKeys = React.useMemo(() => {
+    const keys = new Set<string>()
+    leads.forEach(l => l.custom_vars && Object.keys(l.custom_vars).forEach(k => keys.add(k)))
+    return Array.from(keys)
+  }, [leads])
+
+  const insertVariable = (varName: string) => {
+    if (!activeStep) return
+    const el = messageTextareaRef.current
+    const snippet = `{{${varName}}}`
+    if (el) {
+      const start = el.selectionStart
+      const end = el.selectionEnd
+      const newVal = activeStep.content.slice(0, start) + snippet + activeStep.content.slice(end)
+      updateStep(activeStep.id, { content: newVal })
+      setTimeout(() => { el.selectionStart = el.selectionEnd = start + snippet.length; el.focus() }, 0)
+    } else {
+      updateStep(activeStep.id, { content: activeStep.content + snippet })
+    }
+  }
 
   // Options state
   const [settings, setSettings] = React.useState({
@@ -546,12 +570,44 @@ export default function CampaignDetailPage() {
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Mensaje</label>
                   <textarea
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-48"
-                    placeholder="Escribe tu mensaje aquí... Usa {{nombre}}, {{empresa}}, {{cargo}} como variables."
+                    ref={messageTextareaRef}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-44"
+                    placeholder="Escribe tu mensaje aquí... Usa las variables de abajo para personalizarlo."
                     value={activeStep.content}
                     onChange={e => updateStep(activeStep.id, { content: e.target.value })}
                   />
-                  <p className="text-xs text-slate-500 mt-1">Variables: {"{{nombre}}, {{empresa}}, {{cargo}}, {{sector}}"}</p>
+                  {/* Variable chips — click to insert at cursor */}
+                  <div className="mt-2 space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {['nombre', 'apellido', 'empresa', 'cargo', 'sector'].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => insertVariable(v)}
+                          className="text-xs px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:border-slate-600 font-mono transition-colors"
+                          title={`Insertar ${v}`}
+                        >
+                          {`{{${v}}}`}
+                        </button>
+                      ))}
+                    </div>
+                    {customVarKeys.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-[10px] text-slate-500 self-center mr-1">Personalizadas:</span>
+                        {customVarKeys.map(v => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => insertVariable(v)}
+                            className="text-xs px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/25 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/40 font-mono transition-colors"
+                            title={`Insertar variable personalizada: ${v}`}
+                          >
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/50">
