@@ -281,7 +281,7 @@ interface LeadImportModalProps {
 const METHODS: { id: ImportMethod; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'csv', label: 'CSV', icon: FileText, desc: 'Sube o pega un archivo CSV' },
   { id: 'google_sheets', label: 'Google Sheets', icon: Link2, desc: 'Enlace a hoja pública' },
-  { id: 'apollo', label: 'Apollo', icon: Zap, desc: 'Búsqueda directa con Apollo' },
+  { id: 'apollo', label: 'Personas', icon: Zap, desc: 'Búsqueda en LinkedIn via Apify' },
   { id: 'linkedin_search', label: 'LinkedIn URL', icon: Search, desc: 'URL de búsqueda de personas' },
   { id: 'sales_navigator', label: 'Sales Navigator', icon: Briefcase, desc: 'URL de búsqueda SN' },
   { id: 'manual', label: 'Manual', icon: UserPlus, desc: 'Añadir un lead a mano' },
@@ -326,6 +326,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [apolloQuery, setApolloQuery] = React.useState({ titles: '', companies: '', locations: '', keywords: '' })
   const [apolloLimit, setApolloLimit] = React.useState(25)
 
+  // Async Apify polling state
+  const [isPolling, setIsPolling] = React.useState(false)
+  const [pollToken, setPollToken] = React.useState<string | null>(null)
+  const [pollMessage, setPollMessage] = React.useState('')
+
   React.useEffect(() => {
     fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
       .then(r => r.json())
@@ -337,6 +342,45 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       })
       .catch(() => { /* silent */ })
   }, [])
+
+  // Polling effect — fires every 3s while an Apify job is running
+  React.useEffect(() => {
+    if (!pollToken) return
+    let timeoutId: ReturnType<typeof setTimeout>
+    const maxTimeout = setTimeout(() => {
+      setPollToken(null)
+      setIsPolling(false)
+      setError('La búsqueda tardó demasiado. Prueba con menos resultados (máx. 25).')
+    }, 3 * 60 * 1000)
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/linkedin/bulk-import?poll_token=${encodeURIComponent(pollToken)}`, {
+          headers: getApiHeaders(),
+        })
+        const data = await res.json()
+        if (data.status === 'done') {
+          clearTimeout(maxTimeout)
+          setPollToken(null)
+          setIsPolling(false)
+          setImportResult({ count: data.imported || 0, message: data.message })
+          onImported()
+          if (method !== 'manual') setTimeout(() => onClose(), 1800)
+        } else if (data.status === 'error') {
+          clearTimeout(maxTimeout)
+          setPollToken(null)
+          setIsPolling(false)
+          setError(data.error || 'La búsqueda falló. Inténtalo de nuevo.')
+        } else {
+          setPollMessage(data.message || 'Buscando en LinkedIn...')
+          timeoutId = setTimeout(poll, 3000)
+        }
+      } catch {
+        timeoutId = setTimeout(poll, 3000)
+      }
+    }
+    poll()
+    return () => { clearTimeout(timeoutId); clearTimeout(maxTimeout) }
+  }, [pollToken])
 
   const goCsvMap = (raw: CsvRawData) => {
     setCsvRawData(raw)
@@ -435,6 +479,15 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error importando leads')
+
+      // Handle async Apify job (202 Accepted)
+      if (res.status === 202 || data.status === 'processing') {
+        if (!data.poll_token) throw new Error('Error iniciando búsqueda. Inténtalo de nuevo.')
+        setIsPolling(true)
+        setPollMessage(data.message || 'Buscando en LinkedIn...')
+        setPollToken(data.poll_token)
+        return
+      }
 
       setImportResult({ count: data.imported || 0, message: data.message })
       onImported()
@@ -768,9 +821,9 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-500/8 border border-blue-500/20">
                 <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                 <div className="text-sm text-slate-400">
-                  <span className="font-medium text-slate-200">Búsqueda directa con Apollo.io</span>
-                  <span className="text-slate-500"> — base de datos de +270M de personas con emails verificados. </span>
-                  <span>Filtra por cargo, empresa, ubicación e industria.</span>
+                  <span className="font-medium text-slate-200">Búsqueda de personas en LinkedIn</span>
+                  <span className="text-slate-500"> — via Apify con tu sesión LinkedIn activa. </span>
+                  <span>Filtra por cargo, empresa y ubicación. Requiere cuenta LinkedIn conectada con cookie li_at.</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -871,11 +924,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 transition-colors">
             Cancelar
           </button>
-          <Button onClick={handleImport} disabled={loading} className="gap-2 min-w-[140px]">
-            {loading ? (
+          <Button onClick={handleImport} disabled={loading || isPolling} className="gap-2 min-w-[140px]">
+            {(loading || isPolling) ? (
               <>
                 <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Importando…
+                {isPolling ? (pollMessage || 'Buscando...') : 'Importando…'}
               </>
             ) : importResult ? (
               <>
@@ -887,7 +940,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 {method === 'manual'
                   ? 'Añadir Lead'
                   : method === 'apollo'
-                  ? `Buscar en Apollo`
+                  ? 'Buscar en LinkedIn'
                   : method === 'csv' && csvStep === 'map' && csvRawData
                   ? `Importar ${csvRawData.totalRows} leads`
                   : 'Importar Leads'}
