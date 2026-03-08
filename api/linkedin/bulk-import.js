@@ -18,6 +18,196 @@ function getUserId(req) {
   }
 }
 
+// ─── Google Sheets: extract sheet ID and fetch CSV ───────────────────────────
+async function fetchGoogleSheetsCsv(url) {
+  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (!match) throw new Error('URL de Google Sheets no válida. Debe contener /spreadsheets/d/{ID}');
+  const sheetId = match[1];
+  const gidMatch = url.match(/[#&?]gid=(\d+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  const res = await fetch(csvUrl, {
+    redirect: 'follow',
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  });
+  if (res.status === 401 || res.status === 403 || res.url?.includes('accounts.google.com')) {
+    throw new Error('La hoja no es pública. Ve a "Compartir" → "Cualquiera con el enlace puede ver" y vuelve a intentarlo.');
+  }
+  if (!res.ok) throw new Error(`No se pudo acceder a la hoja (${res.status}). Verifica que la URL sea correcta y la hoja sea pública.`);
+  return await res.text();
+}
+
+// ─── CSV parser: handles comma, semicolon and tab delimiters + quoted fields ─
+function parseCsvToLeads(csvText) {
+  const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) throw new Error('El CSV está vacío o solo tiene cabeceras, sin datos.');
+
+  const firstLine = lines[0];
+  const delim = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ',';
+
+  const parseLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuote && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuote = !inQuote;
+      } else if (ch === delim && !inQuote) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const FIELD_MAP = {
+    'first_name': 'first_name', 'firstname': 'first_name', 'first name': 'first_name',
+    'nombre': 'first_name', 'name': 'first_name', 'given name': 'first_name',
+    'last_name': 'last_name', 'lastname': 'last_name', 'last name': 'last_name',
+    'apellido': 'last_name', 'surname': 'last_name', 'family name': 'last_name',
+    'email': 'email', 'e-mail': 'email', 'correo': 'email', 'email address': 'email',
+    'company': 'company', 'empresa': 'company', 'organization': 'company',
+    'organisation': 'company', 'company name': 'company',
+    'position': 'job_title', 'title': 'job_title', 'job_title': 'job_title',
+    'jobtitle': 'job_title', 'job title': 'job_title', 'cargo': 'job_title',
+    'puesto': 'job_title', 'headline': 'job_title', 'role': 'job_title',
+    'linkedin_url': 'linkedin_url', 'linkedinurl': 'linkedin_url', 'linkedin url': 'linkedin_url',
+    'linkedin': 'linkedin_url', 'profile_url': 'linkedin_url', 'url': 'linkedin_url',
+    'profile url': 'linkedin_url', 'linkedin profile': 'linkedin_url',
+  };
+
+  const rawHeaders = parseLine(lines[0]);
+  const headers = rawHeaders.map(h => h.toLowerCase().replace(/['"]/g, '').trim());
+  const fieldMapping = headers.map(h => FIELD_MAP[h] || null);
+
+  const leads = lines.slice(1).map(line => {
+    const values = parseLine(line);
+    const row = {};
+    fieldMapping.forEach((field, i) => {
+      if (field && values[i] !== undefined && values[i] !== '') {
+        row[field] = values[i];
+      }
+    });
+    return row;
+  }).filter(row => Object.keys(row).length > 0);
+
+  if (leads.length === 0) throw new Error('No se encontraron columnas reconocidas. Asegúrate de que las cabeceras incluyan: first_name, last_name, email, company, linkedin_url, etc.');
+  return leads;
+}
+
+// ─── LinkedIn Voyager API: people search using li_at cookie ──────────────────
+async function searchLinkedInVoyager(sessionCookie, keywords, limit) {
+  const count = Math.max(1, Math.min(limit, 100));
+  const params = new URLSearchParams({
+    keywords,
+    filters: 'List((key:resultType,value:List(PEOPLE)))',
+    q: 'blended',
+    count: String(count),
+    start: '0',
+    origin: 'SWITCH_SEARCH_VERTICAL',
+    queryContext: 'List((key:spellCorrectionEnabled,value:true))',
+  });
+
+  const response = await fetch(`https://www.linkedin.com/voyager/api/search/blended?${params}`, {
+    headers: {
+      'Cookie': `li_at=${sessionCookie}; JSESSIONID="ajax:0"`,
+      'csrf-token': 'ajax:0',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'x-li-lang': 'es_ES',
+      'x-restli-protocol-version': '2.0.0',
+      'Accept': 'application/vnd.linkedin.normalized+json+2.1',
+      'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+      'Referer': 'https://www.linkedin.com/search/results/people/',
+      'x-li-track': '{"clientVersion":"1.13.23048","osName":"web","timezoneOffset":1}',
+    },
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('La sesión de LinkedIn ha expirado. Actualiza la cookie li_at en la sección de Cuentas.');
+  }
+  if (response.status === 429) {
+    throw new Error('LinkedIn ha limitado las búsquedas temporalmente. Espera 10-15 minutos y vuelve a intentarlo.');
+  }
+  if (!response.ok) {
+    throw new Error(`Error de LinkedIn (${response.status}). Inténtalo de nuevo en unos minutos.`);
+  }
+
+  const data = await response.json();
+  return extractProfilesFromVoyager(data, count);
+}
+
+function extractProfilesFromVoyager(data, limit) {
+  const profiles = [];
+  const seen = new Set();
+
+  for (const item of (data.included || [])) {
+    if (profiles.length >= limit) break;
+    if (item['$type'] !== 'com.linkedin.voyager.identity.shared.MiniProfile') continue;
+    if (!item.publicIdentifier || seen.has(item.publicIdentifier)) continue;
+    seen.add(item.publicIdentifier);
+
+    const occupation = item.occupation || '';
+    const atIdx = occupation.lastIndexOf(' at ');
+    const jobTitle = atIdx > -1 ? occupation.slice(0, atIdx).trim() : occupation.trim();
+    const company = atIdx > -1 ? occupation.slice(atIdx + 4).trim() : '';
+
+    profiles.push({
+      first_name: item.firstName || '',
+      last_name: item.lastName || '',
+      job_title: jobTitle,
+      company,
+      linkedin_url: `https://www.linkedin.com/in/${item.publicIdentifier}`,
+      email: null,
+    });
+  }
+  return profiles;
+}
+
+// ─── DB helper: insert leads + update campaign counter ────────────────────────
+async function insertLeadsIntoDB(teamId, campaignId, rawLeads) {
+  const leadsToInsert = rawLeads.map((lead) => {
+    const title = lead.job_title || lead.jobTitle || lead.position || lead.title || '';
+    return {
+      team_id: teamId,
+      campaign_id: campaignId || null,
+      first_name: lead.first_name || lead.firstName || '',
+      last_name: lead.last_name || lead.lastName || '',
+      company: lead.company || '',
+      position: title,
+      job_title: title,
+      linkedin_url: lead.linkedin_url || lead.linkedinUrl || lead.url || '',
+      email: lead.email || null,
+      status: 'new',
+      sent_message: false,
+    };
+  });
+
+  const { data: inserted, error } = await supabaseAdmin
+    .from('leads')
+    .insert(leadsToInsert)
+    .select();
+
+  if (error) throw new Error(error.message);
+
+  if (campaignId) {
+    const { count } = await supabaseAdmin
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId);
+    await supabaseAdmin
+      .from('campaigns')
+      .update({ leads_count: count || 0 })
+      .eq('id', campaignId);
+  }
+
+  return inserted?.length || 0;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -29,13 +219,14 @@ export default async function handler(req, res) {
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   if (req.method === 'POST') {
-    const { leads, campaign_id } = req.body || {};
+    const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters } = req.body || {};
+    const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
 
     if (!leads || !Array.isArray(leads) || leads.length === 0) {
       return res.status(400).json({ error: 'No se proporcionaron leads' });
     }
 
-    // Obtener o crear equipo
+    // ── Get or create team ──────────────────────────────────────────────────
     let teamId;
     const { data: teams } = await supabaseAdmin
       .from('teams')
@@ -56,49 +247,109 @@ export default async function handler(req, res) {
 
     if (!teamId) return res.status(500).json({ error: 'No se pudo obtener el equipo' });
 
-    // Preparar leads para inserción
-    const leadsToInsert = leads.map((lead) => {
-      const title = lead.job_title || lead.jobTitle || lead.position || lead.title || '';
-      return {
-        team_id: teamId,
-        campaign_id: campaign_id || null,
-        first_name: lead.first_name || lead.firstName || '',
-        last_name: lead.last_name || lead.lastName || '',
-        company: lead.company || '',
-        position: title,       // columna original del schema
-        job_title: title,      // columna añadida en migración
-        linkedin_url: lead.linkedin_url || lead.linkedinUrl || lead.url || '',
-        email: lead.email || null,
-        status: 'new',
-        sent_message: false,
-      };
-    });
+    let rawLeads = [];
 
-    const { data: inserted, error } = await supabaseAdmin
-      .from('leads')
-      .insert(leadsToInsert)
-      .select();
+    try {
+      // ── CSV / leads array ─────────────────────────────────────────────────
+      if (importType === 'csv' || importType === 'leads') {
+        if (!leads || !Array.isArray(leads) || leads.length === 0) {
+          return res.status(400).json({ error: 'No se proporcionaron leads' });
+        }
+        rawLeads = leads;
 
-    if (error) return res.status(400).json({ error: error.message });
+      // ── Google Sheets ─────────────────────────────────────────────────────
+      } else if (importType === 'google_sheets') {
+        if (!url) return res.status(400).json({ error: 'Se requiere la URL de Google Sheets' });
+        const csvText = await fetchGoogleSheetsCsv(url);
+        rawLeads = parseCsvToLeads(csvText);
 
-    // Actualizar contador de leads en la campaña si aplica
-    if (campaign_id) {
-      const { count } = await supabaseAdmin
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', campaign_id);
+      // ── LinkedIn Search URL ───────────────────────────────────────────────
+      } else if (importType === 'linkedin_search') {
+        if (!url) return res.status(400).json({ error: 'Se requiere la URL de búsqueda' });
+        if (!account_id) return res.status(400).json({ error: 'Se requiere una cuenta de LinkedIn' });
 
-      await supabaseAdmin
-        .from('campaigns')
-        .update({ leads_count: count || 0 })
-        .eq('id', campaign_id);
+        const { data: account, error: accErr } = await supabaseAdmin
+          .from('linkedin_accounts')
+          .select('id, session_cookie, is_valid')
+          .eq('id', account_id)
+          .eq('team_id', teamId)
+          .single();
+        if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
+        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Actualiza la cookie en la sección Cuentas.' });
+
+        let keywords = '';
+        try {
+          const urlObj = new URL(url);
+          keywords = decodeURIComponent(urlObj.searchParams.get('keywords') || '');
+        } catch {
+          return res.status(400).json({ error: 'URL de búsqueda de LinkedIn no válida' });
+        }
+        if (!keywords) return res.status(400).json({ error: 'No se encontró el parámetro "keywords" en la URL' });
+
+        rawLeads = await searchLinkedInVoyager(account.session_cookie, keywords, Math.min(limit, 100));
+        if (rawLeads.length === 0) {
+          return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
+        }
+
+      // ── Sales Navigator URL ───────────────────────────────────────────────
+      } else if (importType === 'sales_navigator') {
+        if (!account_id) return res.status(400).json({ error: 'Se requiere una cuenta de LinkedIn' });
+
+        const { data: account, error: accErr } = await supabaseAdmin
+          .from('linkedin_accounts')
+          .select('id, session_cookie, is_valid')
+          .eq('id', account_id)
+          .eq('team_id', teamId)
+          .single();
+        if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
+        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Actualiza la cookie en la sección Cuentas.' });
+
+        // Use pre-parsed filters sent from frontend
+        const f = filters || {};
+        const parts = [
+          ...(f.titles || []),
+          ...(f.keywords || []),
+        ].filter(Boolean);
+
+        if (parts.length === 0) {
+          return res.status(400).json({ error: 'No se pudieron extraer filtros de la URL de Sales Navigator. Verifica que la URL sea correcta.' });
+        }
+
+        let keywords = parts.join(' OR ');
+        // Append company filter if present (as keyword addition)
+        if (f.companies && f.companies.length > 0) {
+          keywords += ` ${f.companies.join(' ')}`;
+        }
+
+        rawLeads = await searchLinkedInVoyager(account.session_cookie, keywords.trim(), Math.min(limit, 100));
+        if (rawLeads.length === 0) {
+          return res.status(200).json({ success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba ajustando los filtros del Sales Navigator.' });
+        }
+
+      // ── Manual single lead ────────────────────────────────────────────────
+      } else if (importType === 'manual') {
+        if (!lead) return res.status(400).json({ error: 'No se proporcionó ningún lead' });
+        rawLeads = [lead];
+
+      } else {
+        return res.status(400).json({ error: `Tipo de importación no reconocido: "${importType}"` });
+      }
+    } catch (err) {
+      console.error('[BULK-IMPORT]', err.message);
+      return res.status(400).json({ error: err.message });
     }
 
-    return res.status(201).json({
-      success: true,
-      imported: inserted?.length || 0,
-      message: `✓ ${inserted?.length || 0} leads importados`,
-    });
+    // ── Insert into DB ──────────────────────────────────────────────────────
+    try {
+      const importedCount = await insertLeadsIntoDB(teamId, campaign_id, rawLeads);
+      return res.status(201).json({
+        success: true,
+        imported: importedCount,
+        message: `✓ ${importedCount} lead${importedCount !== 1 ? 's' : ''} importado${importedCount !== 1 ? 's' : ''}`,
+      });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
   }
 
   return res.status(405).json({ error: 'Método no permitido' });

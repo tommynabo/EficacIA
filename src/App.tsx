@@ -8,7 +8,6 @@ import { DashboardLayout } from "./components/layout"
 import AccountsPage from "./pages/dashboard/accounts"
 import CampaignsPage from "./pages/dashboard/campaigns"
 import CampaignDetailPage from "./pages/dashboard/campaign-detail"
-import LeadsPage from "./pages/dashboard/leads"
 import UniboxPage from "./pages/dashboard/unibox"
 import AnalyticsPage from "./pages/dashboard/analytics"
 import SettingsPage from "./pages/dashboard/settings"
@@ -50,7 +49,6 @@ function AppRoutes() {
         <Route index element={<AccountsPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
-        <Route path="leads" element={<LeadsPage />} />
         <Route path="unibox" element={<UniboxPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="settings" element={<SettingsPage />} />

@@ -46,6 +46,14 @@ html.light .text-white {
   color: #0f172a !important;
 }
 
+/* Nav hover states: dark navy bg + white text so they stay visible in light mode */
+html.light .hover\:bg-slate-800\/50:hover {
+  background-color: #1e3a5f !important;
+}
+html.light .hover\:text-white:hover {
+  color: #ffffff !important;
+}
+
 /* Input/textarea/select native backgrounds */
 html.light input,
 html.light textarea,

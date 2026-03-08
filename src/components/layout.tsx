@@ -5,7 +5,6 @@ import {
   Inbox, 
   LayoutDashboard, 
   Settings, 
-  Users, 
   Zap,
   LogOut
 } from "lucide-react"
@@ -14,7 +13,6 @@ import { cn } from "@/src/lib/utils"
 const navItems = [
   { name: "Cuentas", href: "/dashboard", icon: LayoutDashboard },
   { name: "Campañas", href: "/dashboard/campaigns", icon: Zap },
-  { name: "Leads", href: "/dashboard/leads", icon: Users },
   { name: "Unibox", href: "/dashboard/unibox", icon: Inbox },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Ajustes", href: "/dashboard/settings", icon: Settings },

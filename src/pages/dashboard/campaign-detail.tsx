@@ -6,6 +6,7 @@ import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
 import { Switch } from "@/src/components/ui/switch"
 import { Skeleton } from "@/src/components/ui/skeleton"
+import { LeadImportModal } from "@/src/components/lead-import-modal"
 import {
   ArrowLeft, Plus, Trash2, Bot, Save, Clock, Search, AlertCircle,
   Play, Pause, CheckCircle2, Users, Mail, MessageSquare, TrendingUp, Eye,
@@ -88,10 +89,6 @@ export default function CampaignDetailPage() {
   // Leads state
   const [search, setSearch] = React.useState("")
   const [showAddLeadModal, setShowAddLeadModal] = React.useState(false)
-  const [allLeads, setAllLeads] = React.useState<Lead[]>([])
-  const [selectedLeadIds, setSelectedLeadIds] = React.useState<string[]>([])
-  const [addingLeads, setAddingLeads] = React.useState(false)
-  const [newLead, setNewLead] = React.useState({ first_name: "", last_name: "", linkedin_url: "", company: "", position: "", email: "" })
 
   // Sequence state
   const [steps, setSteps] = React.useState<SequenceStep[]>(DEFAULT_STEPS)
@@ -201,59 +198,6 @@ export default function CampaignDetailPage() {
       })
       setLeads(leads.filter(l => l.id !== leadId))
     } catch { /* silent */ }
-  }
-
-  const openAddLeadsModal = async () => {
-    setShowAddLeadModal(true)
-    try {
-      const res = await fetch(`/api/linkedin/leads`, { headers: apiHeaders() })
-      const data = await res.json()
-      const existing = new Set(leads.map(l => l.id))
-      setAllLeads((data.leads || []).filter((l: Lead) => !existing.has(l.id)))
-    } catch { /* silent */ }
-  }
-
-  const addSelectedLeads = async () => {
-    if (selectedLeadIds.length === 0) return
-    setAddingLeads(true)
-    try {
-      const res = await fetch(`/api/linkedin/campaigns?id=${id}&action=leads`, {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ leadIds: selectedLeadIds }),
-      })
-      if (!res.ok) throw new Error("Error añadiendo leads")
-      await fetchAll()
-      setShowAddLeadModal(false)
-      setSelectedLeadIds([])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error añadiendo leads")
-    } finally {
-      setAddingLeads(false)
-    }
-  }
-
-  const createAndAddLead = async () => {
-    if (!newLead.first_name && !newLead.linkedin_url) {
-      setError("Introduce al menos nombre o URL de LinkedIn")
-      return
-    }
-    setAddingLeads(true)
-    try {
-      const res = await fetch(`/api/linkedin/campaigns?id=${id}&action=leads`, {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ lead: newLead }),
-      })
-      if (!res.ok) throw new Error("Error creando lead")
-      await fetchAll()
-      setShowAddLeadModal(false)
-      setNewLead({ first_name: "", last_name: "", linkedin_url: "", company: "", position: "", email: "" })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error creando lead")
-    } finally {
-      setAddingLeads(false)
-    }
   }
 
   // ─── Secuencia ──────────────────────────────────────────────────────────────
@@ -440,7 +384,7 @@ export default function CampaignDetailPage() {
                 <span>{leads.length} leads</span>
               </div>
             </div>
-            <Button onClick={openAddLeadsModal} className="gap-2">
+            <Button onClick={() => setShowAddLeadModal(true)} className="gap-2">
               <Plus className="w-4 h-4" /> Añadir Leads
             </Button>
           </div>
@@ -452,7 +396,7 @@ export default function CampaignDetailPage() {
                 <p className="font-medium text-slate-300 mb-1">Sin leads aún</p>
                 <p className="text-sm text-slate-500">Añade leads para empezar tu campaña de outreach</p>
               </div>
-              <Button onClick={openAddLeadsModal} variant="outline" className="gap-2">
+              <Button onClick={() => setShowAddLeadModal(true)} variant="outline" className="gap-2">
                 <Plus className="w-4 h-4" /> Añadir Leads
               </Button>
             </Card>
@@ -801,66 +745,13 @@ export default function CampaignDetailPage() {
         </div>
       )}
 
-      {/* ─── Modal: Añadir Leads ─────────────────────────────────────────────── */}
-      {showAddLeadModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowAddLeadModal(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-xl space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Añadir Leads a la Campaña</h3>
-              <button onClick={() => setShowAddLeadModal(false)} className="text-slate-500 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Crear nuevo lead manualmente */}
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-slate-300">Añadir nuevo lead</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Nombre *" value={newLead.first_name} onChange={e => setNewLead(n => ({ ...n, first_name: e.target.value }))} className="bg-slate-950 border-slate-700 text-sm" />
-                <Input placeholder="Apellido" value={newLead.last_name} onChange={e => setNewLead(n => ({ ...n, last_name: e.target.value }))} className="bg-slate-950 border-slate-700 text-sm" />
-                <Input placeholder="URL de LinkedIn" value={newLead.linkedin_url} onChange={e => setNewLead(n => ({ ...n, linkedin_url: e.target.value }))} className="bg-slate-950 border-slate-700 text-sm col-span-2" />
-                <Input placeholder="Empresa" value={newLead.company} onChange={e => setNewLead(n => ({ ...n, company: e.target.value }))} className="bg-slate-950 border-slate-700 text-sm" />
-                <Input placeholder="Cargo" value={newLead.position} onChange={e => setNewLead(n => ({ ...n, position: e.target.value }))} className="bg-slate-950 border-slate-700 text-sm" />
-              </div>
-              <Button onClick={createAndAddLead} disabled={addingLeads} className="w-full gap-2">
-                <Plus className="w-4 h-4" /> {addingLeads ? "Añadiendo..." : "Crear y Añadir Lead"}
-              </Button>
-            </div>
-
-            {/* Seleccionar de leads existentes */}
-            {allLeads.length > 0 && (
-              <div className="space-y-3 border-t border-slate-800 pt-4">
-                <p className="text-sm font-medium text-slate-300">O seleccionar de leads existentes ({allLeads.length})</p>
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  {allLeads.map(lead => (
-                    <label key={lead.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-700"
-                        checked={selectedLeadIds.includes(lead.id)}
-                        onChange={e => setSelectedLeadIds(ids =>
-                          e.target.checked ? [...ids, lead.id] : ids.filter(i => i !== lead.id)
-                        )}
-                      />
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                        {(lead.first_name?.[0] || "?").toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-200 truncate">{lead.first_name} {lead.last_name}</p>
-                        <p className="text-xs text-slate-500 truncate">{lead.company || lead.linkedin_url || "—"}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                {selectedLeadIds.length > 0 && (
-                  <Button onClick={addSelectedLeads} disabled={addingLeads} variant="outline" className="w-full gap-2">
-                    {addingLeads ? "Añadiendo..." : `Añadir ${selectedLeadIds.length} lead(s) seleccionado(s)`}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+      {/* ─── Modal: Importar Leads ───────────────────────────────────────────── */}
+      {showAddLeadModal && id && (
+        <LeadImportModal
+          campaignId={id}
+          onClose={() => setShowAddLeadModal(false)}
+          onImported={() => { fetchAll() }}
+        />
       )}
     </div>
   )
