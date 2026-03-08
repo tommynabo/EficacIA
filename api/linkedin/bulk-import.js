@@ -278,14 +278,27 @@ export default async function handler(req, res) {
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
         if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Actualiza la cookie en la sección Cuentas.' });
 
+        // Robust keyword extraction — try multiple strategies
         let keywords = '';
         try {
-          const urlObj = new URL(url);
+          // Normalize URL: add https:// if missing
+          const normalized = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
+          const urlObj = new URL(normalized);
           keywords = decodeURIComponent(urlObj.searchParams.get('keywords') || '');
-        } catch {
-          return res.status(400).json({ error: 'URL de búsqueda de LinkedIn no válida' });
+        } catch { /* fall through to regex */ }
+
+        // Fallback: regex on raw string to find keywords=VALUE
+        if (!keywords) {
+          const m = url.match(/[?&]keywords=([^&]+)/i);
+          if (m) keywords = decodeURIComponent(m[1].replace(/\+/g, ' '));
         }
-        if (!keywords) return res.status(400).json({ error: 'No se encontró el parámetro "keywords" en la URL' });
+
+        // Last resort: use the entire input as search terms if it looks like plain text
+        if (!keywords && !url.includes('linkedin.com')) {
+          keywords = url.trim();
+        }
+
+        if (!keywords) return res.status(400).json({ error: 'No se encontraron palabras clave. Usa una URL como: linkedin.com/search/results/all/?keywords=CEO+Spain' });
 
         rawLeads = await searchLinkedInVoyager(account.session_cookie, keywords, Math.min(limit, 100));
         if (rawLeads.length === 0) {

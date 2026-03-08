@@ -398,7 +398,9 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       } else if (method === 'linkedin_search') {
         if (!liSearchParsed?.isValid) throw new Error(liSearchParsed?.error || 'URL de LinkedIn no válida')
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
-        body = { ...body, type: 'linkedin_search', url: liSearchUrl, account_id: selectedAccountId, limit: liSearchLimit }
+        // Always send a fully-qualified URL so the backend can parse it
+        const normalizedLiUrl = liSearchUrl.trim().startsWith('http') ? liSearchUrl.trim() : 'https://' + liSearchUrl.trim()
+        body = { ...body, type: 'linkedin_search', url: normalizedLiUrl, account_id: selectedAccountId, limit: liSearchLimit }
 
       } else if (method === 'sales_navigator') {
         if (!snParsed?.isValid) throw new Error(snParsed?.error || 'URL de Sales Navigator no válida')
