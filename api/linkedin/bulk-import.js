@@ -128,7 +128,7 @@ async function searchViaApollo(keywords, limit) {
     ...(locations.length > 0 && { person_locations: locations }),
   };
 
-  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -138,10 +138,15 @@ async function searchViaApollo(keywords, limit) {
     body: JSON.stringify(body),
   });
 
-  if (response.status === 401 || response.status === 403 || response.status === 422) {
+  if (response.status === 401 || response.status === 403) {
     const errText = await response.text().catch(() => '');
     console.error('[APOLLO SEARCH] Auth error:', response.status, errText);
     throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
+  }
+  if (response.status === 422) {
+    const errText = await response.text().catch(() => '');
+    console.error('[APOLLO SEARCH] 422 error:', errText);
+    throw new Error(`Error en los parámetros de búsqueda (422). Detalle: ${errText}`);
   }
   if (response.status === 429) {
     throw new Error('Límite de búsquedas alcanzado en Apollo. Espera unos minutos o amplía tu plan.');
@@ -192,7 +197,7 @@ async function searchViaApolloQuery(q, limit) {
     ...(q.keywords  && { q_keywords:         q.keywords }),
   };
 
-  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+  const response = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -202,10 +207,15 @@ async function searchViaApolloQuery(q, limit) {
     body: JSON.stringify(body),
   });
 
-  if (response.status === 401 || response.status === 403 || response.status === 422) {
+  if (response.status === 401 || response.status === 403) {
     const errText = await response.text().catch(() => '');
     console.error('[APOLLO STRUCTURED SEARCH] Auth error:', response.status, errText);
     throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
+  }
+  if (response.status === 422) {
+    const errText = await response.text().catch(() => '');
+    console.error('[APOLLO STRUCTURED SEARCH] 422 error:', errText);
+    throw new Error(`Error en los parámetros de búsqueda (422). Detalle: ${errText}`);
   }
   if (response.status === 429) {
     throw new Error('Límite de búsquedas alcanzado en Apollo. Espera unos minutos.');
