@@ -105,6 +105,7 @@ function parseCsvToLeads(csvText) {
 // Set APOLLO_API_KEY env var in Vercel. Free at: https://app.apollo.io/settings/integrations/api
 async function searchViaApollo(keywords, limit) {
   const apolloKey = (process.env.APOLLO_API_KEY || '').trim();
+  console.log('[APOLLO] Key length:', apolloKey.length, '| starts:', apolloKey.slice(0, 5));
 
   // Parse keywords into title / person_titles for Apollo
   // e.g. "CEO Spain" → person_titles: ["CEO"], person_locations: ["Spain"]
@@ -120,7 +121,6 @@ async function searchViaApollo(keywords, limit) {
   }
 
   const body = {
-    api_key: apolloKey,   // Apollo v1 requires key in body
     q_keywords: keywords,
     page: 1,
     per_page: Math.min(limit, 25),
@@ -130,11 +130,15 @@ async function searchViaApollo(keywords, limit) {
 
   const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': apolloKey,
+      'Cache-Control': 'no-cache',
+    },
     body: JSON.stringify(body),
   });
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401 || response.status === 403 || response.status === 422) {
     const errText = await response.text().catch(() => '');
     console.error('[APOLLO SEARCH] Auth error:', response.status, errText);
     throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
@@ -180,7 +184,6 @@ async function searchViaApolloQuery(q, limit) {
   const splitCsv = (str) => (str || '').split(',').map(s => s.trim()).filter(Boolean);
 
   const body = {
-    api_key: apolloKey,   // Apollo v1 requires key in body
     page: 1,
     per_page: Math.min(limit, 25),
     ...(q.titles    && { person_titles:      splitCsv(q.titles) }),
@@ -191,11 +194,15 @@ async function searchViaApolloQuery(q, limit) {
 
   const response = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': apolloKey,
+      'Cache-Control': 'no-cache',
+    },
     body: JSON.stringify(body),
   });
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401 || response.status === 403 || response.status === 422) {
     const errText = await response.text().catch(() => '');
     console.error('[APOLLO STRUCTURED SEARCH] Auth error:', response.status, errText);
     throw new Error('Apollo API Key inválida. Verifica la variable APOLLO_API_KEY en Vercel.');
