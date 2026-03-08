@@ -26,6 +26,10 @@ interface Account {
   is_valid: boolean
 }
 
+type FieldType = 'skip' | 'first_name' | 'last_name' | 'email' | 'company' | 'job_title' | 'linkedin_url' | 'custom_var'
+interface ColMapping { fieldType: FieldType; varName: string }
+interface CsvRawData { headers: string[]; sampleRows: string[][]; allRows: string[][]; totalRows: number }
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getApiHeaders(): Record<string, string> {
@@ -36,9 +40,19 @@ function getApiHeaders(): Record<string, string> {
   }
 }
 
-function parseCSVPreview(text: string): { rows: Record<string, string>[]; detectedColumns: string[] } {
+// ─── CSV auto-detect field type from column name ────────────────────────────
+const AUTO_FIELD_MAP: Record<string, FieldType> = {
+  'first_name': 'first_name', 'firstname': 'first_name', 'first name': 'first_name', 'nombre': 'first_name', 'name': 'first_name', 'given name': 'first_name',
+  'last_name': 'last_name', 'lastname': 'last_name', 'last name': 'last_name', 'apellido': 'last_name', 'surname': 'last_name', 'family name': 'last_name',
+  'email': 'email', 'e-mail': 'email', 'correo': 'email', 'email address': 'email',
+  'company': 'company', 'empresa': 'company', 'organization': 'company', 'organisation': 'company', 'company name': 'company',
+  'position': 'job_title', 'title': 'job_title', 'job_title': 'job_title', 'jobtitle': 'job_title', 'job title': 'job_title', 'cargo': 'job_title', 'puesto': 'job_title', 'headline': 'job_title', 'rol': 'job_title', 'role': 'job_title',
+  'linkedin_url': 'linkedin_url', 'linkedinurl': 'linkedin_url', 'linkedin url': 'linkedin_url', 'linkedin': 'linkedin_url', 'profile_url': 'linkedin_url', 'profile url': 'linkedin_url',
+}
+
+function parseCsvRaw(text: string): CsvRawData {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return { rows: [], detectedColumns: [] }
+  if (lines.length < 2) return { headers: [], sampleRows: [], allRows: [], totalRows: 0 }
 
   const firstLine = lines[0]
   const delim = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ','
@@ -77,21 +91,10 @@ function parseCSVPreview(text: string): { rows: Record<string, string>[]; detect
     'linkedin': 'linkedin_url', 'profile_url': 'linkedin_url', 'url': 'linkedin_url',
   }
 
-  const rawHeaders = parseLine(lines[0])
-  const headers = rawHeaders.map(h => h.toLowerCase().replace(/['"]/g, '').trim())
-  const fieldMapping = headers.map(h => FIELD_MAP[h] || null)
-  const detectedColumns = fieldMapping.filter(Boolean) as string[]
-
-  const rows = lines.slice(1, 6).map(line => {
-    const values = parseLine(line)
-    const row: Record<string, string> = {}
-    fieldMapping.forEach((field, i) => {
-      if (field && values[i]) row[field] = values[i]
-    })
-    return row
-  }).filter(r => Object.keys(r).length > 0)
-
-  return { rows, detectedColumns: [...new Set(detectedColumns)] }
+  const headers = parseLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim())
+  const allRows = lines.slice(1).map(l => parseLine(l))
+  const sampleRows = allRows.slice(0, 3)
+  return { headers, sampleRows, allRows, totalRows: allRows.length }
 }
 
 // ─── Sales Navigator URL parser (multi-strategy, indestructible) ─────────────
@@ -291,8 +294,10 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [selectedAccountId, setSelectedAccountId] = React.useState('')
 
   // CSV
+  const [csvStep, setCsvStep] = React.useState<'upload' | 'map'>('upload')
+  const [csvRawData, setCsvRawData] = React.useState<CsvRawData | null>(null)
+  const [colMappings, setColMappings] = React.useState<ColMapping[]>([])
   const [csvText, setCsvText] = React.useState('')
-  const [csvPreview, setCsvPreview] = React.useState<{ rows: Record<string, string>[]; detectedColumns: string[] } | null>(null)
   const [isDragging, setIsDragging] = React.useState(false)
 
   // Google Sheets
@@ -325,22 +330,34 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       .catch(() => { /* silent */ })
   }, [])
 
+  const goCsvMap = (raw: CsvRawData) => {
+    setCsvRawData(raw)
+    const auto = raw.headers.map(h => {
+      const key = h.toLowerCase().trim()
+      const ft = AUTO_FIELD_MAP[key] || 'skip'
+      return { fieldType: ft, varName: h }
+    })
+    setColMappings(auto)
+    setCsvStep('map')
+  }
+
   const handleCsvFile = (file: File) => {
     const reader = new FileReader()
     reader.onload = e => {
       const text = (e.target?.result as string) || ''
       setCsvText(text)
-      setCsvPreview(parseCSVPreview(text))
+      const raw = parseCsvRaw(text)
+      if (raw.totalRows > 0) goCsvMap(raw)
     }
     reader.readAsText(file)
   }
 
   const handleCsvTextChange = (text: string) => {
     setCsvText(text)
-    if (text.trim().length > 10) {
-      setCsvPreview(parseCSVPreview(text))
-    } else {
-      setCsvPreview(null)
+    if (csvStep === 'map') setCsvStep('upload')
+    if (text.trim().split('\n').length > 1) {
+      const raw = parseCsvRaw(text)
+      if (raw.totalRows > 0) goCsvMap(raw)
     }
   }
 
@@ -365,9 +382,10 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       let body: Record<string, unknown> = { campaign_id: campaignId }
 
       if (method === 'csv') {
-        if (!csvText.trim()) throw new Error('No hay datos CSV. Sube un archivo o pega el contenido.')
-        if (!csvPreview || csvPreview.rows.length === 0) throw new Error('No se han podido leer filas del CSV. Revisa el formato.')
-        body = { ...body, type: 'csv', leads: buildLeadsFromCsvText(csvText) }
+        if (!csvRawData || csvRawData.totalRows === 0) throw new Error('No hay datos CSV. Sube un archivo o pega el contenido.')
+        const mapped = buildLeadsFromMappings(csvRawData.headers, csvRawData.allRows, colMappings)
+        if (mapped.length === 0) throw new Error('Ninguna columna está asignada a un campo. Configura al menos una columna.')
+        body = { ...body, type: 'csv', leads: mapped }
 
       } else if (method === 'google_sheets') {
         if (!sheetsUrl.trim()) throw new Error('Introduce la URL de la hoja de Google Sheets.')
@@ -407,6 +425,9 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
       if (method === 'manual') {
         setManualLead({ first_name: '', last_name: '', company: '', job_title: '', email: '', linkedin_url: '' })
+      } else {
+        // Auto-close after 1.5s showing the success message
+        setTimeout(() => onClose(), 1500)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado')
@@ -462,88 +483,135 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           {/* ── CSV ── */}
           {method === 'csv' && (
             <div className="space-y-4">
-              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
-                <strong className="text-slate-300">Columnas detectadas automáticamente:</strong>{' '}
-                first_name, last_name, email, company, position / job_title, linkedin_url (en inglés o español)
-              </div>
-
-              {/* Drag & drop zone */}
-              <div
-                onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={e => {
-                  e.preventDefault()
-                  setIsDragging(false)
-                  const file = e.dataTransfer.files[0]
-                  if (file) handleCsvFile(file)
-                }}
-                className={cn(
-                  "border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors",
-                  isDragging ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600"
-                )}
-                onClick={() => document.getElementById('csv-file-input')?.click()}
-              >
-                <Upload className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-300">Arrastra tu CSV aquí o <span className="text-blue-400 underline">haz clic para subir</span></p>
-                <p className="text-sm text-slate-500 mt-1">Soporta .csv y .txt — coma, punto y coma o tabulación</p>
-                <input
-                  id="csv-file-input"
-                  type="file"
-                  accept=".csv,.txt"
-                  className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvFile(f) }}
-                />
-              </div>
-
-              <div className="relative">
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center gap-3">
-                  <div className="flex-1 h-px bg-slate-800" />
-                  <span className="text-xs text-slate-600 bg-slate-900 px-2">o pega directamente</span>
-                  <div className="flex-1 h-px bg-slate-800" />
-                </div>
-                <div className="h-4" />
-              </div>
-
-              <textarea
-                value={csvText}
-                onChange={e => handleCsvTextChange(e.target.value)}
-                placeholder={"nombre,apellido,empresa,cargo,linkedin_url,email\nJuan,García,Acme SL,CEO,https://linkedin.com/in/juan,..."}
-                rows={5}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
-              />
-
-              {csvPreview && csvPreview.rows.length > 0 && (
-                <div className="rounded-lg border border-slate-700 overflow-hidden">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border-b border-slate-700">
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-xs text-slate-300">
-                      Columnas detectadas: <span className="text-emerald-400 font-medium">{csvPreview.detectedColumns.join(', ')}</span>
-                    </span>
+              {csvStep === 'upload' ? (
+                <>
+                  {/* Drag & drop zone */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={e => {
+                      e.preventDefault()
+                      setIsDragging(false)
+                      const file = e.dataTransfer.files[0]
+                      if (file) handleCsvFile(file)
+                    }}
+                    className={cn(
+                      "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors",
+                      isDragging ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600"
+                    )}
+                    onClick={() => document.getElementById('csv-file-input')?.click()}
+                  >
+                    <Upload className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                    <p className="text-base text-slate-300 font-medium">Arrastra tu CSV aquí o <span className="text-blue-400 underline">haz clic para subir</span></p>
+                    <p className="text-sm text-slate-500 mt-1">Soporta .csv y .txt — coma, punto y coma o tabulación</p>
+                    <input
+                      id="csv-file-input"
+                      type="file"
+                      accept=".csv,.txt"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvFile(f) }}
+                    />
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-800">
-                          {csvPreview.detectedColumns.map(col => (
-                            <th key={col} className="text-left px-3 py-1.5 text-slate-500 font-medium">{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {csvPreview.rows.map((row, i) => (
-                          <tr key={i} className="border-b border-slate-800/50 last:border-0">
-                            {csvPreview.detectedColumns.map(col => (
-                              <td key={col} className="px-3 py-1.5 text-slate-400 truncate max-w-[140px]">{row[col] || '—'}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-slate-800" />
+                    <span className="text-xs text-slate-600">o pega directamente</span>
+                    <div className="flex-1 h-px bg-slate-800" />
                   </div>
-                  <div className="px-3 py-2 text-xs text-slate-500 bg-slate-800/30">
-                    Mostrando primeras 5 filas de vista previa
+
+                  <textarea
+                    value={csvText}
+                    onChange={e => handleCsvTextChange(e.target.value)}
+                    placeholder={"nombre,apellido,empresa,cargo,linkedin_url,email\nJuan,García,Acme SL,CEO,https://linkedin.com/in/juan,..."}
+                    rows={5}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
+                  />
+                </>
+              ) : csvRawData && (
+                <>
+                  {/* Column Mapper — like Walead */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-300">Asigna cada columna a un campo</p>
+                    <button
+                      onClick={() => { setCsvStep('upload'); setCsvRawData(null) }}
+                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"
+                    >
+                      <X className="w-3 h-3" /> Cambiar archivo
+                    </button>
                   </div>
-                </div>
+
+                  <div className="rounded-xl border border-slate-700 overflow-hidden">
+                    {/* Table header */}
+                    <div className="grid grid-cols-[2fr_3fr_2fr] gap-0 bg-slate-800/70 border-b border-slate-700">
+                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide">Columna del CSV</div>
+                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide border-l border-slate-700">Asignar como</div>
+                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wide border-l border-slate-700">Muestra</div>
+                    </div>
+
+                    {csvRawData.headers.map((header, idx) => {
+                      const mapping = colMappings[idx] || { fieldType: 'skip', varName: header }
+                      const samples = csvRawData.sampleRows.map(r => r[idx] || '').filter(Boolean).slice(0, 3)
+                      return (
+                        <div key={idx} className="grid grid-cols-[2fr_3fr_2fr] gap-0 border-b border-slate-800 last:border-0 hover:bg-slate-800/20 transition-colors">
+                          {/* Column name */}
+                          <div className="px-4 py-3 flex items-center">
+                            <span className="text-sm text-slate-200 font-mono font-medium">{header}</span>
+                          </div>
+
+                          {/* Type selector */}
+                          <div className="px-3 py-2.5 border-l border-slate-800 flex flex-col gap-1.5 justify-center">
+                            <div className="relative">
+                              <select
+                                value={mapping.fieldType}
+                                onChange={e => {
+                                  const ft = e.target.value as FieldType
+                                  setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, fieldType: ft } : m))
+                                }}
+                                className="w-full appearance-none bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 pr-7 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                              >
+                                <option value="skip">⊘ No importar</option>
+                                <option value="first_name">👤 Nombre</option>
+                                <option value="last_name">👤 Apellido</option>
+                                <option value="email">✉️ Email</option>
+                                <option value="company">🏢 Empresa</option>
+                                <option value="job_title">💼 Cargo / Título</option>
+                                <option value="linkedin_url">🔗 URL de LinkedIn</option>
+                                <option value="custom_var">🔧 Variable personalizada</option>
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                            </div>
+                            {mapping.fieldType === 'custom_var' && (
+                              <input
+                                type="text"
+                                value={mapping.varName}
+                                onChange={e => setColMappings(prev => prev.map((m, i) => i === idx ? { ...m, varName: e.target.value } : m))}
+                                placeholder="nombre_variable"
+                                className="w-full bg-slate-950 border border-blue-500/40 rounded-lg px-3 py-1.5 text-xs font-mono text-blue-300 placeholder:text-slate-600 focus:outline-none"
+                              />
+                            )}
+                            {mapping.fieldType === 'custom_var' && mapping.varName && (
+                              <p className="text-[10px] text-slate-500">Usa <span className="font-mono text-blue-400">{`{{${mapping.varName.toLowerCase().replace(/\s+/g, '_')}}}`}</span> en tus mensajes</p>
+                            )}
+                          </div>
+
+                          {/* Samples */}
+                          <div className="px-3 py-3 border-l border-slate-800 space-y-0.5">
+                            {samples.length > 0 ? samples.map((s, si) => (
+                              <p key={si} className={`text-xs truncate ${si === 1 ? 'text-blue-400' : si === 3 ? 'text-blue-400' : 'text-slate-400'}`}>{s}</p>
+                            )) : <p className="text-xs text-slate-600 italic">—</p>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-emerald-400">
+                    <Check className="w-4 h-4" />
+                    <span>{csvRawData.totalRows} filas detectadas</span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-slate-400">{colMappings.filter(m => m.fieldType !== 'skip').length} columnas asignadas</span>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -719,7 +787,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                {method === 'manual' ? 'Añadir Lead' : 'Importar Leads'}
+                {method === 'manual'
+                  ? 'Añadir Lead'
+                  : method === 'csv' && csvStep === 'map' && csvRawData
+                  ? `Importar ${csvRawData.totalRows} leads`
+                  : 'Importar Leads'}
               </>
             )}
           </Button>
@@ -729,53 +801,26 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   )
 }
 
-// ─── Build full leads array from CSV text (for submit) ────────────────────────
-function buildLeadsFromCsvText(csvText: string): Record<string, string>[] {
-  const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return []
-
-  const delim = lines[0].includes('\t') ? '\t' : lines[0].includes(';') ? ';' : ','
-
-  const parseLine = (line: string): string[] => {
-    const result: string[] = []
-    let current = ''
-    let inQuote = false
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i]
-      if (ch === '"') {
-        if (inQuote && line[i + 1] === '"') { current += '"'; i++ }
-        else inQuote = !inQuote
-      } else if (ch === delim && !inQuote) {
-        result.push(current.trim())
-        current = ''
+// ─── Build leads from column mappings (used by CSV import) ──────────────────
+function buildLeadsFromMappings(
+  headers: string[],
+  allRows: string[][],
+  mappings: ColMapping[]
+): Record<string, unknown>[] {
+  return allRows.map(row => {
+    const lead: Record<string, unknown> = {}
+    const customVars: Record<string, string> = {}
+    mappings.forEach((m, i) => {
+      const val = (row[i] || '').trim()
+      if (!val || m.fieldType === 'skip') return
+      if (m.fieldType === 'custom_var') {
+        const slug = m.varName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `var_${i}`
+        customVars[slug] = val
       } else {
-        current += ch
+        lead[m.fieldType] = val
       }
-    }
-    result.push(current.trim())
-    return result
-  }
-
-  const FIELD_MAP: Record<string, string> = {
-    'first_name': 'first_name', 'firstname': 'first_name', 'first name': 'first_name', 'nombre': 'first_name', 'name': 'first_name',
-    'last_name': 'last_name', 'lastname': 'last_name', 'last name': 'last_name', 'apellido': 'last_name', 'surname': 'last_name',
-    'email': 'email', 'e-mail': 'email', 'correo': 'email',
-    'company': 'company', 'empresa': 'company', 'organization': 'company', 'organisation': 'company',
-    'position': 'job_title', 'title': 'job_title', 'job_title': 'job_title', 'jobtitle': 'job_title', 'job title': 'job_title',
-    'cargo': 'job_title', 'puesto': 'job_title', 'headline': 'job_title',
-    'linkedin_url': 'linkedin_url', 'linkedinurl': 'linkedin_url', 'linkedin url': 'linkedin_url',
-    'linkedin': 'linkedin_url', 'profile_url': 'linkedin_url', 'url': 'linkedin_url',
-  }
-
-  const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim())
-  const fieldMapping = headers.map(h => FIELD_MAP[h] || null)
-
-  return lines.slice(1).map(line => {
-    const values = parseLine(line)
-    const row: Record<string, string> = {}
-    fieldMapping.forEach((field, i) => {
-      if (field && values[i]) row[field] = values[i]
     })
-    return row
+    if (Object.keys(customVars).length > 0) lead.custom_vars = customVars
+    return lead
   }).filter(r => Object.keys(r).length > 0)
 }

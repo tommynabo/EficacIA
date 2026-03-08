@@ -21,6 +21,18 @@ interface SequenceStep {
   content: string
   useAI: boolean
   delayDays: number
+  delayUnit?: 'minutes' | 'hours' | 'days' | 'weeks'
+}
+
+function formatDelay(value: number, unit: string = 'days'): string {
+  const labels: Record<string, [string, string]> = {
+    minutes: ['minuto', 'minutos'],
+    hours: ['hora', 'horas'],
+    days: ['día', 'días'],
+    weeks: ['semana', 'semanas'],
+  }
+  const [singular, plural] = labels[unit] || labels.days
+  return `${value} ${value === 1 ? singular : plural}`
 }
 
 interface Campaign {
@@ -89,6 +101,7 @@ export default function CampaignDetailPage() {
   // Leads state
   const [search, setSearch] = React.useState("")
   const [showAddLeadModal, setShowAddLeadModal] = React.useState(false)
+  const [leadToDelete, setLeadToDelete] = React.useState<string | null>(null)
 
   // Sequence state
   const [steps, setSteps] = React.useState<SequenceStep[]>(DEFAULT_STEPS)
@@ -439,7 +452,7 @@ export default function CampaignDetailPage() {
                         <td className="px-5 py-4 text-slate-400 text-sm">{lead.position || "—"}</td>
                         <td className="px-5 py-4 text-slate-400 text-sm">{lead.email || "—"}</td>
                         <td className="px-5 py-4 text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-400" onClick={() => removeLeadFromCampaign(lead.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-400" onClick={() => setLeadToDelete(lead.id)}>
                             <X className="w-4 h-4" />
                           </Button>
                         </td>
@@ -465,7 +478,7 @@ export default function CampaignDetailPage() {
                     <div className="h-4 w-px bg-slate-800" />
                     <div className="flex items-center gap-1.5 text-sm font-medium bg-slate-900 px-4 py-1.5 rounded-full border border-slate-800 my-1">
                       <Clock className="w-3.5 h-3.5" />
-                      Esperar {step.delayDays} {step.delayDays === 1 ? "día" : "días"}
+                      Esperar {formatDelay(step.delayDays, step.delayUnit)}
                     </div>
                     <div className="h-4 w-px bg-slate-800" />
                   </div>
@@ -556,16 +569,28 @@ export default function CampaignDetailPage() {
                   <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/50">
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-slate-500" />
-                      <p className="text-xs font-medium text-slate-200">Días de espera antes de este paso</p>
+                      <p className="text-xs font-medium text-slate-200">Espera antes de este paso</p>
                     </div>
-                    <input
-                      type="number"
-                      min="0"
-                      max="30"
-                      className="w-16 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-sm text-center text-slate-200"
-                      value={activeStep.delayDays}
-                      onChange={e => updateStep(activeStep.id, { delayDays: parseInt(e.target.value) || 0 })}
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        className="w-16 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-sm text-center text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value={activeStep.delayDays}
+                        onChange={e => updateStep(activeStep.id, { delayDays: Math.max(1, parseInt(e.target.value) || 1) })}
+                      />
+                      <select
+                        value={activeStep.delayUnit || 'days'}
+                        onChange={e => updateStep(activeStep.id, { delayUnit: e.target.value as SequenceStep['delayUnit'] })}
+                        className="bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="minutes">minutos</option>
+                        <option value="hours">horas</option>
+                        <option value="days">días</option>
+                        <option value="weeks">semanas</option>
+                      </select>
+                    </div>
                   </div>
                 )}
 
@@ -744,7 +769,38 @@ export default function CampaignDetailPage() {
           )}
         </div>
       )}
-
+      {/* ─── Confirmación: Eliminar lead ──────────────────────────────────────── */}
+      {leadToDelete && (
+        <div
+          className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
+          onClick={() => setLeadToDelete(null)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full space-y-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-100">¿Eliminar este lead?</h3>
+                <p className="text-xs text-slate-500">Esta acción no se puede deshacer.</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-400">El lead será eliminado de esta campaña permanentemente.</p>
+            <div className="flex gap-3 justify-end pt-1">
+              <Button variant="outline" onClick={() => setLeadToDelete(null)}>Cancelar</Button>
+              <Button
+                className="bg-red-500 hover:bg-red-600 border-0"
+                onClick={() => { removeLeadFromCampaign(leadToDelete); setLeadToDelete(null) }}
+              >
+                Eliminar Lead
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ─── Modal: Importar Leads ───────────────────────────────────────────── */}
       {showAddLeadModal && id && (
         <LeadImportModal
