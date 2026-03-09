@@ -11,7 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
-const ACTOR_PROFILE_SCRAPER = 'curious_coder~linkedin-profile';
+const ACTOR_PROFILE_SCRAPER = 'curious_coder~linkedin-profile-scraper';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -300,63 +300,64 @@ export default async function handler(req, res) {
     const needsAdvancedAI = !!finalMessage.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/);
 
     if (needsAdvancedAI) {
-      const cvars = lead.custom_vars || {};
+      try {
+        const cvars = lead.custom_vars || {};
 
-      if (cvars.apify_run_id) {
-        // We are already polling Apify
-        const run = await checkApifyRun(cvars.apify_run_id);
-        if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
-          console.log(`[SEND-ACTION] Lead ${lead.id} waiting for Apify (advanced AI)...`);
-          return res.status(202).json({ success: true, status: 'processing', message: 'Waiting for Apify profile data...' });
-        } else if (run.status === 'SUCCEEDED') {
-          // Finished! Get the profile data
-          const items = await fetchApifyDataset(run.defaultDatasetId);
-          cvars.scraped_profile = items[0] || {};
-          delete cvars.apify_run_id;
-          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-          console.log(`[SEND-ACTION] Lead ${lead.id} profile scraped successfully.`);
-        } else {
-          // Failed (Timeout, aborted, etc)
-          console.error(`[SEND-ACTION] Apify scraping failed: ${run.status} for lead ${lead.id}`);
-          delete cvars.apify_run_id;
-          cvars.scraped_profile = { error: 'Apify failed' }; // Mark to avoid loops
-          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+        if (cvars.apify_run_id) {
+          // We are already polling Apify
+          const run = await checkApifyRun(cvars.apify_run_id);
+          if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
+            console.log(`[SEND-ACTION] Lead ${lead.id} waiting for Apify (advanced AI)...`);
+            return res.status(202).json({ success: true, status: 'processing', message: 'Waiting for Apify profile data...' });
+          } else if (run.status === 'SUCCEEDED') {
+            const items = await fetchApifyDataset(run.defaultDatasetId);
+            cvars.scraped_profile = items[0] || {};
+            delete cvars.apify_run_id;
+            await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+            console.log(`[SEND-ACTION] Lead ${lead.id} profile scraped successfully.`);
+          } else {
+            console.error(`[SEND-ACTION] Apify scraping failed: ${run.status} for lead ${lead.id}`);
+            delete cvars.apify_run_id;
+            cvars.scraped_profile = { error: 'Apify failed' };
+            await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+          }
+        } else if (!cvars.scraped_profile) {
+          if (!process.env.APIFY_API_TOKEN) {
+            console.warn('[SEND-ACTION] APIFY_API_TOKEN missing — skipping advanced AI vars, sending without them.');
+          } else {
+            const inputUrls = [lead.linkedin_url].filter(Boolean);
+            if (inputUrls.length > 0) {
+              console.log(`[SEND-ACTION] Lead ${lead.id} starting Apify profile scraper...`);
+              try {
+                const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
+                  profileUrls: inputUrls,
+                  profilesPerSession: 1
+                });
+                cvars.apify_run_id = runId;
+                await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+                return res.status(202).json({ success: true, status: 'processing', message: 'Started Apify profile scraping...' });
+              } catch (apifyErr) {
+                console.error(`[SEND-ACTION] Apify start failed: ${apifyErr.message} — sending message without advanced AI vars.`);
+              }
+            }
+          }
         }
-      } else if (!cvars.scraped_profile) {
-        // Needs scraping, start it now
-        if (!process.env.APIFY_API_TOKEN) {
-          console.error('[SEND-ACTION] APIFY_API_TOKEN is missing but advanced AI vars are requested.');
-          cvars.scraped_profile = { error: 'No Apify Token Configured' };
-          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-          return res.status(202).json({ success: true, status: 'processing', message: 'Apify token missing, will fallback in next cycle.' });
+
+        // If we have scraped data, try to generate AI variables
+        if (cvars.scraped_profile && !cvars.scraped_profile.error) {
+          let aiPrompt = '';
+          if (campaignId) {
+            const { data: camp } = await supabaseAdmin.from('campaigns').select('settings').eq('id', campaignId).single();
+            aiPrompt = camp?.settings?.ai_prompt || '';
+          }
+          finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt, actionType);
         }
-
-        // Start Scrapemate Profile Scraper for individual lead
-        const inputUrls = [lead.linkedin_url].filter(Boolean);
-        if (inputUrls.length === 0) throw new Error('Lead missing LinkedIn URL for profile parsing.');
-
-        console.log(`[SEND-ACTION] Lead ${lead.id} starting Apify profile scraper...`);
-        const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
-          profileUrls: inputUrls,
-          profilesPerSession: 1
-        });
-
-        cvars.apify_run_id = runId;
-        await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-
-        return res.status(202).json({ success: true, status: 'processing', message: 'Started Apify profile scraping...' });
+      } catch (advErr) {
+        console.error(`[SEND-ACTION] Advanced AI flow error: ${advErr.message} — stripping AI tags and sending anyway.`);
       }
 
-      // If we got here, we have the scraped_profile data (or it failed gracefully).
-      // Get the ai_prompt from campaign settings to pass to Claude
-      let aiPrompt = '';
-      if (campaignId) {
-        const { data: camp } = await supabaseAdmin.from('campaigns').select('settings').eq('id', campaignId).single();
-        aiPrompt = camp?.settings?.ai_prompt || '';
-      }
-
-      // Inject variables using Claude
-      finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt, actionType);
+      // Strip any remaining unresolved AI variable tags
+      finalMessage = finalMessage.replace(/\{\{(comentario_post|especializacion|experiencia)\}\}/g, '');
     }
     // Resolve standard variables
     finalMessage = resolveTemplate(finalMessage, lead);
