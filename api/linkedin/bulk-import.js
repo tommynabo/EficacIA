@@ -100,6 +100,44 @@ function parseCsvToLeads(csvText) {
   return leads;
 }
 
+// ─── Unipile: retrieve li_at cookie for a managed LinkedIn account ────────────
+// Unipile stores the session cookies internally. GET /api/v1/accounts/:id
+// returns connection_params.im.cookies which contains li_at.
+async function getLiAtFromUnipile(unipileAccountId) {
+  const dsn    = (process.env.UNIPILE_DSN    || '').trim();
+  const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+  if (!dsn || !apiKey) return null;
+  try {
+    const res = await fetch(`https://${dsn}/api/v1/accounts/${unipileAccountId}`, {
+      headers: { 'X-API-KEY': apiKey, 'Accept': 'application/json' },
+    });
+    if (!res.ok) {
+      console.error('[UNIPILE] Failed to fetch account:', res.status);
+      return null;
+    }
+    const data = await res.json();
+    // Unipile returns cookies as an array or as a cookie-string in connection_params
+    const cookies = data.connection_params?.im?.cookies || data.connection_params?.cookies || [];
+    if (Array.isArray(cookies)) {
+      const liAt = cookies.find(c => c.name === 'li_at' || c.key === 'li_at');
+      if (liAt?.value) { console.log('[UNIPILE] li_at retrieved from Unipile account'); return liAt.value; }
+    }
+    // Some versions store as a raw cookie string "li_at=VALUE; other=..."
+    if (typeof cookies === 'string') {
+      const m = cookies.match(/(?:^|;\s*)li_at=([^;]+)/);
+      if (m?.[1]) { console.log('[UNIPILE] li_at parsed from Unipile cookie string'); return m[1].trim(); }
+    }
+    // Also check top-level fields
+    const topLevel = data.li_at || data.liAt || data.connection_params?.li_at;
+    if (topLevel) { console.log('[UNIPILE] li_at from top-level field'); return topLevel; }
+    console.warn('[UNIPILE] li_at not found in account response. Keys:', Object.keys(data.connection_params || {}));
+    return null;
+  } catch (err) {
+    console.error('[UNIPILE] Error fetching cookies:', err.message);
+    return null;
+  }
+}
+
 // ─── Apify LinkedIn Search (async — works within Vercel 10s limit) ───────────
 // Each search starts an Apify actor run and returns a poll_token (signed JWT).
 // Frontend polls GET /api/linkedin/bulk-import?poll_token=xxx every 3s.
@@ -346,13 +384,22 @@ export default async function handler(req, res) {
         }
         let liAt = bodyLiAt?.trim();
         if (!liAt || liAt.length < 20) {
-          const stored = account_id
-            ? (await supabaseAdmin.from('linkedin_accounts').select('session_cookie').eq('id', account_id).eq('team_id', teamId).single()).data?.session_cookie
-            : await getLiAtForUser(userId);
-          if (stored && stored !== 'managed_by_unipile' && stored.length >= 20) liAt = stored;
+          let storedCookie, storedUnipileId;
+          if (account_id) {
+            const { data: acc } = await supabaseAdmin.from('linkedin_accounts').select('session_cookie, unipile_account_id').eq('id', account_id).eq('team_id', teamId).single();
+            storedCookie    = acc?.session_cookie;
+            storedUnipileId = acc?.unipile_account_id;
+          } else {
+            storedCookie = await getLiAtForUser(userId);
+          }
+          if (storedCookie && storedCookie !== 'managed_by_unipile' && storedCookie.length >= 20) liAt = storedCookie;
+          if ((!liAt || liAt.length < 20) && storedUnipileId) {
+            liAt = await getLiAtFromUnipile(storedUnipileId);
+            if (liAt) console.log('[APIFY] li_at from Unipile for apollo search');
+          }
         }
         if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn para usar esta búsqueda.' });
+          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
         }
         const searchUrl = buildLinkedInSearchUrl(q);
         console.log('[APIFY] people-search URL:', searchUrl);
@@ -381,22 +428,26 @@ export default async function handler(req, res) {
 
         const { data: account, error: accErr } = await supabaseAdmin
           .from('linkedin_accounts')
-          .select('id, is_valid, session_cookie')
+          .select('id, is_valid, session_cookie, unipile_account_id')
           .eq('id', account_id)
           .eq('team_id', teamId)
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
         if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
 
-        // Accept li_at from body (manual input) OR from stored session_cookie
+        // Accept li_at from body → stored session_cookie → Unipile auto-fetch
         let liAt = bodyLiAt?.trim();
         if (!liAt || liAt.length < 20) {
           if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
             liAt = account.session_cookie;
           }
         }
+        if ((!liAt || liAt.length < 20) && account.unipile_account_id) {
+          liAt = await getLiAtFromUnipile(account.unipile_account_id);
+          if (liAt) console.log('[APIFY] li_at from Unipile for linkedin_search, account:', account.id);
+        }
         if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn. La puedes copiar desde las DevTools de tu navegador mientras estás en LinkedIn.' });
+          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
         }
 
         const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
@@ -424,22 +475,26 @@ export default async function handler(req, res) {
 
         const { data: account, error: accErr } = await supabaseAdmin
           .from('linkedin_accounts')
-          .select('id, is_valid, session_cookie')
+          .select('id, is_valid, session_cookie, unipile_account_id')
           .eq('id', account_id)
           .eq('team_id', teamId)
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
         if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
 
-        // Accept li_at from body (manual input) OR stored session_cookie
+        // Accept li_at from body → stored session_cookie → Unipile auto-fetch
         let liAt = bodyLiAt?.trim();
         if (!liAt || liAt.length < 20) {
           if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
             liAt = account.session_cookie;
           }
         }
+        if ((!liAt || liAt.length < 20) && account.unipile_account_id) {
+          liAt = await getLiAtFromUnipile(account.unipile_account_id);
+          if (liAt) console.log('[APIFY] li_at from Unipile for sales_navigator, account:', account.id);
+        }
         if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn para usar Sales Navigator.' });
+          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
         }
 
         console.log('[APIFY] sales_navigator URL:', url);

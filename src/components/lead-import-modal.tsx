@@ -247,35 +247,6 @@ function AccountSelector({ accounts, value, onChange }: { accounts: Account[]; v
   )
 }
 
-function LiAtInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [show, setShow] = React.useState(false)
-  return (
-    <div className="space-y-1.5">
-      <button
-        type="button"
-        onClick={() => setShow(s => !s)}
-        className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-      >
-        <ChevronDown className={cn('w-3 h-3 transition-transform', show && 'rotate-180')} />
-        Cookie li_at {value.length > 20 ? <span className="text-emerald-400">✓ configurada</span> : '(necesaria si tu cuenta es de Unipile)'}
-      </button>
-      {show && (
-        <div className="space-y-1">
-          <input
-            type="password"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            placeholder="Pega aquí tu cookie li_at de LinkedIn"
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          />
-          <p className="text-[11px] text-slate-600">
-            Cómo obtenerla: LinkedIn.com → F12 → Application → Cookies → busca <span className="font-mono text-slate-500">li_at</span>
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function LimitSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
@@ -355,9 +326,6 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   // Apollo
   const [apolloQuery, setApolloQuery] = React.useState({ titles: '', companies: '', locations: '', keywords: '' })
   const [apolloLimit, setApolloLimit] = React.useState(25)
-
-  // Shared li_at cookie for Apify-powered searches
-  const [liAtCookie, setLiAtCookie] = React.useState('')
 
   // Async Apify polling state
   const [isPolling, setIsPolling] = React.useState(false)
@@ -482,8 +450,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
         // Always send a fully-qualified URL so the backend can parse it
         const normalizedLiUrl = liSearchUrl.trim().startsWith('http') ? liSearchUrl.trim() : 'https://' + liSearchUrl.trim()
-        body = { ...body, type: 'linkedin_search', url: normalizedLiUrl, account_id: selectedAccountId, limit: liSearchLimit,
-          ...(liAtCookie.trim().length > 20 ? { li_at: liAtCookie.trim() } : {}) }
+        body = { ...body, type: 'linkedin_search', url: normalizedLiUrl, account_id: selectedAccountId, limit: liSearchLimit }
 
       } else if (method === 'sales_navigator') {
         if (!snParsed?.isValid) throw new Error(snParsed?.error || 'URL de Sales Navigator no válida')
@@ -491,15 +458,13 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           throw new Error(snParsed.error)
         }
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
-        body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit,
-          ...(liAtCookie.trim().length > 20 ? { li_at: liAtCookie.trim() } : {}) }
+        body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit }
 
       } else if (method === 'apollo') {
         if (!apolloQuery.titles && !apolloQuery.keywords && !apolloQuery.companies) {
           throw new Error('Introduce al menos un cargo, empresa o palabra clave para buscar.')
         }
-        body = { ...body, type: 'apollo', apollo_query: apolloQuery, limit: apolloLimit,
-          ...(liAtCookie.trim().length > 20 ? { li_at: liAtCookie.trim() } : {}) }
+        body = { ...body, type: 'apollo', apollo_query: apolloQuery, limit: apolloLimit }
 
       } else if (method === 'manual') {
         if (!manualLead.first_name && !manualLead.linkedin_url) {
@@ -800,7 +765,6 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 </div>
               )}
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
-              <LiAtInput value={liAtCookie} onChange={setLiAtCookie} />
               <LimitSlider value={liSearchLimit} onChange={setLiSearchLimit} />
             </div>
           )}
@@ -848,7 +812,6 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               )}
 
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
-              <LiAtInput value={liAtCookie} onChange={setLiAtCookie} />
               <LimitSlider value={snLimit} onChange={setSnLimit} />
             </div>
           )}
@@ -860,8 +823,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                 <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                 <div className="text-sm text-slate-400">
                   <span className="font-medium text-slate-200">Búsqueda de personas en LinkedIn</span>
-                  <span className="text-slate-500"> — via Apify con tu sesión LinkedIn activa. </span>
-                  <span>Filtra por cargo, empresa y ubicación. Requiere cuenta LinkedIn conectada con cookie li_at.</span>
+                  <span className="text-slate-500"> — via Apify con tu cuenta LinkedIn conectada. </span>
+                  <span>Filtra por cargo, empresa y ubicación.</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -906,8 +869,6 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                   <p className="text-xs text-slate-600">Busca en perfil y empresa</p>
                 </div>
               </div>
-              <LiAtInput value={liAtCookie} onChange={setLiAtCookie} />
-              <LiAtInput value={liAtCookie} onChange={setLiAtCookie} />
               <LimitSlider value={apolloLimit} onChange={setApolloLimit} />
             </div>
           )}
