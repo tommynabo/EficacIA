@@ -104,9 +104,8 @@ function extractLinkedInId(url) {
  */
 async function sendInvitation(unipileAccountId, linkedinId, message) {
   const body = {
-    provider: 'LINKEDIN',
+    provider_id: linkedinId,
     account_id: unipileAccountId,
-    recipient_identifier: linkedinId,
     message: (message || '').slice(0, 280), // LinkedIn limit
   };
   console.log('[SEND-ACTION] Sending invitation to:', linkedinId);
@@ -229,7 +228,7 @@ export default async function handler(req, res) {
           account_id: accountId,
           unipile_response: result,
         },
-      }).catch(() => { /* campaign_activity table may not exist yet */ });
+      });
     }
 
     console.log(`[SEND-ACTION] ✓ ${actionType} sent to ${linkedinId} via ${account.profile_name}`);
@@ -244,7 +243,7 @@ export default async function handler(req, res) {
     // Update lead with error
     await supabaseAdmin.from('leads').update({
       sequence_status: 'failed',
-    }).eq('id', leadId).catch(() => {});
+    }).eq('id', leadId);
     return res.status(500).json({ error: err.message });
   }
 }
