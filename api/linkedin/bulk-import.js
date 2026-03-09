@@ -103,26 +103,37 @@ function parseCsvToLeads(csvText) {
 // ─── Apify LinkedIn Search (async — works within Vercel 10s limit) ───────────
 // Each search starts an Apify actor run and returns a poll_token (signed JWT).
 // Frontend polls GET /api/linkedin/bulk-import?poll_token=xxx every 3s.
-// Actor IDs — change if you want different scrapers:
+//
+// Apify actor docs:
+//   LinkedIn search: https://apify.com/curious_coder/linkedin-search-scraper
+//   Sales Navigator: https://apify.com/bebity/linkedin-sales-navigator-scraper
 const ACTOR_LINKEDIN  = 'curious_coder~linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'anchor~sales-navigator-leads-scraper';
+const ACTOR_SALES_NAV = 'bebity~linkedin-sales-navigator-scraper';
 
 async function startApifyRun(actorSlug, input) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   if (!token) throw new Error('APIFY_API_TOKEN no configurado en Vercel. Añádelo en Settings → Environment Variables.');
-  const res = await fetch(
-    `https://api.apify.com/v2/acts/${actorSlug}/runs?token=${encodeURIComponent(token)}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }
-  );
+  const url = `https://api.apify.com/v2/acts/${actorSlug}/runs?token=${encodeURIComponent(token)}`;
+  const safeInput = { ...input, cookie: '***', liAtCookie: '***' }; // don't log the cookie
+  console.log('[APIFY] Starting run:', actorSlug, 'input (redacted):', JSON.stringify(safeInput));
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
   if (res.status === 401 || res.status === 403) {
     throw new Error('Apify API Token inválido. Verifica APIFY_API_TOKEN en Vercel.');
+  }
+  if (res.status === 404) {
+    throw new Error(`Actor de Apify no encontrado: ${actorSlug}. Verifica que el nombre sea correcto.`);
   }
   if (!res.ok) {
     const err = await res.text().catch(() => '');
     console.error('[APIFY] startRun error:', res.status, err);
-    throw new Error(`Error al iniciar búsqueda Apify (${res.status}). Verifica el actor y el token.`);
+    throw new Error(`Error al iniciar búsqueda Apify (${res.status}): ${err.slice(0, 200)}`);
   }
   const data = await res.json();
+  console.log('[APIFY] Run started OK. runId:', data.data.id, '| datasetId:', data.data.defaultDatasetId);
   return { runId: data.data.id, datasetId: data.data.defaultDatasetId };
 }
 
@@ -131,6 +142,7 @@ async function checkApifyRun(runId) {
   const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${encodeURIComponent(token)}`);
   if (!res.ok) throw new Error(`Error al verificar búsqueda (${res.status})`);
   const data = await res.json();
+  console.log('[APIFY POLL] Run', runId, '→ status:', data.data?.status);
   return data.data; // { status, defaultDatasetId, ... }
 }
 
@@ -140,7 +152,9 @@ async function fetchApifyDataset(datasetId, limit) {
     `https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&limit=${limit}&format=json`
   );
   if (!res.ok) throw new Error(`Error al obtener resultados (${res.status})`);
-  return await res.json();
+  const items = await res.json();
+  console.log('[APIFY DATASET] datasetId:', datasetId, '| items received:', Array.isArray(items) ? items.length : typeof items);
+  return items;
 }
 
 function extractProfilesFromApify(items, limit) {
@@ -231,10 +245,12 @@ async function insertLeadsIntoDB(teamId, campaignId, rawLeads) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  console.log('[BULK-IMPORT]', req.method, req.query?.poll_token ? '(poll)' : '');
 
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
@@ -333,10 +349,17 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Esta búsqueda requiere una cuenta LinkedIn conectada con cookie li_at. Ve a Cuentas y usa "Sesión manual".' });
         }
         const searchUrl = buildLinkedInSearchUrl(q);
+        console.log('[APIFY] people-search URL:', searchUrl);
         const { runId, datasetId } = await startApifyRun(ACTOR_LINKEDIN, {
-          startUrls: [{ url: searchUrl }],
-          maxResults: Math.min(limit, 50),
-          cookie: `li_at=${liAt}`,
+          startUrls:    [{ url: searchUrl }],
+          queries:      [searchUrl], // some actor versions use this key
+          maxResults:   Math.min(limit, 50),
+          maxItems:     Math.min(limit, 50),
+          // curious_coder actor uses 'cookie' as the full cookie header string
+          cookie:       `li_at=${liAt}`,
+          // fallback keys used by other actor versions
+          liAtCookie:   liAt,
+          li_at:        liAt,
         });
         const pollToken = jwt.sign(
           { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
@@ -363,10 +386,15 @@ export default async function handler(req, res) {
         }
 
         const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
+        console.log('[APIFY] linkedin_search URL:', normalizedUrl);
         const { runId, datasetId } = await startApifyRun(ACTOR_LINKEDIN, {
-          startUrls: [{ url: normalizedUrl }],
+          startUrls:  [{ url: normalizedUrl }],
+          queries:    [normalizedUrl],
           maxResults: Math.min(limit, 50),
-          cookie: `li_at=${account.session_cookie}`,
+          maxItems:   Math.min(limit, 50),
+          cookie:     `li_at=${account.session_cookie}`,
+          liAtCookie: account.session_cookie,
+          li_at:      account.session_cookie,
         });
         const pollToken = jwt.sign(
           { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
@@ -392,11 +420,15 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Esta cuenta fue conectada via Unipile. Para buscar en Sales Navigator conecta también tu li_at desde Cuentas → "Sesión manual".' });
         }
 
+        console.log('[APIFY] sales_navigator URL:', url);
         const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
-          startUrls: [{ url }],
+          startUrls:  [{ url }],
           maxLeads:   Math.min(limit, 50),
           maxResults: Math.min(limit, 50),
-          cookie: `li_at=${account.session_cookie}`,
+          maxItems:   Math.min(limit, 50),
+          cookie:     `li_at=${account.session_cookie}`,
+          liAtCookie: account.session_cookie,
+          li_at:      account.session_cookie,
         });
         const pollToken = jwt.sign(
           { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
