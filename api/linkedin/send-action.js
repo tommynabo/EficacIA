@@ -125,8 +125,13 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
   const body = {
     provider_id: providerId,
     account_id: unipileAccountId,
-    message: (message || '').slice(0, 280), // LinkedIn limit
   };
+
+  const finalMsg = (message || '').trim().slice(0, 200); // Safest limit for all LinkedIn accounts
+  if (finalMsg) {
+    body.message = finalMsg;
+  }
+
   console.log('[SEND-ACTION] Sending invitation to:', linkedinId);
   const res = await fetch(`${unipileBase()}/api/v1/users/invite`, {
     method: 'POST',
