@@ -147,6 +147,7 @@ async function getLiAtFromUnipile(unipileAccountId) {
 //   Sales Navigator: https://apify.com/bebity/linkedin-sales-navigator-scraper
 const ACTOR_LINKEDIN  = 'curious_coder~linkedin-search-scraper';
 const ACTOR_SALES_NAV = 'bebity~linkedin-sales-navigator-scraper';
+const ACTOR_GOOGLE    = 'apify/google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
@@ -227,6 +228,55 @@ async function getLiAtForUser(userId) {
     .single();
   if (!data?.session_cookie || data.session_cookie.length < 20) return null;
   return data.session_cookie;
+}
+
+// ─── Google-based LinkedIn profile search (no cookies needed) ───────────────
+// Builds a site:linkedin.com/in query from structured filters.
+function buildGoogleLinkedInQuery(filters = {}) {
+  const toArr = v => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.map(x => (x && typeof x === 'object' ? (x.text || x.name || '') : String(x))).filter(Boolean);
+    return String(v).split(',').map(s => s.trim()).filter(Boolean);
+  };
+  const parts    = ['site:linkedin.com/in'];
+  const titles   = toArr(filters.titles);
+  const companies= toArr(filters.companies);
+  const locations= [...toArr(filters.locations), ...toArr(filters.regions)].slice(0, 3);
+  const keywords = toArr(filters.keywords);
+  if (titles.length)    parts.push('(' + titles.map(t => `"${t}"`).join(' OR ') + ')');
+  if (companies.length) parts.push('(' + companies.map(c => `"${c}"`).join(' OR ') + ')');
+  if (locations.length) parts.push('(' + locations.map(l => `"${l}"`).join(' OR ') + ')');
+  if (keywords.length)  parts.push(keywords.join(' '));
+  return parts.join(' ');
+}
+
+// Parse Google Search Scraper dataset items into lead records.
+// The actor outputs individual organic result items: { url, title, description }
+// OR nested under item.organicResults[] depending on version.
+function extractProfilesFromGoogle(rawItems, limit) {
+  const results = [];
+  for (const item of (Array.isArray(rawItems) ? rawItems : [])) {
+    const toProcess = Array.isArray(item.organicResults) ? item.organicResults : [item];
+    for (const r of toProcess) {
+      if (!r.url || !r.url.includes('linkedin.com/in/')) continue;
+      const cleanUrl  = r.url.split('?')[0].split('#')[0];
+      // Google title: "FirstName LastName - Job Title - Company | LinkedIn"
+      const rawTitle  = (r.title || '').replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
+      const parts     = rawTitle.split(/\s*[-–]\s*/);
+      const nameWords = (parts[0] || '').trim().split(' ');
+      results.push({
+        first_name:   nameWords[0] || '',
+        last_name:    nameWords.slice(1).join(' ') || '',
+        job_title:    (parts[1] || '').trim(),
+        company:      (parts[2] || '').trim(),
+        linkedin_url: cleanUrl,
+        email:        null,
+      });
+      if (results.length >= limit) break;
+    }
+    if (results.length >= limit) break;
+  }
+  return results;
 }
 
 function buildLinkedInSearchUrl(q) {
@@ -315,7 +365,9 @@ export default async function handler(req, res) {
       }
       if (run.status === 'SUCCEEDED') {
         const items = await fetchApifyDataset(run.defaultDatasetId || pollData.datasetId, pollData.limit);
-        const rawLeads = extractProfilesFromApify(items, pollData.limit);
+        const rawLeads = pollData.actor === 'google'
+          ? extractProfilesFromGoogle(items, pollData.limit)
+          : extractProfilesFromApify(items, pollData.limit);
         if (rawLeads.length === 0) {
           return res.status(200).json({ status: 'done', success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
         }
@@ -376,143 +428,73 @@ export default async function handler(req, res) {
         const csvText = await fetchGoogleSheetsCsv(url);
         rawLeads = parseCsvToLeads(csvText);
 
-      // ── People Search via Apify (async) ────────────────────────────────────
+      // ── Apollo → Google LinkedIn people search (no li_at needed) ──────────────
       } else if (importType === 'apollo') {
         const q = apollo_query || {};
         if (!q.titles && !q.keywords && !q.companies) {
           return res.status(400).json({ error: 'Introduce al menos un cargo, empresa o palabra clave.' });
         }
-        let liAt = bodyLiAt?.trim();
-        if (!liAt || liAt.length < 20) {
-          let storedCookie, storedUnipileId;
-          if (account_id) {
-            const { data: acc } = await supabaseAdmin.from('linkedin_accounts').select('session_cookie, unipile_account_id').eq('id', account_id).eq('team_id', teamId).single();
-            storedCookie    = acc?.session_cookie;
-            storedUnipileId = acc?.unipile_account_id;
-          } else {
-            storedCookie = await getLiAtForUser(userId);
-          }
-          if (storedCookie && storedCookie !== 'managed_by_unipile' && storedCookie.length >= 20) liAt = storedCookie;
-          if ((!liAt || liAt.length < 20) && storedUnipileId) {
-            liAt = await getLiAtFromUnipile(storedUnipileId);
-            if (liAt) console.log('[APIFY] li_at from Unipile for apollo search');
-          }
-        }
-        if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
-        }
-        const searchUrl = buildLinkedInSearchUrl(q);
-        console.log('[APIFY] people-search URL:', searchUrl);
-        const { runId, datasetId } = await startApifyRun(ACTOR_LINKEDIN, {
-          startUrls:    [{ url: searchUrl }],
-          queries:      [searchUrl], // some actor versions use this key
-          maxResults:   Math.min(limit, 50),
-          maxItems:     Math.min(limit, 50),
-          // curious_coder actor uses 'cookie' as the full cookie header string
-          cookie:       `li_at=${liAt}`,
-          // fallback keys used by other actor versions
-          liAtCookie:   liAt,
-          li_at:        liAt,
+        const searchLimit = Math.min(limit, 50);
+        const googleQuery = buildGoogleLinkedInQuery(q);
+        console.log('[GOOGLE] apollo query:', googleQuery);
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
         const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
           process.env.JWT_SECRET || 'dev-secret',
           { expiresIn: '10m' }
         );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Iniciando búsqueda en LinkedIn...' });
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── LinkedIn Search URL via Apify (async) ─────────────────────────────
+      // ── LinkedIn Search URL → Google (no li_at needed) ───────────────────────
       } else if (importType === 'linkedin_search') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de búsqueda' });
-        if (!account_id) return res.status(400).json({ error: 'Se requiere una cuenta de LinkedIn' });
-
-        const { data: account, error: accErr } = await supabaseAdmin
-          .from('linkedin_accounts')
-          .select('id, is_valid, session_cookie, unipile_account_id')
-          .eq('id', account_id)
-          .eq('team_id', teamId)
-          .single();
-        if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
-        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
-
-        // Accept li_at from body → stored session_cookie → Unipile auto-fetch
-        let liAt = bodyLiAt?.trim();
-        if (!liAt || liAt.length < 20) {
-          if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
-            liAt = account.session_cookie;
-          }
+        const searchLimit = Math.min(limit, 50);
+        // Extract keywords from the LinkedIn search URL and build a Google query
+        let googleQuery;
+        try {
+          const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
+          const urlObj = new URL(normalizedUrl);
+          const keywords = urlObj.searchParams.get('keywords') || '';
+          googleQuery = buildGoogleLinkedInQuery({ keywords });
+        } catch {
+          googleQuery = `site:linkedin.com/in ${url}`;
         }
-        if ((!liAt || liAt.length < 20) && account.unipile_account_id) {
-          liAt = await getLiAtFromUnipile(account.unipile_account_id);
-          if (liAt) console.log('[APIFY] li_at from Unipile for linkedin_search, account:', account.id);
-        }
-        if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
-        }
-
-        const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
-        console.log('[APIFY] linkedin_search URL:', normalizedUrl);
-        const { runId, datasetId } = await startApifyRun(ACTOR_LINKEDIN, {
-          startUrls:  [{ url: normalizedUrl }],
-          queries:    [normalizedUrl],
-          maxResults: Math.min(limit, 50),
-          maxItems:   Math.min(limit, 50),
-          cookie:     `li_at=${liAt}`,
-          liAtCookie: liAt,
-          li_at:      liAt,
+        console.log('[GOOGLE] linkedin_search query:', googleQuery);
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
         const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
           process.env.JWT_SECRET || 'dev-secret',
           { expiresIn: '10m' }
         );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Iniciando búsqueda en LinkedIn...' });
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── Sales Navigator URL via Apify (async) ─────────────────────────────
+      // ── Sales Navigator → Google (no li_at needed) ─────────────────────────
       } else if (importType === 'sales_navigator') {
-        if (!url)        return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
-        if (!account_id) return res.status(400).json({ error: 'Se requiere una cuenta de LinkedIn' });
-
-        const { data: account, error: accErr } = await supabaseAdmin
-          .from('linkedin_accounts')
-          .select('id, is_valid, session_cookie, unipile_account_id')
-          .eq('id', account_id)
-          .eq('team_id', teamId)
-          .single();
-        if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
-        if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
-
-        // Accept li_at from body → stored session_cookie → Unipile auto-fetch
-        let liAt = bodyLiAt?.trim();
-        if (!liAt || liAt.length < 20) {
-          if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
-            liAt = account.session_cookie;
-          }
-        }
-        if ((!liAt || liAt.length < 20) && account.unipile_account_id) {
-          liAt = await getLiAtFromUnipile(account.unipile_account_id);
-          if (liAt) console.log('[APIFY] li_at from Unipile for sales_navigator, account:', account.id);
-        }
-        if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'No se pudo obtener la sesión de LinkedIn. Vuelve a conectar tu cuenta.' });
-        }
-
-        console.log('[APIFY] sales_navigator URL:', url);
-        const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
-          startUrls:  [{ url }],
-          maxLeads:   Math.min(limit, 50),
-          maxResults: Math.min(limit, 50),
-          maxItems:   Math.min(limit, 50),
-          cookie:     `li_at=${liAt}`,
-          liAtCookie: liAt,
-          li_at:      liAt,
+        if (!url) return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
+        const searchLimit = Math.min(limit, 50);
+        // Use parsed filters from the body (sent by frontend) to build a Google query
+        const f = filters || {};
+        const googleQuery = buildGoogleLinkedInQuery(f);
+        console.log('[GOOGLE] sales_navigator query:', googleQuery);
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
         const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
           process.env.JWT_SECRET || 'dev-secret',
           { expiresIn: '10m' }
         );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Iniciando búsqueda en Sales Navigator...' });
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en Sales Navigator…' });
 
       // ── Manual single lead ────────────────────────────────────────────────
       } else if (importType === 'manual') {
