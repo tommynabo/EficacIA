@@ -10,7 +10,8 @@ import { LeadImportModal } from "@/src/components/lead-import-modal"
 import {
   ArrowLeft, Plus, Trash2, Bot, Save, Clock, Search, AlertCircle,
   Play, Pause, CheckCircle2, Users, Mail, MessageSquare, TrendingUp, Eye,
-  MoreHorizontal, X, ChevronDown, Settings, BarChart2, Linkedin
+  MoreHorizontal, X, ChevronDown, Settings, BarChart2, Linkedin, Send,
+  Zap, Loader2, RefreshCw
 } from "lucide-react"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -225,51 +226,87 @@ export default function CampaignDetailPage() {
     navigate("/dashboard/campaigns")
   }
 
-  // ─── Test Send — envía la primera acción al primer lead para verificar ────
+  // ─── Envío directo a un lead específico ────────────────────────────────────
 
-  const [testSending, setTestSending] = React.useState(false)
-  const [testResult, setTestResult] = React.useState<string | null>(null)
+  const [sendingLeadId, setSendingLeadId] = React.useState<string | null>(null)
+  const [testLog, setTestLog] = React.useState<Array<{ time: string; type: 'info' | 'success' | 'error'; msg: string }>>([])
+  const [showTestPanel, setShowTestPanel] = React.useState(false)
 
-  const testSendFirstLead = async () => {
-    if (!campaign || leads.length === 0 || steps.length === 0) {
-      setTestResult("⚠ Necesitas al menos un lead y un paso en la secuencia para probar.")
-      return
-    }
-    const firstLead = leads.find(l => !l.sent_message) || leads[0]
-    const firstStep = steps[0]
-    // Find selected LinkedIn account
+  const addLog = (type: 'info' | 'success' | 'error', msg: string) => {
+    const time = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    setTestLog(prev => [...prev, { time, type, msg }])
+  }
+
+  const sendToLead = async (lead: Lead, stepIndex?: number) => {
+    if (!campaign || steps.length === 0) return
     const selectedAccounts = campaign.settings?.linkedin_account_ids || []
     if (selectedAccounts.length === 0) {
-      setTestResult("⚠ Selecciona una cuenta de LinkedIn en la pestaña Opciones.")
+      addLog('error', '⚠ Selecciona una cuenta de LinkedIn en la pestaña Opciones.')
+      setShowTestPanel(true)
       return
     }
-    setTestSending(true)
-    setTestResult(null)
+    const step = steps[stepIndex ?? 0]
+    if (!step) {
+      addLog('error', `⚠ No hay paso ${(stepIndex ?? 0) + 1} en la secuencia.`)
+      setShowTestPanel(true)
+      return
+    }
+    setSendingLeadId(lead.id)
+    setShowTestPanel(true)
+    addLog('info', `Enviando ${step.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
     try {
       const res = await fetch(`/api/linkedin/send-action`, {
         method: "POST",
         headers: apiHeaders(),
         body: JSON.stringify({
-          leadId: firstLead.id,
+          leadId: lead.id,
           accountId: selectedAccounts[0],
-          actionType: firstStep.type,
-          content: firstStep.content,
-          useAI: firstStep.useAI,
+          actionType: step.type,
+          content: step.content,
+          useAI: step.useAI,
           campaignId: campaign.id,
           campaignName: campaign.name,
         }),
       })
       const data = await res.json()
       if (res.ok) {
-        setTestResult(`✓ ${data.message || 'Enviado correctamente'} — "${(data.message_sent || '').slice(0, 80)}..."`)
-        fetchAll() // refresh leads
+        addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 100)}"`)
+        fetchAll()
       } else {
-        setTestResult(`✗ Error: ${data.error || 'Error desconocido'}`)
+        addLog('error', `✗ Error: ${data.error || 'Error desconocido'}`)
       }
     } catch (err: unknown) {
-      setTestResult(`✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
     } finally {
-      setTestSending(false)
+      setSendingLeadId(null)
+    }
+  }
+
+  // ─── Ejecutar motor de campaña manualmente ──────────────────────────────────
+
+  const [runningEngine, setRunningEngine] = React.useState(false)
+
+  const triggerEngineNow = async () => {
+    setRunningEngine(true)
+    setShowTestPanel(true)
+    addLog('info', '⚡ Ejecutando motor de campaña manualmente...')
+    try {
+      const res = await fetch(`/api/linkedin/campaign-engine`, {
+        method: "POST",
+        headers: apiHeaders(),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const s = data.stats || {}
+        addLog('success', `✓ Motor ejecutado — Campañas: ${s.campaigns || 0}, Procesados: ${s.processed || 0}, Errores: ${s.errors || 0}, Omitidos: ${s.skipped || 0}`)
+        fetchAll()
+      } else {
+        addLog('error', `✗ Error motor: ${data.error || 'Error desconocido'}`)
+      }
+    } catch (err: unknown) {
+      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+    } finally {
+      setRunningEngine(false)
     }
   }
 
@@ -386,15 +423,29 @@ export default function CampaignDetailPage() {
 
           <div className="w-px h-7 bg-slate-700 mx-1" />
 
-          {/* Test Send */}
+          {/* Test Send al primer lead */}
           <button
-            onClick={testSendFirstLead}
-            disabled={testSending || leads.length === 0 || steps.length === 0}
+            onClick={() => {
+              const firstLead = leads.find(l => !l.sent_message) || leads[0]
+              if (firstLead) sendToLead(firstLead)
+            }}
+            disabled={sendingLeadId !== null || leads.length === 0 || steps.length === 0}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border bg-violet-500/10 border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-all disabled:opacity-40"
             title="Envía el primer paso al primer lead para verificar que funciona"
           >
-            <Mail className={`w-4 h-4 ${testSending ? "animate-pulse" : ""}`} />
-            {testSending ? "Enviando…" : "Test Send"}
+            <Send className={`w-4 h-4 ${sendingLeadId ? "animate-pulse" : ""}`} />
+            {sendingLeadId ? "Enviando…" : "Test Send"}
+          </button>
+
+          {/* Ejecutar motor manualmente */}
+          <button
+            onClick={triggerEngineNow}
+            disabled={runningEngine || campaign.status !== 'active'}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-all disabled:opacity-40"
+            title="Ejecuta el motor de campaña ahora mismo (sin esperar al cron)"
+          >
+            <Zap className={`w-4 h-4 ${runningEngine ? "animate-spin" : ""}`} />
+            {runningEngine ? "Ejecutando…" : "Ejecutar ahora"}
           </button>
 
           {/* Launch / Pause */}
@@ -431,12 +482,35 @@ export default function CampaignDetailPage() {
         </div>
       </div>
 
-      {/* Notificaciones */}
-      {testResult && (
-        <Card className={`border p-3 mb-4 ${testResult.startsWith('✓') ? 'border-emerald-500/30 bg-emerald-500/5' : testResult.startsWith('⚠') ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-          <div className="flex items-center justify-between">
-            <p className={`text-sm ${testResult.startsWith('✓') ? 'text-emerald-400' : testResult.startsWith('⚠') ? 'text-amber-400' : 'text-red-400'}`}>{testResult}</p>
-            <button onClick={() => setTestResult(null)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+      {/* Panel de Log de Pruebas */}
+      {showTestPanel && testLog.length > 0 && (
+        <Card className="border border-slate-700 mb-4 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800/50 border-b border-slate-700">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-sm font-semibold text-slate-200">Log de envíos</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{testLog.length}</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setTestLog([])} className="text-xs text-slate-500 hover:text-slate-300">Limpiar</button>
+              <button onClick={() => setShowTestPanel(false)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto p-3 space-y-1.5 bg-slate-950/50 font-mono text-xs">
+            {testLog.map((log, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-slate-600 flex-shrink-0">{log.time}</span>
+                <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-red-400' : 'text-blue-400'}>
+                  {log.msg}
+                </span>
+              </div>
+            ))}
+            {(sendingLeadId || runningEngine) && (
+              <div className="flex items-center gap-2 text-amber-400">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Procesando...</span>
+              </div>
+            )}
           </div>
         </Card>
       )}
@@ -514,7 +588,7 @@ export default function CampaignDetailPage() {
                       <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ESTADO</th>
                       <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">EMPRESA</th>
                       <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">CARGO</th>
-                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">EMAIL</th>
+                      <th className="text-center px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ENVIAR</th>
                       <th className="text-right px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ACCIONES</th>
                     </tr>
                   </thead>
@@ -541,7 +615,25 @@ export default function CampaignDetailPage() {
                         </td>
                         <td className="px-5 py-4 text-slate-300 text-sm">{lead.company || "—"}</td>
                         <td className="px-5 py-4 text-slate-400 text-sm">{lead.position || "—"}</td>
-                        <td className="px-5 py-4 text-slate-400 text-sm">{lead.email || "—"}</td>
+                        <td className="px-5 py-4 text-center">
+                          {lead.sent_message ? (
+                            <span className="text-xs text-emerald-500">✓ Enviado</span>
+                          ) : (
+                            <button
+                              onClick={() => sendToLead(lead)}
+                              disabled={sendingLeadId === lead.id || !lead.linkedin_url}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto"
+                              title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name}`}
+                            >
+                              {sendingLeadId === lead.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5" />
+                              )}
+                              {sendingLeadId === lead.id ? 'Enviando...' : 'Enviar'}
+                            </button>
+                          )}
+                        </td>
                         <td className="px-5 py-4 text-right">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-400" onClick={() => setLeadToDelete(lead.id)}>
                             <X className="w-4 h-4" />
