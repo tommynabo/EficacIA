@@ -200,7 +200,7 @@ export default function AccountsPage() {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).catch(() => {})
+    }).catch(() => { })
   }
 
   const handleImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
@@ -227,7 +227,7 @@ export default function AccountsPage() {
     try {
       setError(null)
       const token = localStorage.getItem("auth_token")
-      const response = await fetch(`/api/linkedin/accounts/${accountId}`, {
+      const response = await fetch(`/api/linkedin/accounts?id=${accountId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       })

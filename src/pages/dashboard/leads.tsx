@@ -4,12 +4,12 @@ import { Button } from '@/src/components/ui/button'
 import { Input } from '@/src/components/ui/input'
 import { Badge } from '@/src/components/ui/badge'
 import { Skeleton } from '@/src/components/ui/skeleton'
-import { 
-  Search, 
-  Plus, 
-  FileUp, 
-  Mail, 
-  CheckCircle, 
+import {
+  Search,
+  Plus,
+  FileUp,
+  Mail,
+  CheckCircle,
   Clock,
   Trash2,
   ArrowUpRight,
@@ -66,7 +66,7 @@ export default function LeadsPage() {
       })
 
       if (!response.ok) throw new Error('Error cargando leads')
-      
+
       const data = await response.json()
       setLeads(Array.isArray(data) ? data : data.leads || [])
     } catch (err) {
@@ -104,7 +104,7 @@ export default function LeadsPage() {
 
       const data = await response.json()
       alert(`✓ Se importaron ${data.imported || 0} leads`)
-      ;(document.getElementById('csvInput') as HTMLTextAreaElement).value = ''
+        ; (document.getElementById('csvInput') as HTMLTextAreaElement).value = ''
       fetchLeads()
       setShowImportModal(false)
     } catch (err) {
@@ -121,7 +121,7 @@ export default function LeadsPage() {
       setSendingLeadId(leadId)
       setError(null)
 
-      const response = await fetch(`/api/linkedin/leads/${leadId}/send`, {
+      const response = await fetch(`/api/linkedin/leads?id=${leadId}&action=send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -150,7 +150,7 @@ export default function LeadsPage() {
 
     try {
       setError(null)
-      const response = await fetch(`/api/linkedin/leads/${leadId}`, {
+      const response = await fetch(`/api/linkedin/leads?id=${leadId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`

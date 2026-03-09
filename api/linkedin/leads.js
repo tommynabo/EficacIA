@@ -20,7 +20,7 @@ function getUserId(req) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -60,6 +60,109 @@ export default async function handler(req, res) {
 
     if (error) return res.status(400).json({ error: error.message });
     return res.status(200).json({ success: true, leads: leads || [] });
+  }
+
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
+
+    // Verificar que el lead pertenece al usuario
+    const { data: teams } = await supabaseAdmin
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId);
+
+    const teamIds = (teams || []).map((t) => t.id);
+    if (teamIds.length === 0)
+      return res.status(404).json({ error: 'Lead no encontrado' });
+
+    const { error } = await supabaseAdmin
+      .from('leads')
+      .delete()
+      .eq('id', id)
+      .in('team_id', teamIds);
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ success: true, message: 'Lead eliminado' });
+  }
+
+  if (req.method === 'POST') {
+    const { id, action } = req.query;
+    if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
+
+    if (action === 'send') {
+      const { accountId, actionType = 'invitation', content } = req.body || {};
+
+      // Obtener lead y verificar propiedad
+      const { data: teams } = await supabaseAdmin
+        .from('teams')
+        .select('id')
+        .eq('owner_id', userId);
+
+      const teamIds = (teams || []).map((t) => t.id);
+      if (teamIds.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+
+      const { data: lead, error: leadError } = await supabaseAdmin
+        .from('leads')
+        .select('*, campaigns(name)')
+        .eq('id', id)
+        .in('team_id', teamIds)
+        .single();
+
+      if (leadError || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
+      if (lead.sent_message) return res.status(400).json({ error: 'Ya se envió un mensaje a este lead' });
+
+      // If no accountId provided, find the first valid LinkedIn account for this team
+      let resolvedAccountId = accountId;
+      if (!resolvedAccountId) {
+        const { data: accounts } = await supabaseAdmin
+          .from('linkedin_accounts')
+          .select('id')
+          .in('team_id', teamIds)
+          .eq('is_valid', true)
+          .limit(1);
+        resolvedAccountId = accounts?.[0]?.id;
+      }
+      if (!resolvedAccountId) {
+        return res.status(400).json({ error: 'No hay cuenta de LinkedIn conectada. Ve a Cuentas para agregar una.' });
+      }
+
+      // Call the send-action endpoint to actually send via Unipile
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host;
+      const campaignName = lead.campaigns?.name || '';
+      const finalContent = content || `Hola {{nombre}}, vi tu perfil y me gustaría conectar contigo.`;
+
+      try {
+        const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
+          },
+          body: JSON.stringify({
+            leadId: id,
+            accountId: resolvedAccountId,
+            actionType,
+            content: finalContent,
+            useAI: !content, // Use AI if no custom content provided
+            campaignName,
+          }),
+        });
+
+        const result = await sendRes.json();
+        if (!sendRes.ok) {
+          return res.status(sendRes.status).json({ error: result.error || 'Error al enviar' });
+        }
+
+        return res.status(200).json(result);
+      } catch (err) {
+        console.error('[SEND] Error:', err.message);
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    return res.status(400).json({ error: 'Acción no válida' });
   }
 
   return res.status(405).json({ error: 'Método no permitido' });

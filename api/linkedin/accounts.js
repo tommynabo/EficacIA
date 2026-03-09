@@ -245,5 +245,52 @@ export default async function handler(req, res) {
     });
   }
 
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'ID de cuenta requerido' });
+
+    // Obtener el equipo del usuario
+    const { data: teams } = await supabaseAdmin
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1);
+
+    const teamId = teams?.[0]?.id;
+    if (!teamId) return res.status(404).json({ error: 'Cuenta no encontrada' });
+
+    // Verificar que la cuenta pertenece al equipo del usuario
+    const { data: account } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('id, unipile_account_id')
+      .eq('id', id)
+      .eq('team_id', teamId)
+      .single();
+
+    if (!account) return res.status(404).json({ error: 'Cuenta no encontrada' });
+
+    // Si es cuenta Unipile, desconectar también en Unipile
+    if (account.unipile_account_id) {
+      const dsn = (process.env.UNIPILE_DSN || '').trim();
+      const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+      if (dsn && apiKey) {
+        try {
+          await fetch(`https://${dsn}/api/v1/accounts/${account.unipile_account_id}`, {
+            method: 'DELETE',
+            headers: { 'X-API-KEY': apiKey },
+          });
+        } catch { /* best-effort */ }
+      }
+    }
+
+    const { error } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .delete()
+      .eq('id', id);
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ success: true, message: 'Cuenta desconectada' });
+  }
+
   return res.status(405).json({ error: 'Método no permitido' });
 }

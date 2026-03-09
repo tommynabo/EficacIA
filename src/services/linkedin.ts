@@ -86,7 +86,7 @@ export class LinkedInService {
    * Actualiza el estado de un lead
    */
   static async updateLead(leadId: string, updates: any) {
-    const response = await fetch(`${this.baseUrl}/api/linkedin/leads/${leadId}`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/leads?id=${leadId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ export class LinkedInService {
    * Elimina un lead
    */
   static async deleteLead(leadId: string) {
-    const response = await fetch(`${this.baseUrl}/api/linkedin/leads/${leadId}`, {
+    const response = await fetch(`${this.baseUrl}/api/linkedin/leads?id=${leadId}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,

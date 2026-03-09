@@ -82,7 +82,7 @@ export const api = {
     request('GET', '/api/linkedin/accounts'),
 
   deleteLinkedInAccount: (accountId: string) =>
-    request('DELETE', `/api/linkedin/accounts/${accountId}`),
+    request('DELETE', `/api/linkedin/accounts?id=${accountId}`),
 
   // Unipile – Conexión segura de LinkedIn
   generateUnipileLink: () =>
