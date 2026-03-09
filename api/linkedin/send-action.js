@@ -99,12 +99,31 @@ function extractLinkedInId(url) {
 }
 
 /**
+ * Resolve a LinkedIn identifier (username/vanity name) to a Unipile provider_id
+ * GET /api/v1/users/{identifier}
+ */
+async function getUnipileProviderId(unipileAccountId, linkedinId) {
+  const res = await fetch(`${unipileBase()}/api/v1/users/${linkedinId}?account_id=${unipileAccountId}`, {
+    method: 'GET',
+    headers: unipileHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[SEND-ACTION] Failed to resolve Unipile provider_id:', res.status, err);
+    throw new Error(`Failed to resolve profile (${res.status}): ${err.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data.provider_id;
+}
+
+/**
  * Send a connection invitation via Unipile.
  * POST /api/v1/users/invite
  */
 async function sendInvitation(unipileAccountId, linkedinId, message) {
+  const providerId = await getUnipileProviderId(unipileAccountId, linkedinId);
   const body = {
-    provider_id: linkedinId,
+    provider_id: providerId,
     account_id: unipileAccountId,
     message: (message || '').slice(0, 280), // LinkedIn limit
   };
