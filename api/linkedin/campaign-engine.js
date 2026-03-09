@@ -45,9 +45,9 @@ function verifyCron(req) {
 function delayToMs(value, unit = 'days') {
   const multipliers = {
     minutes: 60 * 1000,
-    hours:   60 * 60 * 1000,
-    days:    24 * 60 * 60 * 1000,
-    weeks:   7 * 24 * 60 * 60 * 1000,
+    hours: 60 * 60 * 1000,
+    days: 24 * 60 * 60 * 1000,
+    weeks: 7 * 24 * 60 * 60 * 1000,
   };
   return value * (multipliers[unit] || multipliers.days);
 }
@@ -134,7 +134,7 @@ export default async function handler(req, res) {
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaign.id)
           .in('sequence_status', ['pending', 'active']);
-        
+
         if (activeCount === 0) {
           // All leads completed — mark campaign as completed
           await supabaseAdmin.from('campaigns').update({
@@ -179,7 +179,6 @@ export default async function handler(req, res) {
               accountId,
               actionType: step.type,
               content: step.content || '',
-              useAI: step.useAI || false,
               campaignId: campaign.id,
               campaignName: campaign.name,
             }),

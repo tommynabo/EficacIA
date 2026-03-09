@@ -20,7 +20,6 @@ interface SequenceStep {
   id: string
   type: "invitation" | "message"
   content: string
-  useAI: boolean
   delayDays: number
   delayUnit?: 'minutes' | 'hours' | 'days' | 'weeks'
 }
@@ -79,8 +78,8 @@ interface LinkedInAccount {
 }
 
 const DEFAULT_STEPS: SequenceStep[] = [
-  { id: "1", type: "invitation", content: "Hola {{nombre}}, me encantaría conectar contigo y conocer más sobre tu experiencia en {{empresa}}.", useAI: true, delayDays: 0 },
-  { id: "2", type: "message", content: "Gracias por aceptar mi invitación, {{nombre}}. Vi que trabajas en {{empresa}} como {{cargo}}. Me gustaría hablar sobre cómo podemos colaborar.", useAI: false, delayDays: 2 },
+  { id: "1", type: "invitation", content: "Hola {{nombre}}, me encantaría conectar contigo y conocer más sobre tu experiencia en {{empresa}}.", delayDays: 0 },
+  { id: "2", type: "message", content: "Gracias por aceptar mi invitación, {{nombre}}. Vi que trabajas en {{empresa}} como {{cargo}}. Me gustaría hablar sobre cómo podemos colaborar.", delayDays: 2 },
 ]
 
 const TOKEN = () => localStorage.getItem("auth_token")
@@ -265,7 +264,6 @@ export default function CampaignDetailPage() {
           accountId: selectedAccounts[0],
           actionType: step.type,
           content: step.content,
-          useAI: step.useAI,
           campaignId: campaign.id,
           campaignName: campaign.name,
         }),
@@ -331,7 +329,6 @@ export default function CampaignDetailPage() {
       id: Date.now().toString(),
       type: "message",
       content: "",
-      useAI: false,
       delayDays: 1,
     }
     setSteps([...steps, newStep])
@@ -424,20 +421,6 @@ export default function CampaignDetailPage() {
           </div>
 
           <div className="w-px h-7 bg-slate-700 mx-1" />
-
-          {/* Test Send al primer lead */}
-          <button
-            onClick={() => {
-              const firstLead = leads.find(l => !l.sent_message) || leads[0]
-              if (firstLead) sendToLead(firstLead)
-            }}
-            disabled={sendingLeadId !== null || leads.length === 0 || steps.length === 0}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border bg-violet-500/10 border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-all disabled:opacity-40"
-            title="Envía el primer paso al primer lead para verificar que funciona"
-          >
-            <Send className={`w-4 h-4 ${sendingLeadId ? "animate-pulse" : ""}`} />
-            {sendingLeadId ? "Enviando…" : "Test Send"}
-          </button>
 
           {/* Ejecutar motor manualmente */}
           <button
@@ -677,11 +660,6 @@ export default function CampaignDetailPage() {
                       <span className="text-sm font-medium text-slate-300">
                         {step.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"}
                       </span>
-                      {step.useAI && (
-                        <Badge variant="outline" className="gap-1 text-xs text-blue-400 border-blue-500/30 bg-blue-500/10 py-0.5 px-2">
-                          <Bot className="w-3 h-3" /> IA
-                        </Badge>
-                      )}
                     </div>
                     <div className="flex items-center gap-0.5">
                       {index > 0 && (
@@ -728,7 +706,15 @@ export default function CampaignDetailPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 mb-2 block">Mensaje</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-slate-400">Mensaje</label>
+                    <button
+                      onClick={() => updateStep(activeStep.id, { content: "" })}
+                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" /> No enviar mensaje
+                    </button>
+                  </div>
                   <textarea
                     ref={messageTextareaRef}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-44"
@@ -736,6 +722,13 @@ export default function CampaignDetailPage() {
                     value={activeStep.content}
                     onChange={e => updateStep(activeStep.id, { content: e.target.value })}
                   />
+                  {activeStep.type === "invitation" && (
+                    <div className={`text-xs mt-1 text-right ${activeStep.content.length > 200 ? 'text-red-400 font-bold' : 'text-slate-500'}`}>
+                      {activeStep.content.length} / 200 caracteres
+                      {activeStep.content.length > 200 && ' ⚠️ Es posible que exceda el límite de LinkedIn (200 recomendado)'}
+                    </div>
+                  )}
+
                   {/* Variable chips — click to insert at cursor */}
                   <div className="mt-2 space-y-2">
                     <div className="flex flex-wrap gap-1.5">
@@ -784,17 +777,6 @@ export default function CampaignDetailPage() {
                       </div>
                     )}
                   </div>
-                </div>
-
-                <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/50">
-                  <div className="flex items-center gap-2">
-                    <Bot className={`w-4 h-4 ${activeStep.useAI ? "text-blue-400" : "text-slate-500"}`} />
-                    <div>
-                      <p className="text-xs font-medium text-slate-200">Personalización con IA</p>
-                      <p className="text-xs text-slate-500">EficacIA adapta el mensaje al perfil del lead</p>
-                    </div>
-                  </div>
-                  <Switch checked={activeStep.useAI} onCheckedChange={c => updateStep(activeStep.id, { useAI: c })} />
                 </div>
 
                 {steps.findIndex(s => s.id === activeStep.id) > 0 && (

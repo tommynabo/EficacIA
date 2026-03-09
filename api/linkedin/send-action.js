@@ -152,38 +152,6 @@ Prompt de IA de la campaña: "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
 }
 
 /**
- * Generate AI message using Claude if useAI is true.
- */
-async function generateAIMessage(lead, baseContent, campaignName) {
-  if (!process.env.ANTHROPIC_API_KEY) return resolveTemplate(baseContent, lead);
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 250,
-        messages: [{
-          role: 'user',
-          content: `Reescribe este mensaje de LinkedIn de forma natural y personalizada (máx 280 chars para invitación, 500 para mensaje). 
-Contexto: ${lead.first_name} ${lead.last_name}, ${lead.job_title || lead.position || 'profesional'} en ${lead.company || 'su empresa'}. Campaña: ${campaignName || 'outreach'}.
-Mensaje base: "${baseContent}"
-Solo devuelve el mensaje final, sin comillas ni explicaciones.`,
-        }],
-      }),
-    });
-    const data = await res.json();
-    return data?.content?.[0]?.text || resolveTemplate(baseContent, lead);
-  } catch {
-    return resolveTemplate(baseContent, lead);
-  }
-}
-
-/**
  * Extract LinkedIn identifier from a profile URL.
  * Unipile needs the provider_id (vanity name or urn).
  */
@@ -281,7 +249,7 @@ export default async function handler(req, res) {
   const userId = isInternal ? 'engine' : getUserId(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
-  const { leadId, accountId, actionType, content, useAI, campaignId, campaignName } = req.body || {};
+  const { leadId, accountId, actionType, content, campaignId, campaignName } = req.body || {};
   if (!leadId || !accountId || !actionType) {
     return res.status(400).json({ error: 'Faltan leadId, accountId o actionType' });
   }
@@ -375,13 +343,8 @@ export default async function handler(req, res) {
       // Inject variables using Claude
       finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt);
     }
-
-    // Regular variables / basic AI rewrite
-    if (useAI) {
-      finalMessage = await generateAIMessage(lead, finalMessage, campaignName);
-    } else {
-      finalMessage = resolveTemplate(finalMessage, lead);
-    }
+    // Resolve standard variables
+    finalMessage = resolveTemplate(finalMessage, lead);
 
     // Execute the action
     let result;
