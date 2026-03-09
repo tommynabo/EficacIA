@@ -11,6 +11,8 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
+const ACTOR_PROFILE_SCRAPER = 'scrapemate~linkedin-profile-scraper';
+
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
@@ -37,6 +39,36 @@ function unipileBase() {
   return `https://${(process.env.UNIPILE_DSN || '').trim()}`;
 }
 
+// --- Apify helpers ---
+async function startApifyRun(actorSlug, input) {
+  const token = (process.env.APIFY_API_TOKEN || '').trim();
+  if (!token) throw new Error('APIFY_API_TOKEN no configurado en Vercel.');
+  const url = `https://api.apify.com/v2/acts/${actorSlug}/runs?token=${encodeURIComponent(token)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`Error al iniciar Apify (${res.status})`);
+  const data = await res.json();
+  return { runId: data.data.id, datasetId: data.data.defaultDatasetId };
+}
+
+async function checkApifyRun(runId) {
+  const token = (process.env.APIFY_API_TOKEN || '').trim();
+  const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error(`Error al verificar Apify (${res.status})`);
+  const data = await res.json();
+  return data.data; // { status, defaultDatasetId }
+}
+
+async function fetchApifyDataset(datasetId) {
+  const token = (process.env.APIFY_API_TOKEN || '').trim();
+  const res = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&format=json`);
+  if (!res.ok) throw new Error(`Error dataset Apify (${res.status})`);
+  return await res.json();
+}
+
 /**
  * Resolve a lead's variables in a message template.
  * Replaces {{nombre}}, {{empresa}}, {{cargo}} etc.
@@ -53,6 +85,70 @@ function resolveTemplate(template, lead) {
     ...(lead.custom_vars || {}),
   };
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || '');
+}
+
+/**
+ * Generate advanced AI variables (comentario_post, etc) using Claude and scraped profile data.
+ * The output string will replace the {{vars}} inside the template directly.
+ */
+async function generateAdvancedAIVariables(template, lead, aiPrompt) {
+  if (!process.env.ANTHROPIC_API_KEY || !template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/)) {
+    return template;
+  }
+  const scraped = lead.custom_vars?.scraped_profile;
+  if (!scraped) return template; // Should have been caught before
+
+  // Give Claude a condensed version of the profile to save tokens
+  const condensedProfile = {
+    about: scraped.about || scraped.summary || '',
+    headline: scraped.headline || scraped.position || '',
+    experience: (scraped.experience || []).slice(0, 3).map(e => `${e.title} at ${e.company} (${e.duration})`),
+    recent_posts: (scraped.posts || scraped.certifications || []).slice(0, 3).map(p => p.text || p.title || ''),
+  };
+
+  const sysPrompt = `Eres un experto en cold outreach B2B. Eres humano, breve y directo.
+Tu tarea es generar el reemplazo exacto para las variables dinámicas de este mensaje basándote en el perfil del lead.
+Manten un tono profesional pero muy natural/coloquial. No uses saludos, comillas ni formatos raros.
+
+Input:
+Perfil del lead: ${JSON.stringify(condensedProfile)}
+Variables solicitadas: ${template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/g).join(', ')}
+Prompt de IA de la campaña: "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `${sysPrompt}\n\nDevuelve la respuesta en formato JSON exacto: {"variable_name": "texto generado sin comillas"}. Por ejemplo si piden {{comentario_post}} -> {"comentario_post": "vi tu post sobre IA..."}`,
+        }],
+      }),
+    });
+    const data = await res.json();
+    const textResp = data?.content?.[0]?.text || '{}';
+    // try to parse JSON
+    const match = textResp.match(/\{[\s\S]*\}/);
+    if (!match) return template;
+    const varsMap = JSON.parse(match[0]);
+
+    // Replace in template
+    let newTemplate = template;
+    for (const [k, v] of Object.entries(varsMap)) {
+      newTemplate = newTemplate.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+    }
+    return newTemplate;
+  } catch (err) {
+    console.error('[SEND-ACTION] Advanced AI Gen Error:', err.message);
+    return template;
+  }
 }
 
 /**
@@ -216,6 +312,71 @@ export default async function handler(req, res) {
 
     // Resolve message content
     let finalMessage = content || '';
+
+    // Feature: Advanced AI personalization using Apify Profile Scraping
+    const needsAdvancedAI = !!finalMessage.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/);
+
+    if (needsAdvancedAI) {
+      const cvars = lead.custom_vars || {};
+
+      if (cvars.apify_run_id) {
+        // We are already polling Apify
+        const run = await checkApifyRun(cvars.apify_run_id);
+        if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
+          console.log(`[SEND-ACTION] Lead ${lead.id} waiting for Apify (advanced AI)...`);
+          return res.status(202).json({ success: true, status: 'processing', message: 'Waiting for Apify profile data...' });
+        } else if (run.status === 'SUCCEEDED') {
+          // Finished! Get the profile data
+          const items = await fetchApifyDataset(run.defaultDatasetId);
+          cvars.scraped_profile = items[0] || {};
+          delete cvars.apify_run_id;
+          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+          console.log(`[SEND-ACTION] Lead ${lead.id} profile scraped successfully.`);
+        } else {
+          // Failed (Timeout, aborted, etc)
+          console.error(`[SEND-ACTION] Apify scraping failed: ${run.status} for lead ${lead.id}`);
+          delete cvars.apify_run_id;
+          cvars.scraped_profile = { error: 'Apify failed' }; // Mark to avoid loops
+          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+        }
+      } else if (!cvars.scraped_profile) {
+        // Needs scraping, start it now
+        if (!process.env.APIFY_API_TOKEN) {
+          console.error('[SEND-ACTION] APIFY_API_TOKEN is missing but advanced AI vars are requested.');
+          cvars.scraped_profile = { error: 'No Apify Token Configured' };
+          await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+          return res.status(202).json({ success: true, status: 'processing', message: 'Apify token missing, will fallback in next cycle.' });
+        }
+
+        // Start Scrapemate Profile Scraper for individual lead
+        const inputUrls = [lead.linkedin_url].filter(Boolean);
+        if (inputUrls.length === 0) throw new Error('Lead missing LinkedIn URL for profile parsing.');
+
+        console.log(`[SEND-ACTION] Lead ${lead.id} starting Apify profile scraper...`);
+        const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
+          profileUrls: inputUrls,
+          profilesPerSession: 1
+        });
+
+        cvars.apify_run_id = runId;
+        await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+
+        return res.status(202).json({ success: true, status: 'processing', message: 'Started Apify profile scraping...' });
+      }
+
+      // If we got here, we have the scraped_profile data (or it failed gracefully).
+      // Get the ai_prompt from campaign settings to pass to Claude
+      let aiPrompt = '';
+      if (campaignId) {
+        const { data: camp } = await supabaseAdmin.from('campaigns').select('settings').eq('id', campaignId).single();
+        aiPrompt = camp?.settings?.ai_prompt || '';
+      }
+
+      // Inject variables using Claude
+      finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt);
+    }
+
+    // Regular variables / basic AI rewrite
     if (useAI) {
       finalMessage = await generateAIMessage(lead, finalMessage, campaignName);
     } else {

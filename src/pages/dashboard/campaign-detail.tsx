@@ -52,6 +52,7 @@ interface Campaign {
     daily_limit_visits?: number
     stop_on_reply?: boolean
     linkedin_account_ids?: string[]
+    ai_prompt?: string
   }
 }
 
@@ -140,6 +141,7 @@ export default function CampaignDetailPage() {
     daily_limit_visits: 40,
     stop_on_reply: true,
     linkedin_account_ids: [] as string[],
+    ai_prompt: "Analiza el perfil y escribe un comentario de 1-2 oraciones sobre su experiencia reciente o un post interesante.",
   })
 
   // ─── Carga inicial ──────────────────────────────────────────────────────────
@@ -351,7 +353,7 @@ export default function CampaignDetailPage() {
     if (direction === "down" && index === steps.length - 1) return
     const newSteps = [...steps]
     const swap = direction === "up" ? index - 1 : index + 1
-    ;[newSteps[index], newSteps[swap]] = [newSteps[swap], newSteps[index]]
+      ;[newSteps[index], newSteps[swap]] = [newSteps[swap], newSteps[index]]
     setSteps(newSteps)
   }
 
@@ -451,11 +453,10 @@ export default function CampaignDetailPage() {
           {/* Launch / Pause */}
           <button
             onClick={toggleStatus}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
-              campaign.status === "active"
-                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
-                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${campaign.status === "active"
+              ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+              }`}
           >
             {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
@@ -750,6 +751,22 @@ export default function CampaignDetailPage() {
                         </button>
                       ))}
                     </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="text-[10px] text-purple-400 font-medium self-center mr-1 uppercase">Variables IA Avanzadas:</span>
+                      {['comentario_post', 'especializacion', 'experiencia'].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => insertVariable(v)}
+                          className="text-xs px-2.5 py-1 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500/40 font-mono transition-colors"
+                          title={`Genera contenido con IA usando Apify para: ${v}`}
+                        >
+                          {`{{${v}}}`}
+                        </button>
+                      ))}
+                    </div>
+
                     {customVarKeys.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         <span className="text-[10px] text-slate-500 self-center mr-1">Personalizadas:</span>
@@ -884,6 +901,20 @@ export default function CampaignDetailPage() {
                 onCheckedChange={v => setSettings(s => ({ ...s, stop_on_reply: v }))}
               />
             </div>
+          </Card>
+
+          {/* Prompt de Personalización IA */}
+          <Card className="p-5">
+            <h3 className="font-semibold text-slate-200 mb-1">Prompt de Personalización IA</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Instrucciones que usará la IA para generar el texto de las variables avanzadas (Ej: {'{{comentario_post}}'}, {'{{especializacion}}'}). Se le pasará la info del perfil raspado.
+            </p>
+            <textarea
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24"
+              placeholder="Ej: Eres un experto en ventas. Escribe un comentario muy breve elogiando la experiencia más reciente o la bio de este lead de forma coloquial."
+              value={settings.ai_prompt || ""}
+              onChange={e => setSettings(s => ({ ...s, ai_prompt: e.target.value }))}
+            />
           </Card>
 
           {/* Límites diarios */}
