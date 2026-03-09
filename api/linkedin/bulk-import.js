@@ -147,14 +147,16 @@ async function getLiAtFromUnipile(unipileAccountId) {
 //   Sales Navigator: https://apify.com/bebity/linkedin-sales-navigator-scraper
 const ACTOR_LINKEDIN  = 'curious_coder~linkedin-search-scraper';
 const ACTOR_SALES_NAV = 'bebity~linkedin-sales-navigator-scraper';
-const ACTOR_GOOGLE    = 'apify/google-search-scraper';
+const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   if (!token) throw new Error('APIFY_API_TOKEN no configurado en Vercel. Añádelo en Settings → Environment Variables.');
   const url = `https://api.apify.com/v2/acts/${actorSlug}/runs?token=${encodeURIComponent(token)}`;
-  const safeInput = { ...input, cookie: '***', liAtCookie: '***' }; // don't log the cookie
-  console.log('[APIFY] Starting run:', actorSlug, 'input (redacted):', JSON.stringify(safeInput));
+  const safeInput = { ...input };
+  if (safeInput.cookie) safeInput.cookie = '***';
+  if (safeInput.liAtCookie) safeInput.liAtCookie = '***';
+  console.log('[APIFY] Starting run:', actorSlug, 'input:', JSON.stringify(safeInput));
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
