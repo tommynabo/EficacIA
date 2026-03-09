@@ -53,6 +53,13 @@ interface Campaign {
     linkedin_account_ids?: string[]
     ai_prompt?: string
   }
+  stats?: {
+    invitations: number
+    messages: number
+    accepted: number
+    replied: number
+    visits: number
+  }
 }
 
 interface Lead {
@@ -949,11 +956,11 @@ export default function CampaignDetailPage() {
           {/* Métricas */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { label: "Invitaciones", value: 0, icon: Mail, color: "text-blue-400" },
-              { label: "Aceptadas", value: 0, icon: CheckCircle2, color: "text-emerald-400" },
-              { label: "Mensajes", value: 0, icon: MessageSquare, color: "text-amber-400" },
-              { label: "Respondidos", value: 0, icon: TrendingUp, color: "text-purple-400" },
-              { label: "Visitas", value: 0, icon: Eye, color: "text-cyan-400" },
+              { label: "Invitaciones", value: campaign.stats?.invitations || 0, icon: Mail, color: "text-blue-400" },
+              { label: "Aceptadas", value: campaign.stats?.accepted || 0, icon: CheckCircle2, color: "text-emerald-400" },
+              { label: "Mensajes", value: campaign.stats?.messages || 0, icon: MessageSquare, color: "text-amber-400" },
+              { label: "Respondidos", value: campaign.stats?.replied || 0, icon: TrendingUp, color: "text-purple-400" },
+              { label: "Visitas", value: campaign.stats?.visits || 0, icon: Eye, color: "text-cyan-400" },
             ].map(({ label, value, icon: Icon, color }) => (
               <Card key={label} className="p-4 flex flex-col items-center gap-1">
                 <Icon className={`w-5 h-5 ${color} mb-1`} />

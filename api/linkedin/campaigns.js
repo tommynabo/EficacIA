@@ -73,12 +73,27 @@ export default async function handler(req, res) {
         .eq('team_id', teamId)
         .order('created_at', { ascending: false });
 
+      // Obtener estadísticas de la campaña
+      const { data: activity } = await supabaseAdmin
+        .from('campaign_activity')
+        .select('action_type')
+        .eq('campaign_id', id);
+
+      const stats = {
+        invitations: activity?.filter(a => a.action_type === 'invitation').length || 0,
+        messages: activity?.filter(a => a.action_type === 'message' || a.action_type === 'message_reply').length || 0,
+        accepted: leads?.filter(l => ['connected', 'contacted', 'replied'].includes(l.status)).length || 0,
+        replied: leads?.filter(l => l.status === 'replied').length || 0,
+        visits: 0
+      };
+
       return res.status(200).json({
         success: true,
         campaign: {
           ...campaign,
           sequence: campaign.sequence || [],
           settings: campaign.settings || {},
+          stats
         },
         leads: leads || [],
       });

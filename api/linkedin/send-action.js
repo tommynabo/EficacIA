@@ -49,7 +49,13 @@ async function startApifyRun(actorSlug, input) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(`Error al iniciar Apify (${res.status})`);
+  if (!res.ok) {
+    const errText = await res.text();
+    if (res.status === 404) {
+      console.error(`[APIFY] El actor '${actorSlug}' no existe o no tienes acceso. Prueba a usar otro actor en send-action.js o suscribirte en Apify.`);
+    }
+    throw new Error(`Error al iniciar Apify (${res.status}): ${errText.substring(0, 100)}`);
+  }
   const data = await res.json();
   return { runId: data.data.id, datasetId: data.data.defaultDatasetId };
 }
@@ -91,7 +97,7 @@ function resolveTemplate(template, lead) {
  * Generate advanced AI variables (comentario_post, etc) using Claude and scraped profile data.
  * The output string will replace the {{vars}} inside the template directly.
  */
-async function generateAdvancedAIVariables(template, lead, aiPrompt) {
+async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType) {
   if (!process.env.ANTHROPIC_API_KEY || !template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/)) {
     return template;
   }
@@ -106,9 +112,18 @@ async function generateAdvancedAIVariables(template, lead, aiPrompt) {
     recent_posts: (scraped.posts || scraped.certifications || []).slice(0, 3).map(p => p.text || p.title || ''),
   };
 
+  // Calculate constraint for invitations
+  let lengthConstraint = "Sé conciso. Escribe 1 o 2 oraciones breves.";
+  if (actionType === 'invitation') {
+    const templateLen = template.replace(/\{\{(.*?)\}\}/g, '').length;
+    const charsRemaining = 200 - templateLen;
+    lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración).`;
+  }
+
   const sysPrompt = `Eres un experto en cold outreach B2B. Eres humano, breve y directo.
 Tu tarea es generar el reemplazo exacto para las variables dinámicas de este mensaje basándote en el perfil del lead.
-Manten un tono profesional pero muy natural/coloquial. No uses saludos, comillas ni formatos raros.
+Manten un tono profesional pero muy coloquial. No uses saludos, comillas ni formatos raros.
+${lengthConstraint}
 
 Input:
 Perfil del lead: ${JSON.stringify(condensedProfile)}
@@ -341,7 +356,7 @@ export default async function handler(req, res) {
       }
 
       // Inject variables using Claude
-      finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt);
+      finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt, actionType);
     }
     // Resolve standard variables
     finalMessage = resolveTemplate(finalMessage, lead);
