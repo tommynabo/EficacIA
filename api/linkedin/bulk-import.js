@@ -292,8 +292,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters, apollo_query } = req.body || {};
+    const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters, apollo_query, li_at: bodyLiAt } = req.body || {};
     const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
+
+    console.log('[BULK-IMPORT] POST type:', importType, '| has account_id:', !!account_id, '| has li_at in body:', !!(bodyLiAt && bodyLiAt.length > 20));
 
     if (!importType || importType === 'unknown') {
       return res.status(400).json({ error: 'Tipo de importación no especificado' });
@@ -342,11 +344,15 @@ export default async function handler(req, res) {
         if (!q.titles && !q.keywords && !q.companies) {
           return res.status(400).json({ error: 'Introduce al menos un cargo, empresa o palabra clave.' });
         }
-        const liAt = account_id
-          ? (await supabaseAdmin.from('linkedin_accounts').select('session_cookie').eq('id', account_id).eq('team_id', teamId).single()).data?.session_cookie
-          : await getLiAtForUser(userId);
-        if (!liAt || liAt === 'managed_by_unipile') {
-          return res.status(400).json({ error: 'Esta búsqueda requiere una cuenta LinkedIn conectada con cookie li_at. Ve a Cuentas y usa "Sesión manual".' });
+        let liAt = bodyLiAt?.trim();
+        if (!liAt || liAt.length < 20) {
+          const stored = account_id
+            ? (await supabaseAdmin.from('linkedin_accounts').select('session_cookie').eq('id', account_id).eq('team_id', teamId).single()).data?.session_cookie
+            : await getLiAtForUser(userId);
+          if (stored && stored !== 'managed_by_unipile' && stored.length >= 20) liAt = stored;
+        }
+        if (!liAt || liAt.length < 20) {
+          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn para usar esta búsqueda.' });
         }
         const searchUrl = buildLinkedInSearchUrl(q);
         console.log('[APIFY] people-search URL:', searchUrl);
@@ -381,8 +387,16 @@ export default async function handler(req, res) {
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
         if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
-        if (!account.session_cookie || account.session_cookie === 'managed_by_unipile') {
-          return res.status(400).json({ error: 'Esta cuenta fue conectada via Unipile. Para búsquedas directas conecta también tu li_at desde Cuentas → "Sesión manual".' });
+
+        // Accept li_at from body (manual input) OR from stored session_cookie
+        let liAt = bodyLiAt?.trim();
+        if (!liAt || liAt.length < 20) {
+          if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
+            liAt = account.session_cookie;
+          }
+        }
+        if (!liAt || liAt.length < 20) {
+          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn. La puedes copiar desde las DevTools de tu navegador mientras estás en LinkedIn.' });
         }
 
         const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
@@ -392,9 +406,9 @@ export default async function handler(req, res) {
           queries:    [normalizedUrl],
           maxResults: Math.min(limit, 50),
           maxItems:   Math.min(limit, 50),
-          cookie:     `li_at=${account.session_cookie}`,
-          liAtCookie: account.session_cookie,
-          li_at:      account.session_cookie,
+          cookie:     `li_at=${liAt}`,
+          liAtCookie: liAt,
+          li_at:      liAt,
         });
         const pollToken = jwt.sign(
           { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
@@ -416,8 +430,16 @@ export default async function handler(req, res) {
           .single();
         if (accErr || !account) return res.status(404).json({ error: 'Cuenta de LinkedIn no encontrada' });
         if (!account.is_valid) return res.status(400).json({ error: 'La sesión de LinkedIn ha expirado. Vuelve a conectar la cuenta en Cuentas.' });
-        if (!account.session_cookie || account.session_cookie === 'managed_by_unipile') {
-          return res.status(400).json({ error: 'Esta cuenta fue conectada via Unipile. Para buscar en Sales Navigator conecta también tu li_at desde Cuentas → "Sesión manual".' });
+
+        // Accept li_at from body (manual input) OR stored session_cookie
+        let liAt = bodyLiAt?.trim();
+        if (!liAt || liAt.length < 20) {
+          if (account.session_cookie && account.session_cookie !== 'managed_by_unipile' && account.session_cookie.length >= 20) {
+            liAt = account.session_cookie;
+          }
+        }
+        if (!liAt || liAt.length < 20) {
+          return res.status(400).json({ error: 'Introduce tu cookie li_at de LinkedIn para usar Sales Navigator.' });
         }
 
         console.log('[APIFY] sales_navigator URL:', url);
@@ -426,9 +448,9 @@ export default async function handler(req, res) {
           maxLeads:   Math.min(limit, 50),
           maxResults: Math.min(limit, 50),
           maxItems:   Math.min(limit, 50),
-          cookie:     `li_at=${account.session_cookie}`,
-          liAtCookie: account.session_cookie,
-          li_at:      account.session_cookie,
+          cookie:     `li_at=${liAt}`,
+          liAtCookie: liAt,
+          li_at:      liAt,
         });
         const pollToken = jwt.sign(
           { runId, datasetId, teamId, campaignId: campaign_id || null, limit: Math.min(limit, 50), userId },
