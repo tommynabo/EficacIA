@@ -18,38 +18,6 @@ function getUserId(req) {
   }
 }
 
-async function generateAIMessage(lead, campaignName) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return `Hola ${lead.first_name}, vi tu perfil y me gustaría conectar contigo.`;
-  }
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 200,
-        messages: [
-          {
-            role: 'user',
-            content: `Escribe un mensaje de LinkedIn corto y personalizado (máximo 150 chars) para conectar con ${lead.first_name} ${lead.last_name}, que trabaja en ${lead.company || 'su empresa'} como ${lead.job_title || lead.position || 'profesional'}. Campaña: ${campaignName || 'general'}. Solo el mensaje, sin comillas.`,
-          },
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    return data?.content?.[0]?.text || `Hola ${lead.first_name}, me gustaría conectar contigo.`;
-  } catch {
-    return `Hola ${lead.first_name}, vi tu perfil y me gustaría conectar contigo.`;
-  }
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -63,6 +31,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
+    const { accountId, actionType = 'invitation', content } = req.body || {};
 
     // Obtener lead y verificar propiedad
     const { data: teams } = await supabaseAdmin
@@ -83,28 +52,58 @@ export default async function handler(req, res) {
     if (leadError || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
     if (lead.sent_message) return res.status(400).json({ error: 'Ya se envió un mensaje a este lead' });
 
-    // Generar mensaje IA
+    // If no accountId provided, find the first valid LinkedIn account for this team
+    let resolvedAccountId = accountId;
+    if (!resolvedAccountId) {
+      const { data: accounts } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('id')
+        .in('team_id', teamIds)
+        .eq('is_valid', true)
+        .limit(1);
+      resolvedAccountId = accounts?.[0]?.id;
+    }
+    if (!resolvedAccountId) {
+      return res.status(400).json({ error: 'No hay cuenta de LinkedIn conectada. Ve a Cuentas para agregar una.' });
+    }
+
+    // Call the send-action endpoint to actually send via Unipile
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host;
     const campaignName = lead.campaigns?.name || '';
-    const message = await generateAIMessage(lead, campaignName);
+    const finalContent = content || `Hola {{nombre}}, vi tu perfil y me gustaría conectar contigo.`;
 
-    // Marcar como enviado
-    const { error: updateError } = await supabaseAdmin
-      .from('leads')
-      .update({
-        status: 'contacted',
-        sent_message: true,
-        sent_at: new Date().toISOString(),
-        ai_message: message,
-      })
-      .eq('id', id);
+    try {
+      const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
+        },
+        body: JSON.stringify({
+          leadId: id,
+          accountId: resolvedAccountId,
+          actionType,
+          content: finalContent,
+          useAI: !content, // Use AI if no custom content provided
+          campaignName,
+        }),
+      });
 
-    if (updateError) return res.status(400).json({ error: updateError.message });
+      const result = await sendRes.json();
+      if (!sendRes.ok) {
+        return res.status(sendRes.status).json({ error: result.error || 'Error al enviar' });
+      }
 
-    return res.status(200).json({
-      success: true,
-      message_sent: message,
-      message: '✓ Mensaje enviado',
-    });
+      return res.status(200).json(result);
+    } catch (err) {
+      console.error('[SEND] Error:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  return res.status(405).json({ error: 'Método no permitido' });
+}
   }
 
   return res.status(405).json({ error: 'Método no permitido' });

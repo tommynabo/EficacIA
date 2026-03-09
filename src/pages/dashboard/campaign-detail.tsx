@@ -225,6 +225,54 @@ export default function CampaignDetailPage() {
     navigate("/dashboard/campaigns")
   }
 
+  // ─── Test Send — envía la primera acción al primer lead para verificar ────
+
+  const [testSending, setTestSending] = React.useState(false)
+  const [testResult, setTestResult] = React.useState<string | null>(null)
+
+  const testSendFirstLead = async () => {
+    if (!campaign || leads.length === 0 || steps.length === 0) {
+      setTestResult("⚠ Necesitas al menos un lead y un paso en la secuencia para probar.")
+      return
+    }
+    const firstLead = leads.find(l => !l.sent_message) || leads[0]
+    const firstStep = steps[0]
+    // Find selected LinkedIn account
+    const selectedAccounts = campaign.settings?.linkedin_account_ids || []
+    if (selectedAccounts.length === 0) {
+      setTestResult("⚠ Selecciona una cuenta de LinkedIn en la pestaña Opciones.")
+      return
+    }
+    setTestSending(true)
+    setTestResult(null)
+    try {
+      const res = await fetch(`/api/linkedin/send-action`, {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          leadId: firstLead.id,
+          accountId: selectedAccounts[0],
+          actionType: firstStep.type,
+          content: firstStep.content,
+          useAI: firstStep.useAI,
+          campaignId: campaign.id,
+          campaignName: campaign.name,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setTestResult(`✓ ${data.message || 'Enviado correctamente'} — "${(data.message_sent || '').slice(0, 80)}..."`)
+        fetchCampaign() // refresh leads
+      } else {
+        setTestResult(`✗ Error: ${data.error || 'Error desconocido'}`)
+      }
+    } catch (err: unknown) {
+      setTestResult(`✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+    } finally {
+      setTestSending(false)
+    }
+  }
+
   // ─── Leads ──────────────────────────────────────────────────────────────────
 
   const removeLeadFromCampaign = async (leadId: string) => {
@@ -338,6 +386,17 @@ export default function CampaignDetailPage() {
 
           <div className="w-px h-7 bg-slate-700 mx-1" />
 
+          {/* Test Send */}
+          <button
+            onClick={testSendFirstLead}
+            disabled={testSending || leads.length === 0 || steps.length === 0}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border bg-violet-500/10 border-violet-500/30 text-violet-400 hover:bg-violet-500/20 transition-all disabled:opacity-40"
+            title="Envía el primer paso al primer lead para verificar que funciona"
+          >
+            <Mail className={`w-4 h-4 ${testSending ? "animate-pulse" : ""}`} />
+            {testSending ? "Enviando…" : "Test Send"}
+          </button>
+
           {/* Launch / Pause */}
           <button
             onClick={toggleStatus}
@@ -373,6 +432,14 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Notificaciones */}
+      {testResult && (
+        <Card className={`border p-3 mb-4 ${testResult.startsWith('✓') ? 'border-emerald-500/30 bg-emerald-500/5' : testResult.startsWith('⚠') ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-sm ${testResult.startsWith('✓') ? 'text-emerald-400' : testResult.startsWith('⚠') ? 'text-amber-400' : 'text-red-400'}`}>{testResult}</p>
+            <button onClick={() => setTestResult(null)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        </Card>
+      )}
       {error && (
         <Card className="border-red-500/30 bg-red-500/5 p-3 mb-4">
           <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" /><p className="text-sm text-red-400">{error}</p></div>

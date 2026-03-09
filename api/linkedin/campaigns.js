@@ -94,6 +94,43 @@ export default async function handler(req, res) {
       }
       filtered.updated_at = new Date().toISOString();
 
+      // When activating a campaign, initialize all pending leads for the engine
+      if (updates.status === 'active' && campaign.status !== 'active') {
+        filtered.started_at = filtered.started_at || new Date().toISOString();
+        // Set all 'new' / 'pending' leads to sequence_status='pending', next_action_at=now
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            sequence_status: 'pending',
+            current_step: 0,
+            next_action_at: new Date().toISOString(),
+          })
+          .eq('campaign_id', id)
+          .in('status', ['new', 'pending'])
+          .is('sent_message', false);
+        console.log(`[CAMPAIGNS] Campaign ${id} activated — leads initialized for engine`);
+      }
+
+      // When pausing, stop processing
+      if (updates.status === 'paused' && campaign.status === 'active') {
+        await supabaseAdmin
+          .from('leads')
+          .update({ next_action_at: null })
+          .eq('campaign_id', id)
+          .eq('sequence_status', 'active');
+        console.log(`[CAMPAIGNS] Campaign ${id} paused — leads paused`);
+      }
+
+      // When resuming from paused, re-schedule active leads
+      if (updates.status === 'active' && campaign.status === 'paused') {
+        await supabaseAdmin
+          .from('leads')
+          .update({ next_action_at: new Date().toISOString() })
+          .eq('campaign_id', id)
+          .eq('sequence_status', 'active');
+        console.log(`[CAMPAIGNS] Campaign ${id} resumed — leads re-scheduled`);
+      }
+
       const { data: updated, error: updateError } = await supabaseAdmin
         .from('campaigns')
         .update(filtered)
