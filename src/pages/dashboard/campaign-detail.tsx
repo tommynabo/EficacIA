@@ -262,7 +262,7 @@ export default function CampaignDetailPage() {
       const data = await res.json()
       if (res.ok) {
         setTestResult(`✓ ${data.message || 'Enviado correctamente'} — "${(data.message_sent || '').slice(0, 80)}..."`)
-        fetchCampaign() // refresh leads
+        fetchAll() // refresh leads
       } else {
         setTestResult(`✗ Error: ${data.error || 'Error desconocido'}`)
       }
