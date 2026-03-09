@@ -11,7 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
-const ACTOR_PROFILE_SCRAPER = 'scrapemate~linkedin-profile-scraper';
+const ACTOR_PROFILE_SCRAPER = 'curious_coder~linkedin-profile';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
