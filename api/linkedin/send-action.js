@@ -98,53 +98,76 @@ function resolveTemplate(template, lead) {
 
 /**
  * Generate advanced AI variables (comentario_post, etc) using Claude and scraped profile data.
- * The output string will replace the {{vars}} inside the template directly.
+ * ALWAYS tries to generate — uses scraped data if available, falls back to lead DB fields.
  */
 async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType) {
-  // Check if there are ANY unresolved tags left in the template
   const unresolvedTags = template.match(/\{\{(\w+)\}\}/g);
-  if (!process.env.ANTHROPIC_API_KEY || !unresolvedTags || unresolvedTags.length === 0) {
+  if (!unresolvedTags || unresolvedTags.length === 0) {
+    console.log('[AI-VARS] No unresolved tags found, skipping.');
     return template;
   }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('[AI-VARS] ANTHROPIC_API_KEY not set — cannot generate AI variables.');
+    return template;
+  }
+
   const scraped = lead.custom_vars?.scraped_profile || {};
 
-  // Build profile from scraped data OR from lead's DB fields as fallback
+  // Build profile from ALL available sources — scraped data + lead DB fields
   const condensedProfile = {
     nombre: lead.first_name || '',
     apellido: lead.last_name || '',
-    empresa: lead.company || scraped.company || '',
-    cargo: lead.position || lead.job_title || scraped.headline || '',
-    about: scraped.about || scraped.summary || '',
-    headline: scraped.headline || lead.position || lead.job_title || '',
-    experience: (scraped.experience || []).slice(0, 3).map(e => `${e.title} at ${e.company} (${e.duration})`),
-    recent_posts: (scraped.posts || scraped.certifications || []).slice(0, 3).map(p => p.text || p.title || ''),
+    empresa: lead.company || scraped.companyName || scraped.company || '',
+    cargo: lead.position || lead.job_title || scraped.headline || scraped.title || '',
+    about: scraped.about || scraped.summary || scraped.description || '',
+    headline: scraped.headline || scraped.title || lead.position || lead.job_title || '',
+    experience: Array.isArray(scraped.experience) 
+      ? scraped.experience.slice(0, 3).map(e => `${e.title || e.role || ''} at ${e.companyName || e.company || ''} (${e.duration || e.timePeriod || ''})`)
+      : [],
+    recent_posts: Array.isArray(scraped.posts) 
+      ? scraped.posts.slice(0, 3).map(p => p.text || p.title || p.commentary || '')
+      : (Array.isArray(scraped.activities) 
+        ? scraped.activities.slice(0, 3).map(a => a.text || a.title || '')
+        : []),
+    skills: Array.isArray(scraped.skills) ? scraped.skills.slice(0, 5).map(s => s.name || s) : [],
+    education: Array.isArray(scraped.education) ? scraped.education.slice(0, 2).map(e => `${e.degree || e.fieldOfStudy || ''} - ${e.schoolName || e.school || ''}`) : [],
     linkedin_url: lead.linkedin_url || '',
   };
+
+  console.log('[AI-VARS] Condensed profile for Claude:', JSON.stringify(condensedProfile).slice(0, 500));
 
   // Calculate constraint for invitations
   let lengthConstraint = "Sé conciso. Escribe 1 o 2 oraciones breves.";
   if (actionType === 'invitation') {
     const templateLen = template.replace(/\{\{(.*?)\}\}/g, '').length;
     const charsRemaining = 200 - templateLen;
-    lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración).`;
+    lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración breve).`;
   }
 
-  // Extract clean variable names for the prompt
+  // Extract clean variable names
   const requestedVars = unresolvedTags.map(v => v.replace(/[{}]/g, '')).join(', ');
 
-  const sysPrompt = `Eres un experto en cold outreach B2B. Eres humano, breve y directo.
+  const sysPrompt = `Eres un experto en cold outreach B2B en español. Eres humano, breve y directo.
 Tu tarea es generar el reemplazo exacto para TODAS las variables dinámicas solicitadas basándote en el perfil del lead.
-Algunas de estas variables pueden ser faltantes como "empresa" o "cargo", infiérelas de su perfil si existen.
-Si te piden "comentario_post", inventa un elogio breve a una de sus publicaciones recientes.
-Manten un tono profesional pero muy coloquial. No uses saludos, comillas ni formatos raros.
+REGLAS CRÍTICAS:
+- SIEMPRE debes dar un valor para CADA variable solicitada. NUNCA devuelvas un valor vacío.
+- Si no tienes datos de posts reales, genera un comentario creíble basándote en su cargo/empresa/sector.
+- Si te piden "comentario_post", genera un elogio breve y creíble sobre algo relacionado con su sector o experiencia.
+- Si te piden "especializacion", infiere su especialización de su cargo, empresa o sector.
+- Si te piden "experiencia", menciona algo sobre su trayectoria profesional.
+- Si te piden "empresa" y está vacía, intenta inferirla del perfil o pon algo genérico de su sector.
+- Mantén un tono profesional pero coloquial. No uses saludos, comillas dobles ni formatos raros.
+- Escribe en español natural.
 ${lengthConstraint}
 
 Input:
 Perfil del lead: ${JSON.stringify(condensedProfile)}
 Variables solicitadas: ${requestedVars}
-Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
+Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y genera un breve elogio profesional.'}"`;
 
   try {
+    console.log('[AI-VARS] Calling Claude Haiku for variables:', requestedVars);
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -154,41 +177,115 @@ Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y breve elogio.'}"`
       },
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
-        max_tokens: 300,
+        max_tokens: 400,
         messages: [{
           role: 'user',
-          content: `${sysPrompt}\n\nDevuelve la respuesta en formato JSON exacto: {"variable_name": "texto generado sin comillas"}. Por ejemplo si piden {{comentario_post}} -> {"comentario_post": "vi tu post sobre IA..."}`,
+          content: `${sysPrompt}\n\nDevuelve SOLO un JSON válido con este formato exacto: {"variable_name": "texto generado"}.\nEjemplo: {"comentario_post": "vi tu post sobre transformación digital y me pareció muy acertado", "empresa": "su empresa de consultoría"}\nNO incluyas explicaciones, solo el JSON.`,
         }],
       }),
     });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[AI-VARS] Claude API error:', res.status, errText.slice(0, 200));
+      return template;
+    }
+
     const data = await res.json();
     const textResp = data?.content?.[0]?.text || '{}';
-    // try to parse JSON
-    const match = textResp.match(/\{[\s\S]*\}/);
-    if (!match) return template;
-    const rawVarsMap = JSON.parse(match[0]);
-    console.log('[SEND-ACTION] Raw Claude variables:', rawVarsMap);
+    console.log('[AI-VARS] Raw Claude response:', textResp.slice(0, 500));
 
-    // Sanitize keys (remove any accidental braces Claude might have added)
-    const varsMap = {};
+    // Try to parse JSON from Claude's response
+    const match = textResp.match(/\{[\s\S]*\}/);
+    if (!match) {
+      console.error('[AI-VARS] Could not find JSON in Claude response');
+      return template;
+    }
+
+    const rawVarsMap = JSON.parse(match[0]);
+    console.log('[AI-VARS] Parsed variables:', rawVarsMap);
+
+    // Sanitize keys and replace in template
+    let newTemplate = template;
     for (const [k, v] of Object.entries(rawVarsMap)) {
       const cleanKey = k.replace(/[{}]/g, '').trim();
-      varsMap[cleanKey] = v;
-    }
-    console.log('[SEND-ACTION] Cleaned variables:', varsMap);
-
-    // Replace in template
-    let newTemplate = template;
-    for (const [k, v] of Object.entries(varsMap)) {
-      if (k && v) {
-        newTemplate = newTemplate.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+      if (cleanKey && v && String(v).trim()) {
+        newTemplate = newTemplate.replace(new RegExp(`\\{\\{${cleanKey}\\}\\}`, 'g'), String(v).trim());
+        console.log(`[AI-VARS] ✓ Replaced {{${cleanKey}}} → "${String(v).trim().slice(0, 50)}"`);
       }
     }
     return newTemplate;
   } catch (err) {
-    console.error('[SEND-ACTION] Advanced AI Gen Error:', err.message);
+    console.error('[AI-VARS] Error calling Claude:', err.message);
     return template;
   }
+}
+
+/**
+ * Try to scrape a LinkedIn profile via Apify (best-effort, non-blocking for AI generation).
+ * Returns the scraped profile data or null.
+ */
+async function tryApifyScrape(lead, cvars) {
+  if (!process.env.APIFY_API_TOKEN) {
+    console.log('[APIFY] No APIFY_API_TOKEN — skipping scrape.');
+    return null;
+  }
+
+  // If we already have a running Apify job, check it
+  if (cvars.apify_run_id) {
+    try {
+      const run = await checkApifyRun(cvars.apify_run_id);
+      if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
+        console.log(`[APIFY] Lead ${lead.id} still processing (${run.status})...`);
+        return 'PENDING'; // Signal that Apify is still working
+      } else if (run.status === 'SUCCEEDED') {
+        const items = await fetchApifyDataset(run.defaultDatasetId);
+        const profile = items[0] || {};
+        delete cvars.apify_run_id;
+        cvars.scraped_profile = profile;
+        await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+        console.log(`[APIFY] ✓ Lead ${lead.id} profile scraped successfully.`);
+        return profile;
+      } else {
+        console.error(`[APIFY] Scraping failed: ${run.status} for lead ${lead.id}`);
+        delete cvars.apify_run_id;
+        await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+        return null; // Failed — but we'll still try Claude with DB info
+      }
+    } catch (err) {
+      console.error(`[APIFY] Error checking run: ${err.message}`);
+      delete cvars.apify_run_id;
+      await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+      return null;
+    }
+  }
+
+  // No existing run — start a new one
+  if (!cvars.scraped_profile || cvars.scraped_profile?.error) {
+    const inputUrls = [lead.linkedin_url].filter(Boolean);
+    if (inputUrls.length > 0) {
+      try {
+        console.log(`[APIFY] Starting profile scraper for lead ${lead.id}...`);
+        const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
+          urls: inputUrls,
+          profileUrls: inputUrls,
+        });
+        cvars.apify_run_id = runId;
+        await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
+        return 'PENDING';
+      } catch (apifyErr) {
+        console.error(`[APIFY] Start failed: ${apifyErr.message}`);
+        return null;
+      }
+    }
+  }
+
+  // Already have scraped data (from a previous run)
+  if (cvars.scraped_profile && !cvars.scraped_profile.error) {
+    return cvars.scraped_profile;
+  }
+
+  return null;
 }
 
 /**
@@ -197,14 +294,12 @@ Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y breve elogio.'}"`
  */
 function extractLinkedInId(url) {
   if (!url) return null;
-  // linkedin.com/in/john-doe → john-doe
   const m = url.match(/linkedin\.com\/in\/([^/?#]+)/);
   return m ? m[1] : null;
 }
 
 /**
  * Resolve a LinkedIn identifier (username/vanity name) to a Unipile provider_id
- * GET /api/v1/users/{identifier}
  */
 async function getUnipileProviderId(unipileAccountId, linkedinId) {
   const res = await fetch(`${unipileBase()}/api/v1/users/${linkedinId}?account_id=${unipileAccountId}`, {
@@ -222,7 +317,6 @@ async function getUnipileProviderId(unipileAccountId, linkedinId) {
 
 /**
  * Send a connection invitation via Unipile.
- * POST /api/v1/users/invite
  */
 async function sendInvitation(unipileAccountId, linkedinId, message) {
   const providerId = await getUnipileProviderId(unipileAccountId, linkedinId);
@@ -231,7 +325,7 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
     account_id: unipileAccountId,
   };
 
-  const finalMsg = (message || '').trim().slice(0, 200); // Safest limit for all LinkedIn accounts
+  const finalMsg = (message || '').trim().slice(0, 200);
   if (finalMsg) {
     body.message = finalMsg;
   }
@@ -252,12 +346,9 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
 
 /**
  * Send a direct message via Unipile.
- * POST /api/v1/chats/new — starts a new conversation
- * Falls back to existing chat if one exists.
  */
 async function sendMessage(unipileAccountId, linkedinId, message) {
   console.log('[SEND-ACTION] Sending message to:', linkedinId);
-  // Try to send via new chat endpoint
   const body = {
     account_id: unipileAccountId,
     attendees_ids: [linkedinId],
@@ -283,7 +374,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
-  // Auth: either JWT user or internal engine key
   const internalKey = req.headers['x-engine-key'];
   const isInternal = internalKey && internalKey === (process.env.JWT_SECRET || 'dev-secret');
   const userId = isInternal ? 'engine' : getUserId(req);
@@ -303,7 +393,7 @@ export default async function handler(req, res) {
       .single();
     if (leadErr || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
 
-    // Fetch the LinkedIn account to get unipile_account_id
+    // Fetch the LinkedIn account
     const { data: account, error: accErr } = await supabaseAdmin
       .from('linkedin_accounts')
       .select('id, unipile_account_id, profile_name')
@@ -318,87 +408,63 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'El lead no tiene URL de LinkedIn válida' });
     }
 
-    // Resolve message content
+    // ─── Step 1: Resolve basic template variables ────────────────────────────
     let finalMessage = content || '';
-
-    // Step 1: Resolve standard variables ({{nombre}}, {{empresa}}) FIRST
-    // This provides Claude with more context if needed, and ensures early returns (e.g. Apify 202) don't send raw braces
     finalMessage = resolveTemplate(finalMessage, lead);
 
-    // Step 2: Extract ANY remaining unresolved tags. If there are none, we skip Apify.
+    // ─── Step 2: Check if AI variables are needed ────────────────────────────
     const remainingTags = finalMessage.match(/\{\{(\w+)\}\}/g);
     const needsAdvancedAI = !!remainingTags && remainingTags.length > 0;
 
     if (needsAdvancedAI) {
+      console.log(`[SEND-ACTION] Lead ${lead.id} needs AI vars: ${remainingTags.join(', ')}`);
+
       try {
         const cvars = lead.custom_vars || {};
 
-        if (cvars.apify_run_id) {
-          // We are already polling Apify
-          const run = await checkApifyRun(cvars.apify_run_id);
-          if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
-            console.log(`[SEND-ACTION] Lead ${lead.id} waiting for Apify (advanced AI)...`);
-            return res.status(202).json({ 
-              success: true, 
-              status: 'processing', 
-              message: 'Esperando análisis del perfil (Apify)...',
-              message_sent: finalMessage 
-            });
-          } else if (run.status === 'SUCCEEDED') {
-            const items = await fetchApifyDataset(run.defaultDatasetId);
-            cvars.scraped_profile = items[0] || {};
-            delete cvars.apify_run_id;
-            await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-            console.log(`[SEND-ACTION] Lead ${lead.id} profile scraped successfully.`);
-          } else {
-            console.error(`[SEND-ACTION] Apify scraping failed: ${run.status} for lead ${lead.id}`);
-            delete cvars.apify_run_id;
-            cvars.scraped_profile = { error: 'Apify failed' };
-            await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-          }
-        } else if (!cvars.scraped_profile) {
-          if (!process.env.APIFY_API_TOKEN) {
-            console.warn('[SEND-ACTION] APIFY_API_TOKEN missing — will use lead DB info for AI generation.');
-            // Set empty object so Claude still gets called with available lead info
-            cvars.scraped_profile = {};
-          } else {
-            const inputUrls = [lead.linkedin_url].filter(Boolean);
-            if (inputUrls.length > 0) {
-              console.log(`[SEND-ACTION] Lead ${lead.id} starting Apify profile scraper...`);
-              try {
-                const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
-                  urls: inputUrls,
-                  profileUrls: inputUrls,
-                });
-                cvars.apify_run_id = runId;
-                await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-                return res.status(202).json({ 
-                  success: true, 
-                  status: 'processing', 
-                  message: 'Iniciando lectura de perfil (Apify)...',
-                  message_sent: finalMessage 
-                });
-              } catch (apifyErr) {
-                console.error(`[SEND-ACTION] Apify start failed: ${apifyErr.message} — sending message without advanced AI vars.`);
-              }
-            }
-          }
+        // ─── Step 2a: Try Apify scraping (best-effort) ─────────────────────
+        const apifyResult = await tryApifyScrape(lead, cvars);
+
+        if (apifyResult === 'PENDING') {
+          // Apify is still working — return 202 so frontend retries
+          return res.status(202).json({ 
+            success: true, 
+            status: 'processing', 
+            message: 'Analizando perfil de LinkedIn (Apify)... Reintentando automáticamente.',
+            message_sent: finalMessage 
+          });
         }
 
-        // If we have scraped data, try to generate AI variables
-        if (cvars.scraped_profile && !cvars.scraped_profile.error) {
-          let aiPrompt = '';
-          if (campaignId) {
-            const { data: camp } = await supabaseAdmin.from('campaigns').select('settings').eq('id', campaignId).single();
-            aiPrompt = camp?.settings?.ai_prompt || '';
-          }
-          finalMessage = await generateAdvancedAIVariables(finalMessage, lead, aiPrompt, actionType);
+        // ─── Step 2b: ALWAYS call Claude — with scraped data OR DB info ────
+        // Re-read lead to get any updates from Apify
+        const { data: freshLead } = await supabaseAdmin
+          .from('leads')
+          .select('*')
+          .eq('id', leadId)
+          .single();
+
+        let aiPrompt = '';
+        if (campaignId) {
+          const { data: camp } = await supabaseAdmin
+            .from('campaigns')
+            .select('settings')
+            .eq('id', campaignId)
+            .single();
+          aiPrompt = camp?.settings?.ai_prompt || '';
         }
+
+        console.log(`[SEND-ACTION] Calling Claude with AI prompt: "${(aiPrompt || 'default').slice(0, 100)}"`);
+        finalMessage = await generateAdvancedAIVariables(
+          finalMessage, 
+          freshLead || lead, 
+          aiPrompt, 
+          actionType
+        );
       } catch (advErr) {
-        console.error(`[SEND-ACTION] Advanced AI flow error: ${advErr.message} — stripping AI tags and sending anyway.`);
+        console.error(`[SEND-ACTION] AI flow error: ${advErr.message}`);
       }
 
-      // Strip any remaining unresolved AI variable tags
+      // Strip any remaining unresolved tags as last resort
       finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
     }
 
