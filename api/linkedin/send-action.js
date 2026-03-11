@@ -279,7 +279,7 @@ export default async function handler(req, res) {
   const userId = isInternal ? 'engine' : getUserId(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
-  const { leadId, accountId, actionType, content, campaignId, campaignName } = req.body || {};
+  const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
   if (!leadId || !accountId || !actionType) {
     return res.status(400).json({ error: 'Faltan leadId, accountId o actionType' });
   }
@@ -377,45 +377,50 @@ export default async function handler(req, res) {
     // Resolve standard variables
     finalMessage = resolveTemplate(finalMessage, lead);
 
-    // Execute the action
-    let result;
-    if (actionType === 'invitation') {
-      result = await sendInvitation(account.unipile_account_id, linkedinId, finalMessage);
-    } else if (actionType === 'message') {
-      result = await sendMessage(account.unipile_account_id, linkedinId, finalMessage);
+    // Execute the action (skip if simulate)
+    let result = { simulated: true };
+    if (!simulate) {
+      if (actionType === 'invitation') {
+        result = await sendInvitation(account.unipile_account_id, linkedinId, finalMessage);
+      } else if (actionType === 'message') {
+        result = await sendMessage(account.unipile_account_id, linkedinId, finalMessage);
+      } else {
+        return res.status(400).json({ error: `Tipo de acción no soportado: ${actionType}` });
+      }
+
+      // Update lead in DB
+      await supabaseAdmin.from('leads').update({
+        status: actionType === 'invitation' ? 'invited' : 'contacted',
+        sent_message: true,
+        sent_at: new Date().toISOString(),
+        ai_message: finalMessage,
+        last_action_at: new Date().toISOString(),
+      }).eq('id', leadId);
+
+      // Log the action
+      if (campaignId) {
+        await supabaseAdmin.from('campaign_activity').insert({
+          campaign_id: campaignId,
+          lead_id: leadId,
+          action_type: actionType,
+          action_details: {
+            message: finalMessage,
+            account_id: accountId,
+            unipile_response: result,
+          },
+        });
+      }
     } else {
-      return res.status(400).json({ error: `Tipo de acción no soportado: ${actionType}` });
+      console.log(`[SEND-ACTION] SIMULATE - skipped Unipile for ${linkedinId}`);
     }
 
-    // Update lead in DB
-    await supabaseAdmin.from('leads').update({
-      status: actionType === 'invitation' ? 'invited' : 'contacted',
-      sent_message: true,
-      sent_at: new Date().toISOString(),
-      ai_message: finalMessage,
-      last_action_at: new Date().toISOString(),
-    }).eq('id', leadId);
-
-    // Log the action
-    if (campaignId) {
-      await supabaseAdmin.from('campaign_activity').insert({
-        campaign_id: campaignId,
-        lead_id: leadId,
-        action_type: actionType,
-        action_details: {
-          message: finalMessage,
-          account_id: accountId,
-          unipile_response: result,
-        },
-      });
-    }
-
-    console.log(`[SEND-ACTION] ✓ ${actionType} sent to ${linkedinId} via ${account.profile_name}`);
+    console.log(`[SEND-ACTION] ✓ ${simulate ? '(SIMULATED) ' : ''}${actionType} sent to ${linkedinId} via ${account.profile_name}`);
     return res.status(200).json({
       success: true,
       action: actionType,
+      simulate: !!simulate,
       message_sent: finalMessage,
-      message: `✓ ${actionType === 'invitation' ? 'Invitación enviada' : 'Mensaje enviado'} a ${lead.first_name}`,
+      message: `✓ ${simulate ? '[Simulacro] ' : ''}${actionType === 'invitation' ? 'Invitación' : 'Mensaje'} ${simulate ? 'generado' : 'enviado'} para ${lead.first_name}`,
     });
   } catch (err) {
     console.error('[SEND-ACTION] Error:', err.message);

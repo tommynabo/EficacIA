@@ -245,7 +245,7 @@ export default function CampaignDetailPage() {
     setTestLog(prev => [...prev, { time, type, msg }])
   }
 
-  const sendToLead = async (lead: Lead, stepIndex?: number) => {
+  const sendToLead = async (lead: Lead, stepIndex?: number, simulate?: boolean) => {
     if (!campaign || steps.length === 0) return
     const selectedAccounts = campaign.settings?.linkedin_account_ids || []
     if (selectedAccounts.length === 0) {
@@ -261,7 +261,7 @@ export default function CampaignDetailPage() {
     }
     setSendingLeadId(lead.id)
     setShowTestPanel(true)
-    addLog('info', `Enviando ${step.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
+    addLog('info', `${simulate ? '[SIMULACRO] ' : ''}Enviando ${step.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
     try {
       const res = await fetch(`/api/linkedin/send-action`, {
         method: "POST",
@@ -273,6 +273,7 @@ export default function CampaignDetailPage() {
           content: step.content,
           campaignId: campaign.id,
           campaignName: campaign.name,
+          simulate: !!simulate,
         }),
       })
       const data = await res.json()
@@ -606,23 +607,34 @@ export default function CampaignDetailPage() {
                         </td>
                         <td className="px-5 py-4 text-slate-300 text-sm">{lead.company || "—"}</td>
                         <td className="px-5 py-4 text-slate-400 text-sm">{lead.position || "—"}</td>
-                        <td className="px-5 py-4 text-center">
+                        <td className="px-5 py-4">
                           {lead.sent_message ? (
-                            <span className="text-xs text-emerald-500">✓ Enviado</span>
+                            <span className="text-xs text-emerald-500 flex justify-center mt-2 border border-emerald-500/20 bg-emerald-500/10 rounded px-2 py-1">✓ Enviado</span>
                           ) : (
-                            <button
-                              onClick={() => sendToLead(lead)}
-                              disabled={sendingLeadId === lead.id || !lead.linkedin_url}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto"
-                              title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name}`}
-                            >
-                              {sendingLeadId === lead.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Send className="w-3.5 h-3.5" />
-                              )}
-                              {sendingLeadId === lead.id ? 'Enviando...' : 'Enviar'}
-                            </button>
+                            <div className="flex flex-col gap-1.5 align-middle justify-center">
+                              <button
+                                onClick={() => sendToLead(lead, 0, false)}
+                                disabled={sendingLeadId === lead.id || !lead.linkedin_url}
+                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto w-24"
+                                title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name}`}
+                              >
+                                {sendingLeadId === lead.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Send className="w-3.5 h-3.5" />
+                                )}
+                                Enviar
+                              </button>
+                              <button
+                                onClick={() => sendToLead(lead, 0, true)}
+                                disabled={sendingLeadId === lead.id || !lead.linkedin_url}
+                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto w-24"
+                                title="Genera el texto con IA y comprueba si funciona sin enviarlo realmente"
+                              >
+                                <Bot className="w-3.5 h-3.5" />
+                                Simular
+                              </button>
+                            </div>
                           )}
                         </td>
                         <td className="px-5 py-4 text-right">
