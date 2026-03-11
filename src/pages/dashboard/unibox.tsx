@@ -84,25 +84,42 @@ function getOtherAttendee(chat?: Chat, myProviderId?: string | null) {
   if (!list || list.length === 0) return null;
   if (list.length === 1) return list[0];
   
-  // If we know exactly who WE are, the other is anyone else
+  // Exclude our own ID if known
   if (myProviderId) {
     const other = list.find(a => (a.provider_id || a.id || a.account_id) !== myProviderId);
     if (other) return other;
   }
 
-  // Fallback guess
+  // Fallback guess: the one who is NOT the sender is the other person when looking at attendee lists
   return list.find(a => a.is_sender === false || String(a.is_sender) === "false") || list[0];
 }
 
+// Deep search for a valid displayable label
+function extractName(obj: any): string | null {
+  if (!obj) return null;
+  if (typeof obj === "string") return obj;
+  if (obj.name) return obj.name;
+  if (obj.display_name) return obj.display_name;
+  if (obj.first_name) return [obj.first_name, obj.last_name].filter(Boolean).join(" ");
+  if (obj.username) return obj.username;
+  if (obj.provider_id) return obj.provider_id;
+  if (obj.id) return obj.id;
+  return null;
+}
+
 function chatTitle(chat: Chat, myProviderId?: string | null): string {
-  if (chat.name && chat.name !== "Chat" && chat.name !== "Conversación") return chat.name;
+  // If the chat has an explicit name (e.g. Group Chat), use it
+  if (chat.name && chat.name.trim() !== "" && chat.name.toLowerCase() !== "chat" && chat.name.toLowerCase() !== "conversación") return chat.name;
+  
   const other = getOtherAttendee(chat, myProviderId);
-  if (!other) return "Conversación";
+  if (!other) {
+    // If we have literally 0 attendees, try to parse out of last message
+    if (chat.last_message?.sender_id && chat.last_message.sender_id !== myProviderId) return String(chat.last_message.sender_id);
+    return "Conversación";
+  }
   
-  const displayName = other.name || other.display_name || other.first_name || other.username;
-  if (displayName) return displayName;
-  
-  return other.provider_id ? `LinkedIn (${other.provider_id})` : "Conversación";
+  const displayName = extractName(other);
+  return displayName || "Usuario de LinkedIn";
 }
 
 function chatAvatar(chat: Chat, myProviderId?: string | null): string | null {
@@ -125,6 +142,9 @@ export default function UniboxPage() {
   const [chats, setChats] = React.useState<Chat[]>([])
   const [chatsLoading, setChatsLoading] = React.useState(false)
   const [chatsError, setChatsError] = React.useState<string | null>(null)
+
+  // Local mask for read chats to prevent bouncing unread badges while Unipile syncs
+  const [readChats, setReadChats] = React.useState<Record<string, string>>({}) // chatId -> last_message.id
 
   const [selectedChat, setSelectedChat] = React.useState<Chat | null>(null)
   const [messages, setMessages] = React.useState<Message[]>([])
@@ -182,9 +202,11 @@ export default function UniboxPage() {
     setMessagesLoading(true)
     setSendError(null)
 
-    // Mark as read locally and remotely
+    // Mask as read locally using the last message ID
     if (chat.unread_count && chat.unread_count > 0) {
+      setReadChats(prev => ({ ...prev, [chat.id]: chat.last_message?.text || String(Date.now()) }))
       setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c))
+      
       api("/api/linkedin/unibox?action=mark_read", {
         method: "POST",
         body: JSON.stringify({ chatId: chat.id, accountId: selectedAccountId })
@@ -258,7 +280,16 @@ export default function UniboxPage() {
         const rChats = await api(`/api/linkedin/unibox?action=chats&accountId=${selectedAccountId}&limit=50`)
         if (rChats.ok) {
           const dChats = await rChats.json()
-          const newChats = dChats.items || dChats.chats || []
+          const rawChats: Chat[] = dChats.items || dChats.chats || []
+          
+          // Apply our local read mask so they don't bounce back to unread unnecessarily
+          const newChats = rawChats.map(c => {
+            if (readChats[c.id] && c.last_message?.text === readChats[c.id]) {
+              return { ...c, unread_count: 0 }
+            }
+            return c
+          })
+
           setChats(prev => {
             if (prev.length !== newChats.length) return newChats
             const changed = prev.some((c, i) => {
