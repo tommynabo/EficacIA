@@ -222,8 +222,21 @@ Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y genera un breve e
 }
 
 /**
+ * Check if a scraped_profile has meaningful data (not just an empty object from a previous fallback).
+ */
+function hasRealScrapedData(profile) {
+  if (!profile || profile.error) return false;
+  // Check if it has any real content fields
+  return !!(profile.about || profile.summary || profile.headline || profile.title ||
+    (Array.isArray(profile.experience) && profile.experience.length > 0) ||
+    (Array.isArray(profile.posts) && profile.posts.length > 0) ||
+    (Array.isArray(profile.activities) && profile.activities.length > 0) ||
+    profile.companyName || profile.firstName);
+}
+
+/**
  * Try to scrape a LinkedIn profile via Apify (best-effort, non-blocking for AI generation).
- * Returns the scraped profile data or null.
+ * Returns the scraped profile data, 'PENDING', or null.
  */
 async function tryApifyScrape(lead, cvars) {
   if (!process.env.APIFY_API_TOKEN) {
@@ -237,7 +250,7 @@ async function tryApifyScrape(lead, cvars) {
       const run = await checkApifyRun(cvars.apify_run_id);
       if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
         console.log(`[APIFY] Lead ${lead.id} still processing (${run.status})...`);
-        return 'PENDING'; // Signal that Apify is still working
+        return 'PENDING';
       } else if (run.status === 'SUCCEEDED') {
         const items = await fetchApifyDataset(run.defaultDatasetId);
         const profile = items[0] || {};
@@ -250,7 +263,7 @@ async function tryApifyScrape(lead, cvars) {
         console.error(`[APIFY] Scraping failed: ${run.status} for lead ${lead.id}`);
         delete cvars.apify_run_id;
         await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-        return null; // Failed — but we'll still try Claude with DB info
+        return null;
       }
     } catch (err) {
       console.error(`[APIFY] Error checking run: ${err.message}`);
@@ -260,17 +273,19 @@ async function tryApifyScrape(lead, cvars) {
     }
   }
 
-  // No existing run — start a new one
-  if (!cvars.scraped_profile || cvars.scraped_profile?.error) {
+  // No existing run — start a new one if we don't have REAL scraped data
+  if (!hasRealScrapedData(cvars.scraped_profile)) {
     const inputUrls = [lead.linkedin_url].filter(Boolean);
     if (inputUrls.length > 0) {
       try {
-        console.log(`[APIFY] Starting profile scraper for lead ${lead.id}...`);
+        console.log(`[APIFY] Starting profile scraper for lead ${lead.id} (no real scraped data yet)...`);
         const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
           urls: inputUrls,
           profileUrls: inputUrls,
         });
         cvars.apify_run_id = runId;
+        // Clear stale empty scraped_profile
+        delete cvars.scraped_profile;
         await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
         return 'PENDING';
       } catch (apifyErr) {
@@ -280,8 +295,9 @@ async function tryApifyScrape(lead, cvars) {
     }
   }
 
-  // Already have scraped data (from a previous run)
-  if (cvars.scraped_profile && !cvars.scraped_profile.error) {
+  // Already have real scraped data
+  if (hasRealScrapedData(cvars.scraped_profile)) {
+    console.log(`[APIFY] Lead ${lead.id} already has real scraped data, reusing.`);
     return cvars.scraped_profile;
   }
 

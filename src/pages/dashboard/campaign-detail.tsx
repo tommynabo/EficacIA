@@ -283,7 +283,7 @@ export default function CampaignDetailPage() {
         setTimeout(() => sendToLead(lead, stepIndex, simulate), 5000)
         return // don't clear sendingLeadId yet
       } else if (res.ok) {
-        addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 100)}"`)
+        addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 250)}"`)
         fetchAll()
       } else {
         addLog('error', `✗ Error: ${data.error || 'Error desconocido'}`)
