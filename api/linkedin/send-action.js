@@ -90,7 +90,10 @@ function resolveTemplate(template, lead) {
     nombre_completo: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
     ...(lead.custom_vars || {}),
   };
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || '');
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    const val = vars[key];
+    return (val && val.trim() !== '') ? val : match;
+  });
 }
 
 /**
@@ -98,7 +101,9 @@ function resolveTemplate(template, lead) {
  * The output string will replace the {{vars}} inside the template directly.
  */
 async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType) {
-  if (!process.env.ANTHROPIC_API_KEY || !template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/)) {
+  // Check if there are ANY unresolved tags left in the template
+  const unresolvedTags = template.match(/\{\{(\w+)\}\}/g);
+  if (!process.env.ANTHROPIC_API_KEY || !unresolvedTags || unresolvedTags.length === 0) {
     return template;
   }
   const scraped = lead.custom_vars?.scraped_profile;
@@ -120,19 +125,20 @@ async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType)
     lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración).`;
   }
 
-  // Extraer nombres de las variables limpias de llaves para un prompt más natural.
-  const varsMatches = template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/g) || [];
-  const requestedVars = varsMatches.map(v => v.replace(/[{}]/g, '')).join(', ');
+  // Extract clean variable names for the prompt
+  const requestedVars = unresolvedTags.map(v => v.replace(/[{}]/g, '')).join(', ');
 
   const sysPrompt = `Eres un experto en cold outreach B2B. Eres humano, breve y directo.
-Tu tarea es generar el reemplazo exacto para las variables dinámicas de este mensaje basándote en el perfil del lead.
+Tu tarea es generar el reemplazo exacto para TODAS las variables dinámicas solicitadas basándote en el perfil del lead.
+Algunas de estas variables pueden ser faltantes como "empresa" o "cargo", infiérelas de su perfil si existen.
+Si te piden "comentario_post", inventa un elogio breve a una de sus publicaciones recientes.
 Manten un tono profesional pero muy coloquial. No uses saludos, comillas ni formatos raros.
 ${lengthConstraint}
 
 Input:
 Perfil del lead: ${JSON.stringify(condensedProfile)}
 Variables solicitadas: ${requestedVars}
-Prompt de IA de la campaña: "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
+Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -315,8 +321,9 @@ export default async function handler(req, res) {
     // This provides Claude with more context if needed, and ensures early returns (e.g. Apify 202) don't send raw braces
     finalMessage = resolveTemplate(finalMessage, lead);
 
-    // Feature: Advanced AI personalization using Apify Profile Scraping
-    const needsAdvancedAI = !!finalMessage.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/);
+    // Step 2: Extract ANY remaining unresolved tags. If there are none, we skip Apify.
+    const remainingTags = finalMessage.match(/\{\{(\w+)\}\}/g);
+    const needsAdvancedAI = !!remainingTags && remainingTags.length > 0;
 
     if (needsAdvancedAI) {
       try {
@@ -386,8 +393,11 @@ export default async function handler(req, res) {
       }
 
       // Strip any remaining unresolved AI variable tags
-      finalMessage = finalMessage.replace(/\{\{(comentario_post|especializacion|experiencia)\}\}/g, '');
+      finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
     }
+
+    // Fallback: ALWAYS strip lingering {{tags}} across the whole code path before Unipile
+    finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
 
     // Execute the action (skip if simulate)
     let result = { simulated: true };
