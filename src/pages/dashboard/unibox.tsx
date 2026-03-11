@@ -57,6 +57,12 @@ function formatTime(iso?: string): string {
 
 function getMyProviderId(chat?: Chat, messages?: Message[]): string | null {
   if (!chat) return null;
+
+  // Best: use attendees_enriched with is_self from the backend
+  const enriched = (chat as any).attendees_enriched || [];
+  const selfAtt = enriched.find((a: any) => a.is_self === true);
+  if (selfAtt) return selfAtt.provider_id || selfAtt.id || null;
+
   const msgs = messages || [];
   
   // Try to find a message firmly marked as ours
@@ -67,34 +73,45 @@ function getMyProviderId(chat?: Chat, messages?: Message[]): string | null {
     return chat.last_message.sender_id;
   }
 
-  // Fallback: If 1 attendee (the Lead), ANY message not from them is ours
-  const attendees = chat.participants || chat.attendees || chat.users || [];
-  if (attendees.length === 1) {
-    const leadId = attendees[0].provider_id || attendees[0].id || attendees[0].account_id;
-    const fallbackMsg = msgs.find(m => m.sender_id && m.sender_id !== leadId);
-    if (fallbackMsg) return fallbackMsg.sender_id!;
-    if (chat.last_message?.sender_id && chat.last_message.sender_id !== leadId) return chat.last_message.sender_id;
+  // Fallback: If 1 non-self attendee, any message not from them is ours
+  const attendees = enriched.length > 0 ? enriched : (chat.participants || chat.attendees || chat.users || []);
+  if (attendees.length >= 1) {
+    const otherAtt = attendees.find((a: any) => a.is_self !== true);
+    if (otherAtt) {
+      const otherId = otherAtt.provider_id || otherAtt.id;
+      const fallbackMsg = msgs.find(m => m.sender_id && m.sender_id !== otherId);
+      if (fallbackMsg) return fallbackMsg.sender_id!;
+      if (chat.last_message?.sender_id && chat.last_message.sender_id !== otherId) return chat.last_message.sender_id;
+    }
   }
 
   return null;
 }
 
 function getOtherAttendee(chat?: Chat, myProviderId?: string | null) {
+  // Prefer enriched attendees from backend (has name + picture_url)
+  const enriched = (chat as any)?.attendees_enriched || [];
+  
+  if (enriched.length > 0) {
+    // is_self tells us who the account owner is — the OTHER is the lead
+    const other = enriched.find((a: any) => a.is_self !== true);
+    if (other) return other;
+    return enriched[0]; // single user chat
+  }
+
+  // Fallback to raw attendees/participants
   const list = chat?.participants || chat?.attendees || chat?.users || [];
   if (!list || list.length === 0) return null;
   if (list.length === 1) return list[0];
   
-  // Exclude our own ID if known
   if (myProviderId) {
-    const other = list.find(a => (a.provider_id || a.id || a.account_id) !== myProviderId);
+    const other = list.find((a: any) => (a.provider_id || a.id || a.account_id) !== myProviderId);
     if (other) return other;
   }
 
-  // Fallback guess: the one who is NOT the sender is the other person when looking at attendee lists
-  return list.find(a => a.is_sender === false || String(a.is_sender) === "false") || list[0];
+  return list.find((a: any) => a.is_sender === false || String(a.is_sender) === "false") || list[0];
 }
 
-// Deep search for a valid displayable label
 function extractName(obj: any): string | null {
   if (!obj) return null;
   if (typeof obj === "string") return obj;
@@ -102,30 +119,33 @@ function extractName(obj: any): string | null {
   if (obj.display_name) return obj.display_name;
   if (obj.first_name) return [obj.first_name, obj.last_name].filter(Boolean).join(" ");
   if (obj.username) return obj.username;
-  if (obj.provider_id) return obj.provider_id;
-  if (obj.id) return obj.id;
   return null;
 }
 
 function chatTitle(chat: Chat, myProviderId?: string | null): string {
-  // If the chat has an explicit name (e.g. Group Chat), use it
-  if (chat.name && chat.name.trim() !== "" && chat.name.toLowerCase() !== "chat" && chat.name.toLowerCase() !== "conversación") return chat.name;
-  
   const other = getOtherAttendee(chat, myProviderId);
-  if (!other) {
-    // If we have literally 0 attendees, try to parse out of last message
-    if (chat.last_message?.sender_id && chat.last_message.sender_id !== myProviderId) return String(chat.last_message.sender_id);
-    return "Conversación";
-  }
   
-  const displayName = extractName(other);
-  return displayName || "Usuario de LinkedIn";
+  // If we found an enriched attendee with a real name, use it immediately
+  if (other) {
+    const displayName = extractName(other);
+    if (displayName) return displayName;
+  }
+
+  // Fall back to chat.name if it's meaningful  
+  if (chat.name && chat.name.trim() !== "" && chat.name.toLowerCase() !== "chat" && chat.name.toLowerCase() !== "conversación") return chat.name;
+
+  // Last resort: show provider_id so it's at least unique per person
+  if (other?.provider_id) return other.provider_id;
+  if (chat.last_message?.sender_id && chat.last_message.sender_id !== myProviderId) return String(chat.last_message.sender_id);
+  
+  return "Conversación";
 }
 
 function chatAvatar(chat: Chat, myProviderId?: string | null): string | null {
   const other = getOtherAttendee(chat, myProviderId);
   if (!other) return null;
-  return other.avatar_url || other.avatar || other.profile_picture_url || other.picture || other.image || null;
+  // picture_url is what Unipile's attendee endpoint returns
+  return other.picture_url || other.avatar_url || other.avatar || other.profile_picture_url || other.picture || other.image || null;
 }
 
 function initials(name: string): string {
@@ -202,9 +222,9 @@ export default function UniboxPage() {
     setMessagesLoading(true)
     setSendError(null)
 
-    // Mask as read locally using the last message ID
+    // Mask as read locally using timestamp
+    setReadChats(prev => ({ ...prev, [chat.id]: new Date().toISOString() }))
     if (chat.unread_count && chat.unread_count > 0) {
-      setReadChats(prev => ({ ...prev, [chat.id]: chat.last_message?.text || String(Date.now()) }))
       setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c))
       
       api("/api/linkedin/unibox?action=mark_read", {
@@ -282,11 +302,17 @@ export default function UniboxPage() {
           const dChats = await rChats.json()
           const rawChats: Chat[] = dChats.items || dChats.chats || []
           
-          // Apply our local read mask so they don't bounce back to unread unnecessarily
+          // Apply our local read mask so they don't bounce back to unread
+          // Only allow unread back if a genuinely NEW message arrived after we read
           const newChats = rawChats.map(c => {
-            if (readChats[c.id] && c.last_message?.text === readChats[c.id]) {
-              return { ...c, unread_count: 0 }
-            }
+            const readTimestamp = readChats[c.id]
+            if (!readTimestamp) return c
+            // If we're currently viewing this chat, always suppress
+            if (selectedChat && c.id === selectedChat.id) return { ...c, unread_count: 0 }
+            // If last message is older than when we read, suppress
+            const lastMsgTime = c.last_message?.created_at || ''
+            if (!lastMsgTime || lastMsgTime <= readTimestamp) return { ...c, unread_count: 0 }
+            // Genuinely new message — allow badge
             return c
           })
 

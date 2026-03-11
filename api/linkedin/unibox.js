@@ -68,7 +68,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Unipile no configurado' });
   }
 
-  // ─── GET chats ────────────────────────────────────────────────────
+  // ─── GET chats (enriched with attendee names + pictures) ────────────
   if (req.method === 'GET' && action === 'chats') {
     const { accountId, cursor, limit = '20' } = req.query;
 
@@ -97,7 +97,36 @@ export default async function handler(req, res) {
         return res.status(r.status).json({ error: 'Error obteniendo conversaciones' });
       }
       const data = await r.json();
-      return res.status(200).json(data);
+      const chatItems = data.items || data.chats || [];
+
+      // ── Enrich each chat with attendee names + picture_url ──
+      const enriched = await Promise.all(chatItems.map(async (chat) => {
+        try {
+          const attRes = await fetch(
+            `${unipileBase()}/api/v1/chats/${chat.id}/attendees`,
+            { headers: unipileHeaders() }
+          );
+          if (attRes.ok) {
+            const attData = await attRes.json();
+            const attendeeList = attData.items || attData.attendees || attData || [];
+            if (Array.isArray(attendeeList) && attendeeList.length > 0) {
+              chat.attendees_enriched = attendeeList.map(a => ({
+                id: a.id,
+                provider_id: a.provider_id,
+                name: a.name || a.display_name || null,
+                picture_url: a.picture_url || a.avatar_url || null,
+                is_self: a.is_self || false,
+              }));
+            }
+          }
+        } catch (err) {
+          console.error(`[UNIBOX][enrich] Error fetching attendees for chat ${chat.id}:`, err.message);
+        }
+        return chat;
+      }));
+
+      // Return with enriched attendees
+      return res.status(200).json({ ...data, items: enriched });
     } catch (e) {
       console.error('[UNIBOX][chats] excepción:', e);
       return res.status(500).json({ error: 'Error de red con Unipile' });
@@ -146,22 +175,40 @@ export default async function handler(req, res) {
     }
 
     try {
-      // Unipile API for marking as read is PUT /api/v1/chats/:id
-      // with body { unread_count: 0 } or similar, OR there's a specific endpoint.
-      // Usually, just fetching messages doesn't mark them as read yet.
-      // Unipile Docs: `POST /api/v1/chats/:id/read` marks all messages as read.
-      const r = await fetch(`${unipileBase()}/api/v1/chats/${chatId}/read`, {
-        method: 'POST',
-        headers: unipileHeaders(),
-      });
-      if (!r.ok) {
-        // Fallback: PUT /api/v1/chats/:id
-        await fetch(`${unipileBase()}/api/v1/chats/${chatId}`, {
-          method: 'PUT',
+      // Try multiple Unipile methods to mark chat as read
+      // Method 1: PATCH /api/v1/chats/:id (documented for some Unipile versions)
+      let success = false;
+      try {
+        const r1 = await fetch(`${unipileBase()}/api/v1/chats/${chatId}`, {
+          method: 'PATCH',
           headers: unipileHeaders(),
           body: JSON.stringify({ unread_count: 0 }),
         });
+        if (r1.ok) success = true;
+      } catch {}
+
+      // Method 2: PUT /api/v1/chats/:id
+      if (!success) {
+        try {
+          const r2 = await fetch(`${unipileBase()}/api/v1/chats/${chatId}`, {
+            method: 'PUT',
+            headers: unipileHeaders(),
+            body: JSON.stringify({ unread_count: 0 }),
+          });
+          if (r2.ok) success = true;
+        } catch {}
       }
+
+      // Method 3: POST /api/v1/chats/:id/messages/read
+      if (!success) {
+        try {
+          await fetch(`${unipileBase()}/api/v1/chats/${chatId}/messages/read`, {
+            method: 'POST',
+            headers: unipileHeaders(),
+          });
+        } catch {}
+      }
+
       return res.status(200).json({ success: true });
     } catch (e) {
       console.error('[UNIBOX][read] excepción:', e);
