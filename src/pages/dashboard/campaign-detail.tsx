@@ -277,7 +277,12 @@ export default function CampaignDetailPage() {
         }),
       })
       const data = await res.json()
-      if (res.ok) {
+      if (res.status === 202) {
+        // Apify is still scraping — poll until ready
+        addLog('info', `⏳ ${data.message || 'Procesando perfil...'} Reintentando en 5s...`)
+        setTimeout(() => sendToLead(lead, stepIndex, simulate), 5000)
+        return // don't clear sendingLeadId yet
+      } else if (res.ok) {
         addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 100)}"`)
         fetchAll()
       } else {

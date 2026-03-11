@@ -106,15 +106,19 @@ async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType)
   if (!process.env.ANTHROPIC_API_KEY || !unresolvedTags || unresolvedTags.length === 0) {
     return template;
   }
-  const scraped = lead.custom_vars?.scraped_profile;
-  if (!scraped) return template; // Should have been caught before
+  const scraped = lead.custom_vars?.scraped_profile || {};
 
-  // Give Claude a condensed version of the profile to save tokens
+  // Build profile from scraped data OR from lead's DB fields as fallback
   const condensedProfile = {
+    nombre: lead.first_name || '',
+    apellido: lead.last_name || '',
+    empresa: lead.company || scraped.company || '',
+    cargo: lead.position || lead.job_title || scraped.headline || '',
     about: scraped.about || scraped.summary || '',
-    headline: scraped.headline || scraped.position || '',
+    headline: scraped.headline || lead.position || lead.job_title || '',
     experience: (scraped.experience || []).slice(0, 3).map(e => `${e.title} at ${e.company} (${e.duration})`),
     recent_posts: (scraped.posts || scraped.certifications || []).slice(0, 3).map(p => p.text || p.title || ''),
+    linkedin_url: lead.linkedin_url || '',
   };
 
   // Calculate constraint for invitations
@@ -354,7 +358,9 @@ export default async function handler(req, res) {
           }
         } else if (!cvars.scraped_profile) {
           if (!process.env.APIFY_API_TOKEN) {
-            console.warn('[SEND-ACTION] APIFY_API_TOKEN missing — skipping advanced AI vars, sending without them.');
+            console.warn('[SEND-ACTION] APIFY_API_TOKEN missing — will use lead DB info for AI generation.');
+            // Set empty object so Claude still gets called with available lead info
+            cvars.scraped_profile = {};
           } else {
             const inputUrls = [lead.linkedin_url].filter(Boolean);
             if (inputUrls.length > 0) {
