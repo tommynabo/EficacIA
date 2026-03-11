@@ -137,34 +137,45 @@ async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType)
 
   console.log('[AI-VARS] Condensed profile for Claude:', JSON.stringify(condensedProfile).slice(0, 500));
 
-  // Calculate constraint for invitations
-  let lengthConstraint = "Sé conciso. Escribe 1 o 2 oraciones breves.";
-  if (actionType === 'invitation') {
-    const templateLen = template.replace(/\{\{(.*?)\}\}/g, '').length;
-    const charsRemaining = 200 - templateLen;
-    lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración breve).`;
-  }
-
   // Extract clean variable names
   const requestedVars = unresolvedTags.map(v => v.replace(/[{}]/g, '')).join(', ');
+  const numVars = unresolvedTags.length;
 
-  const sysPrompt = `Eres un experto en cold outreach B2B en español. Eres humano, breve y directo.
-Tu tarea es generar el reemplazo exacto para TODAS las variables dinámicas solicitadas basándote en el perfil del lead.
-REGLAS CRÍTICAS:
-- SIEMPRE debes dar un valor para CADA variable solicitada. NUNCA devuelvas un valor vacío.
-- Si no tienes datos de posts reales, genera un comentario creíble basándote en su cargo/empresa/sector.
-- Si te piden "comentario_post", genera un elogio breve y creíble sobre algo relacionado con su sector o experiencia.
-- Si te piden "especializacion", infiere su especialización de su cargo, empresa o sector.
-- Si te piden "experiencia", menciona algo sobre su trayectoria profesional.
-- Si te piden "empresa" y está vacía, intenta inferirla del perfil o pon algo genérico de su sector.
-- Mantén un tono profesional pero coloquial. No uses saludos, comillas dobles ni formatos raros.
-- Escribe en español natural.
+  // Calculate strict character budget for invitations (200 char LinkedIn limit)
+  let lengthConstraint = "Sé conciso. Cada variable debe ser una frase corta (máximo 15-20 palabras).";
+  if (actionType === 'invitation') {
+    const staticLen = template.replace(/\{\{(.*?)\}\}/g, '').length;
+    const totalBudget = Math.max(10, 200 - staticLen);
+    const perVarBudget = Math.max(5, Math.floor(totalBudget / numVars));
+    lengthConstraint = `LÍMITE ABSOLUTO: La invitación de LinkedIn tiene un máximo de 200 caracteres TOTALES. El texto estático ya ocupa ${staticLen} caracteres. Solo quedan ${totalBudget} caracteres para TODAS las variables combinadas. Cada variable debe tener MÁXIMO ${perVarBudget} caracteres. Sé extremadamente breve.`;
+  }
+
+  const sysPrompt = `Eres un experto en cold outreach B2B en español. Tu tarea es generar el reemplazo exacto para las variables dinámicas en un mensaje.
+
+MENSAJE COMPLETO (con las variables a rellenar):
+"${template}"
+
+REGLAS CRÍTICAS DE COHERENCIA:
+- Lee el MENSAJE COMPLETO de arriba. El texto que generes para cada variable DEBE encajar gramaticalmente con lo que viene ANTES y DESPUÉS en el mensaje.
+- Ejemplo: si el mensaje dice "No estoy de acuerdo con {{comentario_post}}", la variable debe ser algo que tenga sentido después de "No estoy de acuerdo con", como: "que la IA vaya a reemplazar al talento humano" (NO un elogio, porque la frase dice "no estoy de acuerdo").
+- Ejemplo: si el mensaje dice "me parece brutal {{comentario_post}}", la variable debe ser algo que tenga sentido después de "me parece brutal", como: "tu enfoque sobre liderazgo ágil".
+- La variable es un FRAGMENTO de oración que se insertará directamente. NO debe ser una oración completa con punto final.
+- NO empieces la variable con mayúscula a menos que sea un nombre propio.
+- NO añadas punto final dentro de la variable.
+
 ${lengthConstraint}
 
-Input:
+REGLAS DE CONTENIDO:
+- SIEMPRE da un valor para CADA variable. NUNCA devuelvas un valor vacío.
+- Para "comentario_post": genera un tema/opinión creíble relacionado con su sector, cargo o experiencia reciente.
+- Para "especializacion": infiere de su cargo, empresa o sector.
+- Para "experiencia": menciona algo breve sobre su trayectoria.
+- Para "empresa": usa la empresa real si la tienes, o infiere algo de su perfil.
+- Tono profesional pero coloquial. Sin comillas dobles.
+
 Perfil del lead: ${JSON.stringify(condensedProfile)}
 Variables solicitadas: ${requestedVars}
-Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y genera un breve elogio profesional.'}"`;
+Prompt de IA extra: "${aiPrompt || 'Sé creativo y breve.'}"`;
 
   try {
     console.log('[AI-VARS] Calling Claude Haiku for variables:', requestedVars);
@@ -180,7 +191,7 @@ Prompt de IA extra (si aplica): "${aiPrompt || 'Sé creativo y genera un breve e
         max_tokens: 400,
         messages: [{
           role: 'user',
-          content: `${sysPrompt}\n\nDevuelve SOLO un JSON válido con este formato exacto: {"variable_name": "texto generado"}.\nEjemplo: {"comentario_post": "vi tu post sobre transformación digital y me pareció muy acertado", "empresa": "su empresa de consultoría"}\nNO incluyas explicaciones, solo el JSON.`,
+          content: `${sysPrompt}\n\nDevuelve SOLO un JSON válido: {"nombre_variable": "texto generado"}.\nEjemplo para "No estoy de acuerdo con {{comentario_post}}": {"comentario_post": "que el cold email esté muerto en B2B"}\nNO incluyas explicaciones, solo el JSON.`,
         }],
       }),
     });
