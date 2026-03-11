@@ -177,6 +177,54 @@ export default function UniboxPage() {
 
   const selectedAccount = accounts.find(a => a.unipile_account_id === selectedAccountId)
 
+  // ── Polling: Real-time sync ─────────────────────────────────────────
+  const sendingRef = React.useRef(sending)
+  React.useEffect(() => { sendingRef.current = sending }, [sending])
+
+  React.useEffect(() => {
+    if (!selectedAccountId) return
+
+    const poll = async () => {
+      // Avoid interrupting optimistic UI updates while sending
+      if (sendingRef.current) return
+
+      try {
+        const rChats = await api(`/api/linkedin/unibox?action=chats&accountId=${selectedAccountId}&limit=50`)
+        if (rChats.ok) {
+          const dChats = await rChats.json()
+          const newChats = dChats.items || dChats.chats || []
+          setChats(prev => {
+            if (prev.length !== newChats.length) return newChats
+            const changed = prev.some((c, i) => {
+              const nc = newChats[i]
+              if (!nc) return true
+              return c.id !== nc.id || c.unread_count !== nc.unread_count || c.last_message?.text !== nc.last_message?.text
+            })
+            return changed ? newChats : prev
+          })
+        }
+
+        if (selectedChat) {
+          const rMsgs = await api(`/api/linkedin/unibox?action=messages&chatId=${selectedChat.id}&accountId=${selectedAccountId}&limit=50`)
+          if (rMsgs.ok) {
+            const dMsgs = await rMsgs.json()
+            const newMsgs = (dMsgs.items || dMsgs.messages || []).reverse()
+            setMessages(prev => {
+              if (prev.length !== newMsgs.length) return newMsgs
+              if (prev.length > 0 && newMsgs.length > 0 && prev[prev.length - 1].id !== newMsgs[newMsgs.length - 1].id) return newMsgs
+              return prev
+            })
+          }
+        }
+      } catch (err) {
+        // Fail silently in background
+      }
+    }
+
+    const intervalId = setInterval(poll, 6000)
+    return () => clearInterval(intervalId)
+  }, [selectedAccountId, selectedChat])
+
   // ── Keyboard shortcut: Cmd/Ctrl+Enter to send ─────────────────────
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

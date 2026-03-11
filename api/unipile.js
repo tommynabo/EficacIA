@@ -431,6 +431,83 @@ async function handleWebhook(req, res) {
       return res.status(400).json({ error: 'Falta account_id en el payload.' });
     }
 
+    if (event === 'message.created' || event === 'chat.created') {
+      try {
+        const senderId = eventData.sender_id || eventData.attendees?.[0]?.provider_id;
+        const isSender = eventData.is_sender;
+        
+        console.log(`[WEBHOOK] Nuevo mensaje/chat en cuenta ${unipileAccountId} de ${senderId}. is_sender: ${isSender}`);
+
+        if (!isSender && senderId) {
+          // It's the lead replying
+          // 1. Get the account's team
+          const { data: account } = await supabaseAdmin
+            .from('linkedin_accounts')
+            .select('id, team_id')
+            .eq('unipile_account_id', unipileAccountId)
+            .single();
+
+          if (account) {
+            // 2. Fetch sender profile to get public_identifier
+            const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+            const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+            
+            let publicIdentifier = senderId;
+            try {
+              const userRes = await fetch(`https://${unipileDsn}/api/v1/users/${senderId}?account_id=${unipileAccountId}`, {
+                headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+              });
+              if (userRes.ok) {
+                const userData = await userRes.json();
+                publicIdentifier = userData.public_identifier || userData.provider_id || senderId;
+              }
+            } catch (err) {
+              console.error('[WEBHOOK] Error fetch sender profile:', err.message);
+            }
+
+            // 3. Find matching active leads
+            const queryStr = `%${publicIdentifier}%`;
+            const { data: leads } = await supabaseAdmin
+              .from('leads')
+              .select('id, campaign_id, sequence_status, linkedin_url')
+              .ilike('linkedin_url', queryStr)
+              .in('sequence_status', ['active', 'pending'])
+              .limit(5);
+
+            if (leads && leads.length > 0) {
+              for (const lead of leads) {
+                // If the vanity matches tightly (extra check)
+                if (lead.linkedin_url.includes(publicIdentifier)) {
+                  // Get campaign to see if stop_on_reply is enabled
+                  const { data: campaign } = await supabaseAdmin
+                    .from('campaigns')
+                    .select('id, settings')
+                    .eq('id', lead.campaign_id)
+                    .single();
+
+                  if (campaign?.settings?.stop_on_reply) {
+                    console.log(`[WEBHOOK] Deteniendo secuencia para lead ${lead.id} en campaña ${campaign.id} por repuesta.`);
+                    await supabaseAdmin
+                      .from('leads')
+                      .update({
+                        sequence_status: 'replied',
+                        status: 'replied',
+                        last_action_at: new Date().toISOString()
+                      })
+                      .eq('id', lead.id);
+                  }
+                }
+              }
+            }
+          }
+        }
+        return res.status(200).json({ received: true, message: 'Message webhook processed' });
+      } catch (err) {
+        console.error('[WEBHOOK] Error processing message:', err.message);
+        return res.status(500).json({ error: 'Error processing message webhook' });
+      }
+    }
+
     // userId viene en la query del notify_url (lo incluimos al generar el link)
     // Unipile sobreescribe el campo 'name' con el nombre del perfil de LinkedIn
     let userId = req.query.userId || null;

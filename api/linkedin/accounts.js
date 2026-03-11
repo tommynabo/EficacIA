@@ -156,7 +156,7 @@ export default async function handler(req, res) {
 
     const { data: accounts, error } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at')
+      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at, unipile_account_id')
       .eq('team_id', teamId)
       .order('created_at', { ascending: false });
 
