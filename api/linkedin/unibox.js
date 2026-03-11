@@ -129,6 +129,46 @@ export default async function handler(req, res) {
     }
   }
 
+  // ─── POST mark as read ────────────────────────────────────────────
+  if (req.method === 'POST' && action === 'mark_read') {
+    const { chatId, accountId } = req.body;
+    if (!chatId) return res.status(400).json({ error: 'Falta chatId' });
+
+    // Verify account ownership
+    if (accountId) {
+      const { data: acc } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('id')
+        .eq('team_id', teamId)
+        .eq('unipile_account_id', accountId)
+        .single();
+      if (!acc) return res.status(403).json({ error: 'Cuenta no autorizada' });
+    }
+
+    try {
+      // Unipile API for marking as read is PUT /api/v1/chats/:id
+      // with body { unread_count: 0 } or similar, OR there's a specific endpoint.
+      // Usually, just fetching messages doesn't mark them as read yet.
+      // Unipile Docs: `POST /api/v1/chats/:id/read` marks all messages as read.
+      const r = await fetch(`${unipileBase()}/api/v1/chats/${chatId}/read`, {
+        method: 'POST',
+        headers: unipileHeaders(),
+      });
+      if (!r.ok) {
+        // Fallback: PUT /api/v1/chats/:id
+        await fetch(`${unipileBase()}/api/v1/chats/${chatId}`, {
+          method: 'PUT',
+          headers: unipileHeaders(),
+          body: JSON.stringify({ unread_count: 0 }),
+        });
+      }
+      return res.status(200).json({ success: true });
+    } catch (e) {
+      console.error('[UNIBOX][read] excepción:', e);
+      return res.status(500).json({ error: 'Error de red con Unipile' });
+    }
+  }
+
   // ─── POST send message ────────────────────────────────────────────
   if (req.method === 'POST' && action === 'send') {
     const { chatId, text, accountId } = req.body;

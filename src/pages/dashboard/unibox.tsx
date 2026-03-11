@@ -21,7 +21,7 @@ interface Chat {
   name?: string
   last_message?: { text?: string; created_at?: string }
   unread_count?: number
-  attendees?: { name?: string; headline?: string }[]
+  attendees?: { name?: string; headline?: string; provider_id?: string; username?: string; avatar_url?: string; profile_picture_url?: string; is_sender?: boolean; id?: string }[]
   updated_at?: string
   account_id?: string
 }
@@ -30,7 +30,8 @@ interface Message {
   id: string
   text?: string
   created_at: string
-  sender?: { name?: string }
+  sender_id?: string
+  sender?: { name?: string; provider_id?: string }
   is_sender?: boolean
   attachments?: unknown[]
 }
@@ -52,10 +53,20 @@ function formatTime(iso?: string): string {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" })
 }
 
+function getOtherAttendee(chat?: Chat) {
+  if (!chat?.attendees) return null;
+  return chat.attendees.find(a => a.is_sender === false) || chat.attendees[0];
+}
+
 function chatTitle(chat: Chat): string {
-  if (chat.name) return chat.name
-  const other = chat.attendees?.find(a => a.name)
-  return other?.name || "Conversación"
+  if (chat.name && chat.name !== "Chat" && chat.name !== "Conversación") return chat.name;
+  const other = getOtherAttendee(chat);
+  return other?.name || other?.username || other?.provider_id || "Usuario de LinkedIn";
+}
+
+function chatAvatar(chat: Chat): string | null {
+  const other = getOtherAttendee(chat);
+  return other?.profile_picture_url || other?.avatar_url || null;
 }
 
 function initials(name: string): string {
@@ -128,6 +139,16 @@ export default function UniboxPage() {
     setMessages([])
     setMessagesLoading(true)
     setSendError(null)
+
+    // Mark as read locally and remotely
+    if (chat.unread_count && chat.unread_count > 0) {
+      setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c))
+      api("/api/linkedin/unibox?action=mark_read", {
+        method: "POST",
+        body: JSON.stringify({ chatId: chat.id, accountId: selectedAccountId })
+      }).catch(() => {})
+    }
+
     api(`/api/linkedin/unibox?action=messages&chatId=${chat.id}&accountId=${selectedAccountId}&limit=50`)
       .then(r => r.json())
       .then(d => {
@@ -344,9 +365,15 @@ export default function UniboxPage() {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200 shrink-0">
-                    {initials(title)}
-                  </div>
+                  {(() => {
+                    const avatar = chatAvatar(chat);
+                    if (avatar) return <img src={avatar} alt={title} className="w-9 h-9 rounded-full object-cover shrink-0" />;
+                    return (
+                      <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200 shrink-0">
+                        {initials(title)}
+                      </div>
+                    );
+                  })()}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className={`text-sm truncate ${chat.unread_count ? "font-semibold text-white" : "font-medium text-slate-300"}`}>
@@ -380,9 +407,15 @@ export default function UniboxPage() {
           {/* Header */}
           <div className="h-14 border-b border-slate-800 flex items-center justify-between px-5 bg-slate-950/50 shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200">
-                {initials(chatTitle(selectedChat))}
-              </div>
+              {(() => {
+                const avatar = chatAvatar(selectedChat);
+                if (avatar) return <img src={avatar} alt={chatTitle(selectedChat)} className="w-8 h-8 rounded-full object-cover shrink-0" />;
+                return (
+                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200">
+                    {initials(chatTitle(selectedChat))}
+                  </div>
+                );
+              })()}
               <div>
                 <p className="text-sm font-semibold text-slate-100">{chatTitle(selectedChat)}</p>
                 {selectedChat.attendees?.[0]?.headline && (
@@ -406,14 +439,23 @@ export default function UniboxPage() {
               </div>
             )}
             {messages.map((msg) => {
-              const isMine = msg.is_sender === true
+              const other = getOtherAttendee(selectedChat);
+              const isMine = msg.is_sender === true || 
+                (!!msg.sender_id && !!other?.provider_id && msg.sender_id !== other.provider_id && msg.sender_id !== other.id);
+
               const time = formatTime(msg.created_at)
+              const avatar = chatAvatar(selectedChat)
+
               return (
                 <div key={msg.id} className={`flex items-end gap-2.5 ${isMine ? "flex-row-reverse" : ""}`}>
                   {!isMine && (
-                    <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-300 shrink-0">
-                      {initials(chatTitle(selectedChat))}
-                    </div>
+                    avatar ? (
+                      <img src={avatar} alt={chatTitle(selectedChat)} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-300 shrink-0">
+                        {initials(chatTitle(selectedChat))}
+                      </div>
+                    )
                   )}
                   <div className={`max-w-[70%] flex flex-col gap-1 ${isMine ? "items-end" : "items-start"}`}>
                     <div className={`rounded-2xl px-4 py-2.5 text-sm ${
