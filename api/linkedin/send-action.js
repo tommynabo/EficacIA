@@ -311,6 +311,10 @@ export default async function handler(req, res) {
     // Resolve message content
     let finalMessage = content || '';
 
+    // Step 1: Resolve standard variables ({{nombre}}, {{empresa}}) FIRST
+    // This provides Claude with more context if needed, and ensures early returns (e.g. Apify 202) don't send raw braces
+    finalMessage = resolveTemplate(finalMessage, lead);
+
     // Feature: Advanced AI personalization using Apify Profile Scraping
     const needsAdvancedAI = !!finalMessage.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/);
 
@@ -323,7 +327,12 @@ export default async function handler(req, res) {
           const run = await checkApifyRun(cvars.apify_run_id);
           if (['RUNNING', 'READY', 'INITIALIZING'].includes(run.status)) {
             console.log(`[SEND-ACTION] Lead ${lead.id} waiting for Apify (advanced AI)...`);
-            return res.status(202).json({ success: true, status: 'processing', message: 'Waiting for Apify profile data...' });
+            return res.status(202).json({ 
+              success: true, 
+              status: 'processing', 
+              message: 'Esperando análisis del perfil (Apify)...',
+              message_sent: finalMessage 
+            });
           } else if (run.status === 'SUCCEEDED') {
             const items = await fetchApifyDataset(run.defaultDatasetId);
             cvars.scraped_profile = items[0] || {};
@@ -350,7 +359,12 @@ export default async function handler(req, res) {
                 });
                 cvars.apify_run_id = runId;
                 await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);
-                return res.status(202).json({ success: true, status: 'processing', message: 'Started Apify profile scraping...' });
+                return res.status(202).json({ 
+                  success: true, 
+                  status: 'processing', 
+                  message: 'Iniciando lectura de perfil (Apify)...',
+                  message_sent: finalMessage 
+                });
               } catch (apifyErr) {
                 console.error(`[SEND-ACTION] Apify start failed: ${apifyErr.message} — sending message without advanced AI vars.`);
               }
@@ -374,8 +388,6 @@ export default async function handler(req, res) {
       // Strip any remaining unresolved AI variable tags
       finalMessage = finalMessage.replace(/\{\{(comentario_post|especializacion|experiencia)\}\}/g, '');
     }
-    // Resolve standard variables
-    finalMessage = resolveTemplate(finalMessage, lead);
 
     // Execute the action (skip if simulate)
     let result = { simulated: true };
