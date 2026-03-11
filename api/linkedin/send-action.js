@@ -11,7 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
-const ACTOR_PROFILE_SCRAPER = 'curious_coder~linkedin-profile-scraper';
+const ACTOR_PROFILE_SCRAPER = 'supreme_coder~linkedin-profile-scraper';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -120,6 +120,10 @@ async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType)
     lengthConstraint = `CRÍTICO: El límite absoluto para el texto generado es de ${Math.max(10, charsRemaining)} caracteres, de lo contrario la invitación rebotará. Mantenlo muy corto (1 oración).`;
   }
 
+  // Extraer nombres de las variables limpias de llaves para un prompt más natural.
+  const varsMatches = template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/g) || [];
+  const requestedVars = varsMatches.map(v => v.replace(/[{}]/g, '')).join(', ');
+
   const sysPrompt = `Eres un experto en cold outreach B2B. Eres humano, breve y directo.
 Tu tarea es generar el reemplazo exacto para las variables dinámicas de este mensaje basándote en el perfil del lead.
 Manten un tono profesional pero muy coloquial. No uses saludos, comillas ni formatos raros.
@@ -127,7 +131,7 @@ ${lengthConstraint}
 
 Input:
 Perfil del lead: ${JSON.stringify(condensedProfile)}
-Variables solicitadas: ${template.match(/\{\{(comentario_post|especializacion|experiencia)\}\}/g).join(', ')}
+Variables solicitadas: ${requestedVars}
 Prompt de IA de la campaña: "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
 
   try {
@@ -152,12 +156,23 @@ Prompt de IA de la campaña: "${aiPrompt || 'Sé creativo y breve elogio.'}"`;
     // try to parse JSON
     const match = textResp.match(/\{[\s\S]*\}/);
     if (!match) return template;
-    const varsMap = JSON.parse(match[0]);
+    const rawVarsMap = JSON.parse(match[0]);
+    console.log('[SEND-ACTION] Raw Claude variables:', rawVarsMap);
+
+    // Sanitize keys (remove any accidental braces Claude might have added)
+    const varsMap = {};
+    for (const [k, v] of Object.entries(rawVarsMap)) {
+      const cleanKey = k.replace(/[{}]/g, '').trim();
+      varsMap[cleanKey] = v;
+    }
+    console.log('[SEND-ACTION] Cleaned variables:', varsMap);
 
     // Replace in template
     let newTemplate = template;
     for (const [k, v] of Object.entries(varsMap)) {
-      newTemplate = newTemplate.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+      if (k && v) {
+        newTemplate = newTemplate.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+      }
     }
     return newTemplate;
   } catch (err) {
@@ -330,8 +345,8 @@ export default async function handler(req, res) {
               console.log(`[SEND-ACTION] Lead ${lead.id} starting Apify profile scraper...`);
               try {
                 const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
+                  urls: inputUrls,
                   profileUrls: inputUrls,
-                  profilesPerSession: 1
                 });
                 cvars.apify_run_id = runId;
                 await supabaseAdmin.from('leads').update({ custom_vars: cvars }).eq('id', lead.id);

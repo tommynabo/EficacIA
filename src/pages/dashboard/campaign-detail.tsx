@@ -849,31 +849,64 @@ export default function CampaignDetailPage() {
                 <p className="text-sm text-amber-300">No tienes cuentas conectadas. <Link to="/dashboard" className="underline">Conecta una cuenta</Link> primero.</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {accounts.map(acc => (
-                  <label key={acc.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 hover:border-slate-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="rounded border-slate-700"
-                      checked={settings.linkedin_account_ids.includes(acc.id)}
-                      onChange={e => {
-                        setSettings(s => ({
-                          ...s,
-                          linkedin_account_ids: e.target.checked
-                            ? [...s.linkedin_account_ids, acc.id]
-                            : s.linkedin_account_ids.filter(id => id !== acc.id),
-                        }))
-                      }}
-                    />
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                      {acc.profile_name?.[0]?.toUpperCase() || "L"}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-200">{acc.profile_name || acc.username}</p>
-                      <p className="text-xs text-slate-500">{acc.is_valid ? "✓ Activa" : "⚠ Inactiva"}</p>
-                    </div>
-                  </label>
-                ))}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {accounts.map(acc => {
+                  const isSelected = settings.linkedin_account_ids.includes(acc.id);
+                  return (
+                    <label
+                      key={acc.id}
+                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer overflow-hidden ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+                          : "border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={isSelected}
+                        onChange={e => {
+                          setSettings(s => ({
+                            ...s,
+                            linkedin_account_ids: e.target.checked
+                              ? [...s.linkedin_account_ids, acc.id]
+                              : s.linkedin_account_ids.filter(id => id !== acc.id),
+                          }))
+                        }}
+                      />
+                      {/* Avatar */}
+                      <div
+                        className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-inner transition-colors duration-500 ${
+                          isSelected
+                            ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
+                            : "bg-slate-800 text-slate-400"
+                        }`}
+                      >
+                        {acc.profile_name?.[0]?.toUpperCase() || "L"}
+                      </div>
+                      
+                      {/* Info */}
+                      <div className="flex-1 min-w-0 pr-6">
+                        <p className={`text-sm font-semibold truncate ${isSelected ? "text-blue-100" : "text-slate-300"}`}>
+                          {acc.profile_name || acc.username}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className={`w-2 h-2 rounded-full ${acc.is_valid ? "bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"}`} />
+                          <p className={`text-xs ${acc.is_valid ? "text-slate-400" : "text-red-400"}`}>
+                            {acc.is_valid ? "Conectada" : "Desconectada"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Selected Indicator */}
+                      {isSelected && (
+                        <div className="absolute top-4 right-4 text-blue-400 animate-in zoom-in spin-in-12 duration-300">
+                          <CheckCircle2 className="w-5 h-5 bg-slate-900 rounded-full" />
+                        </div>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             )}
           </Card>
