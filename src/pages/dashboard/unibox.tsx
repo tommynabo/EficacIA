@@ -19,9 +19,11 @@ interface Account {
 interface Chat {
   id: string
   name?: string
-  last_message?: { text?: string; created_at?: string }
+  last_message?: { text?: string; created_at?: string; sender_id?: string; is_sender?: boolean | number | string }
   unread_count?: number
-  attendees?: { name?: string; headline?: string; provider_id?: string; username?: string; avatar_url?: string; profile_picture_url?: string; is_sender?: boolean; id?: string }[]
+  attendees?: any[]
+  participants?: any[]
+  users?: any[]
   updated_at?: string
   account_id?: string
 }
@@ -31,8 +33,8 @@ interface Message {
   text?: string
   created_at: string
   sender_id?: string
-  sender?: { name?: string; provider_id?: string }
-  is_sender?: boolean
+  sender?: any
+  is_sender?: boolean | number | string
   attachments?: unknown[]
 }
 
@@ -53,20 +55,60 @@ function formatTime(iso?: string): string {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" })
 }
 
-function getOtherAttendee(chat?: Chat) {
-  if (!chat?.attendees) return null;
-  return chat.attendees.find(a => a.is_sender === false) || chat.attendees[0];
+function getMyProviderId(chat?: Chat, messages?: Message[]): string | null {
+  if (!chat) return null;
+  const msgs = messages || [];
+  
+  // Try to find a message firmly marked as ours
+  const myMsg = msgs.find(m => (String(m.is_sender) === "true" || m.is_sender === 1) && !!m.sender_id);
+  if (myMsg) return myMsg.sender_id!;
+
+  if (chat.last_message?.sender_id && (String(chat.last_message.is_sender) === "true" || chat.last_message.is_sender === 1)) {
+    return chat.last_message.sender_id;
+  }
+
+  // Fallback: If 1 attendee (the Lead), ANY message not from them is ours
+  const attendees = chat.participants || chat.attendees || chat.users || [];
+  if (attendees.length === 1) {
+    const leadId = attendees[0].provider_id || attendees[0].id || attendees[0].account_id;
+    const fallbackMsg = msgs.find(m => m.sender_id && m.sender_id !== leadId);
+    if (fallbackMsg) return fallbackMsg.sender_id!;
+    if (chat.last_message?.sender_id && chat.last_message.sender_id !== leadId) return chat.last_message.sender_id;
+  }
+
+  return null;
 }
 
-function chatTitle(chat: Chat): string {
+function getOtherAttendee(chat?: Chat, myProviderId?: string | null) {
+  const list = chat?.participants || chat?.attendees || chat?.users || [];
+  if (!list || list.length === 0) return null;
+  if (list.length === 1) return list[0];
+  
+  // If we know exactly who WE are, the other is anyone else
+  if (myProviderId) {
+    const other = list.find(a => (a.provider_id || a.id || a.account_id) !== myProviderId);
+    if (other) return other;
+  }
+
+  // Fallback guess
+  return list.find(a => a.is_sender === false || String(a.is_sender) === "false") || list[0];
+}
+
+function chatTitle(chat: Chat, myProviderId?: string | null): string {
   if (chat.name && chat.name !== "Chat" && chat.name !== "Conversación") return chat.name;
-  const other = getOtherAttendee(chat);
-  return other?.name || other?.username || other?.provider_id || "Usuario de LinkedIn";
+  const other = getOtherAttendee(chat, myProviderId);
+  if (!other) return "Conversación";
+  
+  const displayName = other.name || other.display_name || other.first_name || other.username;
+  if (displayName) return displayName;
+  
+  return other.provider_id ? `LinkedIn (${other.provider_id})` : "Conversación";
 }
 
-function chatAvatar(chat: Chat): string | null {
-  const other = getOtherAttendee(chat);
-  return other?.profile_picture_url || other?.avatar_url || null;
+function chatAvatar(chat: Chat, myProviderId?: string | null): string | null {
+  const other = getOtherAttendee(chat, myProviderId);
+  if (!other) return null;
+  return other.avatar_url || other.avatar || other.profile_picture_url || other.picture || other.image || null;
 }
 
 function initials(name: string): string {
@@ -197,6 +239,9 @@ export default function UniboxPage() {
   })
 
   const selectedAccount = accounts.find(a => a.unipile_account_id === selectedAccountId)
+  
+  // Calculate my provider ID for accurate direction logic
+  const globalMyProviderId = getMyProviderId(selectedChat || undefined, messages);
 
   // ── Polling: Real-time sync ─────────────────────────────────────────
   const sendingRef = React.useRef(sending)
@@ -408,18 +453,21 @@ export default function UniboxPage() {
           <div className="h-14 border-b border-slate-800 flex items-center justify-between px-5 bg-slate-950/50 shrink-0">
             <div className="flex items-center gap-3">
               {(() => {
-                const avatar = chatAvatar(selectedChat);
-                if (avatar) return <img src={avatar} alt={chatTitle(selectedChat)} className="w-8 h-8 rounded-full object-cover shrink-0" />;
+                const avatar = chatAvatar(selectedChat, globalMyProviderId);
+                const titleStr = chatTitle(selectedChat, globalMyProviderId);
+                if (avatar) return <img src={avatar} alt={titleStr} className="w-8 h-8 rounded-full object-cover shrink-0" />;
                 return (
                   <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-200">
-                    {initials(chatTitle(selectedChat))}
+                    {initials(titleStr)}
                   </div>
                 );
               })()}
               <div>
-                <p className="text-sm font-semibold text-slate-100">{chatTitle(selectedChat)}</p>
-                {selectedChat.attendees?.[0]?.headline && (
-                  <p className="text-[11px] text-slate-500 truncate max-w-[300px]">{selectedChat.attendees[0].headline}</p>
+                <p className="text-sm font-semibold text-slate-100">{chatTitle(selectedChat, globalMyProviderId)}</p>
+                {getOtherAttendee(selectedChat, globalMyProviderId)?.headline && (
+                  <p className="text-[11px] text-slate-500 truncate max-w-[300px]">
+                    {getOtherAttendee(selectedChat, globalMyProviderId)?.headline}
+                  </p>
                 )}
               </div>
             </div>
@@ -439,21 +487,27 @@ export default function UniboxPage() {
               </div>
             )}
             {messages.map((msg) => {
-              const other = getOtherAttendee(selectedChat);
-              const isMine = msg.is_sender === true || 
-                (!!msg.sender_id && !!other?.provider_id && msg.sender_id !== other.provider_id && msg.sender_id !== other.id);
+              // Message direction logic 
+              // If we extracted our own providerId perfectly, we use it!
+              let isMine = String(msg.is_sender) === "true" || msg.is_sender === 1;
+              if (globalMyProviderId && msg.sender_id) {
+                isMine = (msg.sender_id === globalMyProviderId);
+              }
+              // Absolute fallback if optimistic message doesn't have sender_id
+              if (msg.id.startsWith("opt-")) isMine = true;
 
               const time = formatTime(msg.created_at)
-              const avatar = chatAvatar(selectedChat)
+              const avatar = chatAvatar(selectedChat, globalMyProviderId)
+              const titleStr = chatTitle(selectedChat, globalMyProviderId)
 
               return (
                 <div key={msg.id} className={`flex items-end gap-2.5 ${isMine ? "flex-row-reverse" : ""}`}>
                   {!isMine && (
                     avatar ? (
-                      <img src={avatar} alt={chatTitle(selectedChat)} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                      <img src={avatar} alt={titleStr} className="w-7 h-7 rounded-full object-cover shrink-0" />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-slate-300 shrink-0">
-                        {initials(chatTitle(selectedChat))}
+                        {initials(titleStr)}
                       </div>
                     )
                   )}
