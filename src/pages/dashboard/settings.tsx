@@ -115,9 +115,7 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {activeTab === "apariencia" && (
-        // Eliminado: subpágina de apariencia
-      )}
+      {/* Eliminado: subpágina de apariencia */}
     </div>
   )
 }
