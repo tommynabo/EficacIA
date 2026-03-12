@@ -187,14 +187,14 @@ export default function CampaignsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge 
-                      variant="outline"
-                      className={`${
+                      variant={
                         campaign.status === 'active' 
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                          ? 'success' 
                           : campaign.status === 'draft'
-                          ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                          : 'bg-slate-500/10 border-slate-500/20 text-slate-400'
-                      }`}
+                          ? 'default'
+                          : 'secondary'
+                      }
+                      className="shadow-sm"
                     >
                       {campaign.status === 'draft' ? '📝 Borrador' : campaign.status === 'active' ? '🚀 Activa' : '⏸️ Pausada'}
                     </Badge>

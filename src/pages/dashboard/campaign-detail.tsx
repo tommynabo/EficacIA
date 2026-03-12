@@ -14,7 +14,7 @@ import {
   Zap, Loader2, RefreshCw
 } from "lucide-react"
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+// --- Tipos --------------------------------------------------------------------
 
 interface SequenceStep {
   id: string
@@ -92,7 +92,7 @@ const DEFAULT_STEPS: SequenceStep[] = [
 const TOKEN = () => localStorage.getItem("auth_token")
 const apiHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` })
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+// --- Componente principal -----------------------------------------------------
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -150,7 +150,7 @@ export default function CampaignDetailPage() {
     ai_prompt: "Analiza el perfil y escribe un comentario de 1-2 oraciones sobre su experiencia reciente o un post interesante.",
   })
 
-  // ─── Carga inicial ──────────────────────────────────────────────────────────
+  // --- Carga inicial ----------------------------------------------------------
 
   React.useEffect(() => {
     if (!id) return
@@ -197,7 +197,7 @@ export default function CampaignDetailPage() {
     }
   }
 
-  // ─── Acciones campaña ───────────────────────────────────────────────────────
+  // --- Acciones campaña -------------------------------------------------------
 
   const saveCampaign = async (extraUpdates?: Partial<Campaign>) => {
     if (!campaign) return
@@ -212,7 +212,7 @@ export default function CampaignDetailPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error guardando")
       setCampaign(data.campaign)
-      setSuccess("✓ Guardado correctamente")
+      setSuccess("\u2713 Guardado correctamente")
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error guardando")
@@ -229,12 +229,12 @@ export default function CampaignDetailPage() {
   }
 
   const deleteCampaign = async () => {
-    if (!confirm(`¿Eliminar la campaña "${campaign?.name}"? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`\u00bfEliminar la campa\u00f1a "${campaign?.name}"? Esta acci\u00f3n no se puede deshacer.`)) return
     await fetch(`/api/linkedin/campaigns?id=${id}`, { method: "DELETE", headers: apiHeaders() })
     navigate("/dashboard/campaigns")
   }
 
-  // ─── Envío directo a un lead específico ────────────────────────────────────
+  // --- Env\u00edo directo a un lead espec\u00edfico ------------------------------------
 
   const [sendingLeadId, setSendingLeadId] = React.useState<string | null>(null)
   const [testLog, setTestLog] = React.useState<Array<{ time: string; type: 'info' | 'success' | 'error'; msg: string }>>([])
@@ -249,19 +249,19 @@ export default function CampaignDetailPage() {
     if (!campaign || steps.length === 0) return
     const selectedAccounts = campaign.settings?.linkedin_account_ids || []
     if (selectedAccounts.length === 0) {
-      addLog('error', '⚠ Selecciona una cuenta de LinkedIn en la pestaña Opciones.')
+      addLog('error', '\u26a0 Selecciona una cuenta de LinkedIn en la pesta\u00f1a Opciones.')
       setShowTestPanel(true)
       return
     }
     const step = steps[stepIndex ?? 0]
     if (!step) {
-      addLog('error', `⚠ No hay paso ${(stepIndex ?? 0) + 1} en la secuencia.`)
+      addLog('error', `\u26a0 No hay paso ${(stepIndex ?? 0) + 1} en la secuencia.`)
       setShowTestPanel(true)
       return
     }
     setSendingLeadId(lead.id)
     setShowTestPanel(true)
-    addLog('info', `${simulate ? '[SIMULACRO] ' : ''}Enviando ${step.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
+    addLog('info', `${simulate ? '[SIMULACRO] ' : ''}Enviando ${step.type === 'invitation' ? 'invitaci\u00f3n' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
     try {
       const res = await fetch(`/api/linkedin/send-action`, {
         method: "POST",
@@ -278,31 +278,30 @@ export default function CampaignDetailPage() {
       })
       const data = await res.json()
       if (res.status === 202) {
-        // Apify is still scraping — poll until ready
-        addLog('info', `⏳ ${data.message || 'Procesando perfil...'} Reintentando en 5s...`)
+        addLog('info', `\u23f3 ${data.message || 'Procesando perfil...'} Reintentando en 5s...`)
         setTimeout(() => sendToLead(lead, stepIndex, simulate), 5000)
-        return // don't clear sendingLeadId yet
+        return
       } else if (res.ok) {
-        addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 250)}"`)
+        addLog('success', `\u2713 ${data.message || 'Enviado'} \u2014 "${(data.message_sent || '').slice(0, 250)}"`)
         fetchAll()
       } else {
-        addLog('error', `✗ Error: ${data.error || 'Error desconocido'}`)
+        addLog('error', `\u2717 Error: ${data.error || 'Error desconocido'}`)
       }
     } catch (err: unknown) {
-      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+      addLog('error', `\u2717 Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
     } finally {
       setSendingLeadId(null)
     }
   }
 
-  // ─── Ejecutar motor de campaña manualmente ──────────────────────────────────
+  // --- Ejecutar motor de campa\u00f1a manualmente ----------------------------------
 
   const [runningEngine, setRunningEngine] = React.useState(false)
 
   const triggerEngineNow = async () => {
     setRunningEngine(true)
     setShowTestPanel(true)
-    addLog('info', '⚡ Ejecutando motor de campaña manualmente...')
+    addLog('info', '\u26a1 Ejecutando motor de campa\u00f1a manualmente...')
     try {
       const res = await fetch(`/api/linkedin/campaign-engine`, {
         method: "POST",
@@ -311,19 +310,19 @@ export default function CampaignDetailPage() {
       const data = await res.json()
       if (res.ok) {
         const s = data.stats || {}
-        addLog('success', `✓ Motor ejecutado — Campañas: ${s.campaigns || 0}, Procesados: ${s.processed || 0}, Errores: ${s.errors || 0}, Omitidos: ${s.skipped || 0}`)
+        addLog('success', `\u2713 Motor ejecutado \u2014 Campa\u00f1as: ${s.campaigns || 0}, Procesados: ${s.processed || 0}, Errores: ${s.errors || 0}, Omitidos: ${s.skipped || 0}`)
         fetchAll()
       } else {
-        addLog('error', `✗ Error motor: ${data.error || 'Error desconocido'}`)
+        addLog('error', `\u2717 Error motor: ${data.error || 'Error desconocido'}`)
       }
     } catch (err: unknown) {
-      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+      addLog('error', `\u2717 Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
     } finally {
       setRunningEngine(false)
     }
   }
 
-  // ─── Leads ──────────────────────────────────────────────────────────────────
+  // --- Leads ------------------------------------------------------------------
 
   const removeLeadFromCampaign = async (leadId: string) => {
     try {
@@ -335,7 +334,7 @@ export default function CampaignDetailPage() {
     } catch { /* silent */ }
   }
 
-  // ─── Secuencia ──────────────────────────────────────────────────────────────
+  // --- Secuencia --------------------------------------------------------------
 
   const addStep = () => {
     const newStep: SequenceStep = {
@@ -369,7 +368,7 @@ export default function CampaignDetailPage() {
 
   const activeStep = steps.find(s => s.id === activeStepId)
 
-  // ─── Render: Loading ────────────────────────────────────────────────────────
+  // --- Render: Loading --------------------------------------------------------
 
   if (loading) {
     return (
@@ -388,8 +387,8 @@ export default function CampaignDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4">
         <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-slate-400">Campaña no encontrada</p>
-        <Button asChild variant="outline"><Link to="/dashboard/campaigns">Volver a Campañas</Link></Button>
+        <p className="text-slate-400">Campa\u00f1a no encontrada</p>
+        <Button asChild variant="outline"><Link to="/dashboard/campaigns">Volver a Campa\u00f1as</Link></Button>
       </div>
     )
   }
@@ -405,17 +404,16 @@ export default function CampaignDetailPage() {
   })
 
   const statusConfig = {
-    draft: { label: "Borrador", color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
-    active: { label: "Activa", color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" },
-    paused: { label: "Pausada", color: "bg-amber-500/10 border-amber-500/20 text-amber-400" },
-    completed: { label: "Completada", color: "bg-slate-500/10 border-slate-500/20 text-slate-400" },
+    draft: { label: "Borrador", variant: "default" as const },
+    active: { label: "Activa", variant: "success" as const },
+    paused: { label: "Pausada", variant: "secondary" as const },
+    completed: { label: "Completada", variant: "outline" as const },
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // --- Render -----------------------------------------------------------------
 
   return (
     <div className="space-y-0">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
@@ -423,87 +421,85 @@ export default function CampaignDetailPage() {
           </Button>
           <div>
             <h2 className="text-xl font-bold tracking-tight">{campaign.name}</h2>
-            <p className="text-sm text-slate-400">{campaign.description || "Sin descripción"}</p>
+            <p className="text-sm text-slate-400">{campaign.description || "Sin descripci\u00f3n"}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Status pill */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border ${statusConfig[campaign.status]?.color}`}>
-            <span className="w-2 h-2 rounded-full bg-current opacity-60 shrink-0" />
+          <Badge variant={statusConfig[campaign.status]?.variant} className="px-3 py-1.5 text-sm font-medium">
             {statusConfig[campaign.status]?.label}
-          </div>
+          </Badge>
 
-          <div className="w-px h-7 bg-slate-700 mx-1" />
+          <div className="w-px h-7 bg-slate-200 dark:bg-slate-700 mx-1" />
 
-          {/* Ejecutar motor manualmente */}
-          <button
+          <Button
             onClick={triggerEngineNow}
             disabled={runningEngine || campaign.status !== 'active'}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-all disabled:opacity-40"
-            title="Ejecuta el motor de campaña ahora mismo (sin esperar al cron)"
+            variant="outline"
+            size="sm"
+            className="gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+            title="Ejecuta el motor de campa\u00f1a ahora mismo (sin esperar al cron)"
           >
             <Zap className={`w-4 h-4 ${runningEngine ? "animate-spin" : ""}`} />
-            {runningEngine ? "Ejecutando…" : "Ejecutar ahora"}
-          </button>
+            {runningEngine ? "Ejecutando\u2026" : "Ejecutar ahora"}
+          </Button>
 
-          {/* Launch / Pause */}
-          <button
+          <Button
             onClick={toggleStatus}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${campaign.status === "active"
-              ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
-              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+            variant="outline"
+            className={`gap-2 ${campaign.status === "active"
+              ? "border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+              : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
               }`}
           >
             {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
-          </button>
+            {campaign.status === "active" ? "Pausar campa\u00f1a" : "Lanzar campa\u00f1a"}
+          </Button>
 
-          {/* Save */}
-          <button
+          <Button
             onClick={() => saveCampaign()}
             disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="gap-2 px-6 shadow-md"
           >
             <Save className={`w-4 h-4 ${saving ? "animate-spin" : ""}`} />
             {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
+          </Button>
 
-          {/* Delete */}
-          <button
+          <Button
             onClick={deleteCampaign}
-            className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
-            title="Eliminar campaña"
+            variant="ghost"
+            size="icon"
+            className="text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+            title="Eliminar campa\u00f1a"
           >
             <Trash2 className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Panel de Log de Pruebas */}
       {showTestPanel && testLog.length > 0 && (
-        <Card className="border border-slate-700 mb-4 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800/50 border-b border-slate-700">
+        <Card className="border border-slate-200 dark:border-slate-700 mb-4 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span className="text-sm font-semibold text-slate-200">Log de envíos</span>
+              <Zap className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Log de env\u00edos</span>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0">{testLog.length}</Badge>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setTestLog([])} className="text-xs text-slate-500 hover:text-slate-300">Limpiar</button>
-              <button onClick={() => setShowTestPanel(false)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setTestLog([])} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Limpiar</button>
+              <button onClick={() => setShowTestPanel(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
             </div>
           </div>
-          <div className="max-h-48 overflow-y-auto p-3 space-y-1.5 bg-slate-950/50 font-mono text-xs">
+          <div className="max-h-48 overflow-y-auto p-3 space-y-1.5 bg-white dark:bg-slate-950/50 font-mono text-xs">
             {testLog.map((log, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className="text-slate-600 flex-shrink-0">{log.time}</span>
-                <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-red-400' : 'text-blue-400'}>
+                <span className="text-slate-400 dark:text-slate-600 flex-shrink-0">{log.time}</span>
+                <span className={log.type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : log.type === 'error' ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}>
                   {log.msg}
                 </span>
               </div>
             ))}
             {(sendingLeadId || runningEngine) && (
-              <div className="flex items-center gap-2 text-amber-400">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 <span>Procesando...</span>
               </div>
@@ -513,25 +509,24 @@ export default function CampaignDetailPage() {
       )}
       {error && (
         <Card className="border-red-500/30 bg-red-500/5 p-3 mb-4">
-          <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" /><p className="text-sm text-red-400">{error}</p></div>
+          <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" /><p className="text-sm text-red-600 dark:text-red-400">{error}</p></div>
         </Card>
       )}
       {success && (
         <Card className="border-emerald-500/30 bg-emerald-500/5 p-3 mb-4">
-          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" /><p className="text-sm text-emerald-400">{success}</p></div>
+          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" /><p className="text-sm text-emerald-600 dark:text-emerald-400">{success}</p></div>
         </Card>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-slate-800 mb-6">
+      <div className="border-b border-slate-200 dark:border-slate-800 mb-6">
         <nav className="flex gap-8">
           {(["leads", "sequences", "options", "analytics"] as const).map(tab => {
-            const labels = { leads: "Leads", sequences: "Secuencias", options: "Opciones", analytics: "Analítica" }
+            const labels = { leads: "Leads", sequences: "Secuencias", options: "Opciones", analytics: "Anal\u00edtica" }
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`pb-4 text-base font-medium border-b-2 transition-colors ${activeTab === tab ? "border-blue-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+                className={`pb-4 text-base font-medium border-b-2 transition-colors ${activeTab === tab ? "border-blue-600 dark:border-blue-500 text-slate-900 dark:text-white" : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"}`}
               >
                 {labels[tab]}
               </button>
@@ -540,67 +535,66 @@ export default function CampaignDetailPage() {
         </nav>
       </div>
 
-      {/* ─── Tab: Leads ─────────────────────────────────────────────────────── */}
       {activeTab === "leads" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   placeholder="Buscar lead..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="pl-9 bg-slate-950 border-slate-800"
+                  className="pl-9 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
                 />
               </div>
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Users className="w-4 h-4" />
                 <span>{leads.length} leads</span>
               </div>
             </div>
             <Button onClick={() => setShowAddLeadModal(true)} className="gap-2">
-              <Plus className="w-4 h-4" /> Añadir Leads
+              <Plus className="w-4 h-4" /> A\u00f1adir Leads
             </Button>
           </div>
 
           {filteredLeads.length === 0 ? (
-            <Card className="p-12 flex flex-col items-center justify-center gap-4 border-dashed border-slate-700 bg-slate-900/20">
-              <Users className="w-12 h-12 text-slate-600" />
+            <Card className="p-12 flex flex-col items-center justify-center gap-4 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20">
+              <Users className="w-12 h-12 text-slate-300 dark:text-slate-600" />
               <div className="text-center">
-                <p className="font-medium text-slate-300 mb-1">Sin leads aún</p>
-                <p className="text-sm text-slate-500">Añade leads para empezar tu campaña de outreach</p>
+                <p className="font-medium text-slate-600 dark:text-slate-300 mb-1">Sin leads a\u00fan</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">A\u00f1ade leads para empezar tu campa\u00f1a de outreach</p>
               </div>
               <Button onClick={() => setShowAddLeadModal(true)} variant="outline" className="gap-2">
-                <Plus className="w-4 h-4" /> Añadir Leads
+                <Plus className="w-4 h-4" /> A\u00f1adir Leads
               </Button>
             </Card>
           ) : (
-            <Card className="overflow-hidden">
+            <Card className="overflow-hidden border-slate-200 dark:border-slate-800">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-800 bg-slate-900/50">
-                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">CONTACTO</th>
-                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ESTADO</th>
-                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">EMPRESA</th>
-                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">CARGO</th>
-                      <th className="text-center px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ENVIAR</th>
-                      <th className="text-right px-5 py-4 text-sm font-semibold text-slate-400 tracking-wide">ACCIONES</th>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">CONTACTO</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">ESTADO</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">EMPRESA</th>
+                      <th className="text-left px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">CARGO</th>
+                      <th className="text-center px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">ENVIAR</th>
+                      <th className="text-right px-5 py-4 text-sm font-semibold text-slate-500 tracking-wide">ACCIONES</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredLeads.map(lead => (
-                      <tr key={lead.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                      <tr key={lead.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm font-bold flex-shrink-0 text-white shadow-sm">
                               {(lead.first_name?.[0] || "?").toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-200 text-sm">{lead.first_name} {lead.last_name}</p>
+                              <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{lead.first_name} {lead.last_name}</p>
                               {lead.linkedin_url && (
-                                <a href={lead.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-0.5">
+                                <a href={lead.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline mt-0.5">
                                   <Linkedin className="w-3 h-3" /> LinkedIn
                                 </a>
                               )}
@@ -610,40 +604,45 @@ export default function CampaignDetailPage() {
                         <td className="px-5 py-4">
                           <StatusBadge status={lead.status} sent={lead.sent_message} />
                         </td>
-                        <td className="px-5 py-4 text-slate-300 text-sm">{lead.company || "—"}</td>
-                        <td className="px-5 py-4 text-slate-400 text-sm">{lead.position || "—"}</td>
+                        <td className="px-5 py-4 text-slate-700 dark:text-slate-300 text-sm">{lead.company || "\u2014"}</td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400 text-sm">{lead.position || "\u2014"}</td>
                         <td className="px-5 py-4">
                           {lead.sent_message ? (
-                            <span className="text-xs text-emerald-500 flex justify-center mt-2 border border-emerald-500/20 bg-emerald-500/10 rounded px-2 py-1">✓ Enviado</span>
+                            <div className="flex justify-center">
+                              <Badge variant="success" className="text-[10px] px-2 py-0.5">\u2713 Enviado</Badge>
+                            </div>
                           ) : (
-                            <div className="flex flex-col gap-1.5 align-middle justify-center">
-                              <button
+                            <div className="flex flex-col gap-1.5 items-center">
+                              <Button
                                 onClick={() => sendToLead(lead, 0, false)}
                                 disabled={sendingLeadId === lead.id || !lead.linkedin_url}
-                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto w-24"
-                                title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name}`}
+                                size="sm"
+                                className="h-7 px-3 text-[11px] font-semibold w-24 shadow-sm"
+                                title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitaci\u00f3n' : 'mensaje'} a ${lead.first_name}`}
                               >
                                 {sendingLeadId === lead.id ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                 ) : (
                                   <Send className="w-3.5 h-3.5" />
                                 )}
-                                Enviar
-                              </button>
-                              <button
+                                <span className="ml-1.5">Enviar</span>
+                              </Button>
+                              <Button
                                 onClick={() => sendToLead(lead, 0, true)}
                                 disabled={sendingLeadId === lead.id || !lead.linkedin_url}
-                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed mx-auto w-24"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-3 text-[11px] font-medium w-24 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                                 title="Genera el texto con IA y comprueba si funciona sin enviarlo realmente"
                               >
                                 <Bot className="w-3.5 h-3.5" />
-                                Simular
-                              </button>
+                                <span className="ml-1.5">Simular</span>
+                              </Button>
                             </div>
                           )}
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-400" onClick={() => setLeadToDelete(lead.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => setLeadToDelete(lead.id)}>
                             <X className="w-4 h-4" />
                           </Button>
                         </td>
@@ -657,73 +656,70 @@ export default function CampaignDetailPage() {
         </div>
       )}
 
-      {/* ─── Tab: Secuencias ────────────────────────────────────────────────── */}
       {activeTab === "sequences" && (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Panel izquierdo - lista de pasos */}
           <div className="lg:col-span-2 space-y-3">
             {steps.map((step, index) => (
               <div key={step.id}>
                 {index > 0 && (
-                  <div className="flex flex-col items-center py-2 text-slate-500">
-                    <div className="h-4 w-px bg-slate-800" />
-                    <div className="flex items-center gap-1.5 text-sm font-medium bg-slate-900 px-4 py-1.5 rounded-full border border-slate-800 my-1">
+                  <div className="flex flex-col items-center py-2 text-slate-400 dark:text-slate-500">
+                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
+                    <div className="flex items-center gap-1.5 text-sm font-medium bg-slate-50 dark:bg-slate-900 px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 my-1">
                       <Clock className="w-3.5 h-3.5" />
                       Esperar {formatDelay(step.delayDays, step.delayUnit)}
                     </div>
-                    <div className="h-4 w-px bg-slate-800" />
+                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
                   </div>
                 )}
                 <Card
                   onClick={() => setActiveStepId(step.id)}
-                  className={`p-4 cursor-pointer transition-all ${activeStepId === step.id ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-500"}`}
+                  className={`p-4 cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${activeStepId === step.id ? "border-blue-500 bg-blue-50/30 dark:bg-blue-500/5 ring-1 ring-blue-500/20" : "hover:border-slate-400 dark:hover:border-slate-500 bg-white dark:bg-slate-900"}`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs px-2 py-0.5">Paso {index + 1}</Badge>
-                      <span className="text-sm font-medium text-slate-300">
-                        {step.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"}
+                      <Badge variant="outline" className="font-mono text-[10px] px-2 py-0.5 border-slate-200 dark:border-slate-700">Paso {index + 1}</Badge>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {step.type === "invitation" ? "\u2709\ufe0f Invitaci\u00f3n" : "\ud83d\udcac Mensaje"}
                       </span>
                     </div>
                     <div className="flex items-center gap-0.5">
                       {index > 0 && (
-                        <button className="p-1 text-slate-500 hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "up") }} title="Subir">↑</button>
+                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "up") }} title="Subir">\u2191</button>
                       )}
                       {index < steps.length - 1 && (
-                        <button className="p-1 text-slate-500 hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "down") }} title="Bajar">↓</button>
+                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "down") }} title="Bajar">\u2193</button>
                       )}
                       {index > 0 && (
-                        <button className="p-1 text-slate-500 hover:text-red-400" onClick={e => { e.stopPropagation(); removeStep(step.id) }} title="Eliminar">
+                        <button className="p-1 text-slate-400 hover:text-red-500" onClick={e => { e.stopPropagation(); removeStep(step.id) }} title="Eliminar">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-slate-400 truncate mt-1">{step.content || "Sin contenido aún…"}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 truncate mt-1">{step.content || "Sin contenido a\u00fan\u2026"}</p>
                 </Card>
               </div>
             ))}
 
-            <Button variant="outline" className="w-full border-dashed border-slate-700 text-slate-400 hover:text-white gap-2" onClick={addStep}>
-              <Plus className="w-4 h-4" /> Añadir Paso
+            <Button variant="outline" className="w-full border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white gap-2 bg-transparent" onClick={addStep}>
+              <Plus className="w-4 h-4" /> A\u00f1adir Paso
             </Button>
           </div>
 
-          {/* Panel derecho - editor del paso */}
           <div className="lg:col-span-3">
             {activeStep ? (
-              <Card className="p-6 space-y-5 h-full">
+              <Card className="p-6 space-y-5 h-full border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-200">
-                    {activeStep.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"} — Paso {steps.findIndex(s => s.id === activeStep.id) + 1}
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                    {activeStep.type === "invitation" ? "\u2709\ufe0f Invitaci\u00f3n" : "\ud83d\udcac Mensaje"} \u2014 Paso {steps.findIndex(s => s.id === activeStep.id) + 1}
                   </h3>
                   {steps.findIndex(s => s.id === activeStep.id) > 0 && (
                     <select
                       value={activeStep.type}
                       onChange={e => updateStep(activeStep.id, { type: e.target.value as "invitation" | "message" })}
-                      className="text-xs bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-slate-300"
+                      className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none"
                     >
-                      <option value="invitation">Invitación</option>
+                      <option value="invitation">Invitaci\u00f3n</option>
                       <option value="message">Mensaje</option>
                     </select>
                   )}
@@ -731,235 +727,138 @@ export default function CampaignDetailPage() {
 
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-slate-400">Mensaje</label>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Mensaje de Outreach</label>
                     <button
                       onClick={() => updateStep(activeStep.id, { content: "" })}
-                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"
+                      className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
                     >
-                      <Trash2 className="w-3 h-3" /> No enviar mensaje
+                      <Trash2 className="w-3 h-3" /> Limpiar contenido
                     </button>
                   </div>
                   <textarea
                     ref={messageTextareaRef}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-44"
-                    placeholder="Escribe tu mensaje aquí... Usa las variables de abajo para personalizarlo."
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none h-44 shadow-inner"
+                    placeholder="Escribe tu mensaje aqu\u00ed... Usa las variables de abajo para personalizarlo."
                     value={activeStep.content}
                     onChange={e => updateStep(activeStep.id, { content: e.target.value })}
                   />
                   {activeStep.type === "invitation" && (
-                    <div className={`text-xs mt-1 text-right ${activeStep.content.length > 200 ? 'text-red-400 font-bold' : 'text-slate-500'}`}>
+                    <div className={`text-[11px] mt-2 text-right font-medium ${activeStep.content.length > 200 ? 'text-red-500 transition-colors' : 'text-slate-500'}`}>
                       {activeStep.content.length} / 200 caracteres
-                      {activeStep.content.length > 200 && ' ⚠️ Es posible que exceda el límite de LinkedIn (200 recomendado)'}
+                      {activeStep.content.length > 200 && ' \u26a0 Supera l\u00edmite recomendado'}
                     </div>
                   )}
 
-                  {/* Variable chips — click to insert at cursor */}
-                  <div className="mt-2 space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {['nombre', 'apellido', 'empresa', 'cargo', 'sector'].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => insertVariable(v)}
-                          className="text-xs px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:border-slate-600 font-mono transition-colors"
-                          title={`Insertar ${v}`}
-                        >
-                          {`{{${v}}}`}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className="text-[10px] text-purple-400 font-medium self-center mr-1 uppercase">Variables IA Avanzadas:</span>
-                      {['comentario_post', 'especializacion', 'experiencia'].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => insertVariable(v)}
-                          className="text-xs px-2.5 py-1 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500/40 font-mono transition-colors"
-                          title={`Genera contenido con IA usando Apify para: ${v}`}
-                        >
-                          {`{{${v}}}`}
-                        </button>
-                      ))}
-                    </div>
-
-                    {customVarKeys.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="text-[10px] text-slate-500 self-center mr-1">Personalizadas:</span>
-                        {customVarKeys.map(v => (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">Variables B\u00e1sicas</span>
+                      <div className="flex flex-wrap gap-2">
+                        {['nombre', 'apellido', 'empresa', 'cargo', 'sector'].map(v => (
                           <button
                             key={v}
                             type="button"
                             onClick={() => insertVariable(v)}
-                            className="text-xs px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/25 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/40 font-mono transition-colors"
-                            title={`Insertar variable personalizada: ${v}`}
+                            className="text-[11px] px-2.5 py-1.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-mono transition-all shadow-sm"
+                            title={`Insertar ${v}`}
                           >
                             {`{{${v}}}`}
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider block mb-2">Variables IA Avanzadas</span>
+                      <div className="flex flex-wrap gap-2">
+                        {['comentario_post', 'especializacion', 'experiencia'].map(v => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => insertVariable(v)}
+                            className="text-[11px] px-2.5 py-1.5 rounded bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/25 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 hover:border-purple-400 dark:hover:border-purple-500/40 font-mono transition-all shadow-sm"
+                            title={`Genera contenido con IA: ${v}`}
+                          >
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {customVarKeys.length > 0 && (
+                      <div>
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider block mb-2">Personalizadas</span>
+                        <div className="flex flex-wrap gap-2">
+                          {customVarKeys.map(v => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => insertVariable(v)}
+                              className="text-[11px] px-2.5 py-1.5 rounded bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/25 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:border-blue-400 dark:hover:border-blue-500/40 font-mono transition-all shadow-sm"
+                              title={`Insertar variable: ${v}`}
+                            >
+                              {`{{${v}}}`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {steps.findIndex(s => s.id === activeStep.id) > 0 && (
-                  <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/50">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-slate-500" />
-                      <p className="text-xs font-medium text-slate-200">Espera antes de este paso</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="999"
-                        className="w-16 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-sm text-center text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        value={activeStep.delayDays}
-                        onChange={e => updateStep(activeStep.id, { delayDays: Math.max(1, parseInt(e.target.value) || 1) })}
-                      />
-                      <select
-                        value={activeStep.delayUnit || 'days'}
-                        onChange={e => updateStep(activeStep.id, { delayUnit: e.target.value as SequenceStep['delayUnit'] })}
-                        className="bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="minutes">minutos</option>
-                        <option value="hours">horas</option>
-                        <option value="days">días</option>
-                        <option value="weeks">semanas</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-2">
-                  <Button onClick={() => saveCampaign()} disabled={saving} className="gap-2 w-full">
-                    <Save className="w-4 h-4" />
-                    {saving ? "Guardando..." : "Guardar Secuencia"}
-                  </Button>
-                </div>
               </Card>
             ) : (
-              <Card className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-8 border-dashed border-slate-700 bg-slate-900/20">
-                <MessageSquare className="w-10 h-10 text-slate-600 mb-3" />
-                <p className="text-slate-400">Selecciona un paso para editarlo</p>
-              </Card>
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+                <Settings className="w-8 h-8 opacity-20" />
+                <p>Selecciona un paso para editar</p>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ─── Tab: Opciones ──────────────────────────────────────────────────── */}
       {activeTab === "options" && (
-        <div className="space-y-4 max-w-3xl">
-          {/* Cuentas LinkedIn */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold text-slate-200">Cuentas de LinkedIn</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Selecciona las cuentas desde las que se enviará esta campaña</p>
-              </div>
-            </div>
-            {accounts.length === 0 ? (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
-                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                <p className="text-sm text-amber-300">No tienes cuentas conectadas. <Link to="/dashboard" className="underline">Conecta una cuenta</Link> primero.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {accounts.map(acc => {
-                  const isSelected = settings.linkedin_account_ids.includes(acc.id);
-                  return (
-                    <label
-                      key={acc.id}
-                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer overflow-hidden ${
-                        isSelected
-                          ? "border-blue-500 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
-                          : "border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={isSelected}
-                        onChange={e => {
-                          setSettings(s => ({
-                            ...s,
-                            linkedin_account_ids: e.target.checked
-                              ? [...s.linkedin_account_ids, acc.id]
-                              : s.linkedin_account_ids.filter(id => id !== acc.id),
-                          }))
-                        }}
-                      />
-                      {/* Avatar */}
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-inner transition-colors duration-500 ${
-                          isSelected
-                            ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
-                            : "bg-slate-800 text-slate-400"
-                        }`}
-                      >
-                        {acc.profile_name?.[0]?.toUpperCase() || "L"}
-                      </div>
-                      
-                      {/* Info */}
-                      <div className="flex-1 min-w-0 pr-6">
-                        <p className={`text-sm font-semibold truncate ${isSelected ? "text-blue-100" : "text-slate-300"}`}>
-                          {acc.profile_name || acc.username}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className={`w-2 h-2 rounded-full ${acc.is_valid ? "bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"}`} />
-                          <p className={`text-xs ${acc.is_valid ? "text-slate-400" : "text-red-400"}`}>
-                            {acc.is_valid ? "Conectada" : "Desconectada"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Selected Indicator */}
-                      {isSelected && (
-                        <div className="absolute top-4 right-4 text-blue-400 animate-in zoom-in spin-in-12 duration-300">
-                          <CheckCircle2 className="w-5 h-5 bg-slate-900 rounded-full" />
-                        </div>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          {/* Stop on reply */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-slate-200">Parar al recibir respuesta</h3>
-                <p className="text-xs text-slate-400 mt-0.5">No enviar más mensajes a un lead si ya ha respondido</p>
-              </div>
-              <Switch
-                checked={settings.stop_on_reply}
-                onCheckedChange={v => setSettings(s => ({ ...s, stop_on_reply: v }))}
-              />
+        <div className="max-w-4xl space-y-6">
+          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-4">Cuentas de LinkedIn</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Selecciona las cuentas que utilizar\u00e1 esta campa\u00f1a</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {accounts.map(acc => (
+                <div
+                  key={acc.id}
+                  onClick={() => {
+                    const ids = settings.linkedin_account_ids || []
+                    const newIds = ids.includes(acc.id) ? ids.filter(i => i !== acc.id) : [...ids, acc.id]
+                    setSettings({ ...settings, linkedin_account_ids: newIds })
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${settings.linkedin_account_ids.includes(acc.id)
+                    ? "bg-blue-50/50 dark:bg-blue-500/5 border-blue-500 shadow-sm"
+                    : "bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                    }`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm bg-gradient-to-br ${acc.is_valid ? "from-blue-500 to-blue-600" : "from-slate-400 to-slate-500"}`}>
+                    {acc.profile_name?.[0] || acc.username?.[0] || "L"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{acc.profile_name || acc.username}</p>
+                    <p className="text-xs text-slate-500 flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${acc.is_valid ? "bg-emerald-500" : "bg-red-500"}`} />
+                      {acc.is_valid ? "Conectada" : "Error de sesi\u00f3n"}
+                    </p>
+                  </div>
+                  <Switch checked={settings.linkedin_account_ids.includes(acc.id)} onCheckedChange={() => { }} />
+                </div>
+              ))}
+              {accounts.length === 0 && (
+                <div className="col-span-full py-10 text-center bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <p className="text-sm text-slate-500">No hay cuentas de LinkedIn conectadas.</p>
+                  <Button variant="link" asChild className="text-blue-600"><Link to="/dashboard/settings">Ir a Configuraci\u00f3n</Link></Button>
+                </div>
+              )}
             </div>
           </Card>
 
-          {/* Prompt de Personalización IA */}
-          <Card className="p-5">
-            <h3 className="font-semibold text-slate-200 mb-1">Prompt de Personalización IA</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Instrucciones que usará la IA para generar el texto de las variables avanzadas (Ej: {'{{comentario_post}}'}, {'{{especializacion}}'}). Se le pasará la info del perfil raspado.
-            </p>
-            <textarea
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24"
-              placeholder="Ej: Eres un experto en ventas. Escribe un comentario muy breve elogiando la experiencia más reciente o la bio de este lead de forma coloquial."
-              value={settings.ai_prompt || ""}
-              onChange={e => setSettings(s => ({ ...s, ai_prompt: e.target.value }))}
-            />
-          </Card>
-
-          {/* Límites diarios */}
-          <Card className="p-5">
-            <h3 className="font-semibold text-slate-200 mb-1">Límites diarios</h3>
-            <p className="text-xs text-slate-400 mb-4">Controla cuántas acciones se realizan cada día para evitar restricciones de LinkedIn</p>
+          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-1">L\u00edmites Diarios</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Controla el volumen de acciones para evitar restricciones de LinkedIn</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { key: "daily_limit_profiles", label: "Perfiles vistos" },
@@ -968,12 +867,12 @@ export default function CampaignDetailPage() {
                 { key: "daily_limit_visits", label: "Visitas perfil" },
               ].map(({ key, label }) => (
                 <div key={key}>
-                  <label className="text-xs text-slate-400 mb-1 block">{label}</label>
-                  <input
+                  <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 block uppercase tracking-tight">{label}</label>
+                  <Input
                     type="number"
                     min="1"
                     max="200"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-center font-semibold text-slate-800 dark:text-slate-100"
                     value={(settings as any)[key]}
                     onChange={e => setSettings(s => ({ ...s, [key]: parseInt(e.target.value) || 1 }))}
                   />
@@ -982,111 +881,116 @@ export default function CampaignDetailPage() {
             </div>
           </Card>
 
-          <Button onClick={() => saveCampaign()} disabled={saving} className="gap-2">
-            <Save className="w-4 h-4" />
-            {saving ? "Guardando..." : "Guardar Opciones"}
-          </Button>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => fetchAll()}>Descartar</Button>
+            <Button onClick={() => saveCampaign()} disabled={saving} className="gap-2 px-8 shadow-md">
+              <Save className="w-4 h-4" />
+              {saving ? "Guardando..." : "Guardar Opciones"}
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* ─── Tab: Analítica ─────────────────────────────────────────────────── */}
       {activeTab === "analytics" && (
-        <div className="space-y-5">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <Badge variant="outline" className={statusConfig[campaign.status]?.color}>
+            <Badge variant={statusConfig[campaign.status]?.variant} className="text-xs px-3 shadow-sm">
               {statusConfig[campaign.status]?.label}
             </Badge>
             {campaign.started_at && (
-              <p className="text-xs text-slate-400">
-                Iniciada: {new Date(campaign.started_at).toLocaleDateString("es-ES")}
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                Campa\u00f1a iniciada: {new Date(campaign.started_at).toLocaleDateString("es-ES")}
               </p>
             )}
           </div>
 
-          {/* Métricas */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             {[
-              { label: "Invitaciones", value: campaign.stats?.invitations || 0, icon: Mail, color: "text-blue-400" },
-              { label: "Aceptadas", value: campaign.stats?.accepted || 0, icon: CheckCircle2, color: "text-emerald-400" },
-              { label: "Mensajes", value: campaign.stats?.messages || 0, icon: MessageSquare, color: "text-amber-400" },
-              { label: "Respondidos", value: campaign.stats?.replied || 0, icon: TrendingUp, color: "text-purple-400" },
-              { label: "Visitas", value: campaign.stats?.visits || 0, icon: Eye, color: "text-cyan-400" },
+              { label: "Invitaciones", value: campaign.stats?.invitations || 0, icon: Mail, color: "text-blue-500 font-bold" },
+              { label: "Aceptadas", value: campaign.stats?.accepted || 0, icon: CheckCircle2, color: "text-emerald-500 font-bold" },
+              { label: "Mensajes", value: campaign.stats?.messages || 0, icon: MessageSquare, color: "text-amber-500 font-bold" },
+              { label: "Respondidos", value: campaign.stats?.replied || 0, icon: TrendingUp, color: "text-purple-500 font-bold" },
+              { label: "Visitas", value: campaign.stats?.visits || 0, icon: Eye, color: "text-cyan-500 font-bold" },
             ].map(({ label, value, icon: Icon, color }) => (
-              <Card key={label} className="p-4 flex flex-col items-center gap-1">
-                <Icon className={`w-5 h-5 ${color} mb-1`} />
-                <p className="text-xs text-slate-400">{label}</p>
-                <p className="text-2xl font-bold text-slate-100">{value}</p>
+              <Card key={label} className="p-5 flex flex-col items-center gap-1.5 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+                <div className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-900 mb-1`}>
+                  <Icon className={`w-5 h-5 ${color.split(' ')[0]}`} />
+                </div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                <p className={`text-2xl font-black text-slate-900 dark:text-slate-100`}>{value}</p>
               </Card>
             ))}
           </div>
 
-          {/* Leads en campaña */}
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <BarChart2 className="w-4 h-4 text-slate-400" />
-              <h3 className="font-semibold text-slate-200">Progreso de Leads</h3>
+          <Card className="p-6 border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart2 className="w-5 h-5 text-blue-500" />
+              <h3 className="font-bold text-slate-800 dark:text-slate-200 uppercase text-xs tracking-widest">Estado por Leads</h3>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
               {[
-                { label: "Total leads", value: leads.length },
-                { label: "Mensaje enviado", value: leads.filter(l => l.sent_message).length },
-                { label: "Pendientes", value: leads.filter(l => !l.sent_message).length },
-                { label: "Con email", value: leads.filter(l => l.email).length },
-                { label: "Con LinkedIn", value: leads.filter(l => l.linkedin_url).length },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
-                  <p className="text-xl font-bold text-slate-100">{value}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+                { label: "Total leads", value: leads.length, bg: "bg-slate-50 dark:bg-slate-950" },
+                { label: "Enviado", value: leads.filter(l => l.sent_message).length, bg: "bg-emerald-50 dark:bg-emerald-500/10" },
+                { label: "Pendientes", value: leads.filter(l => !l.sent_message).length, bg: "bg-blue-50 dark:bg-blue-500/10" },
+                { label: "Con email", value: leads.filter(l => l.email).length, bg: "bg-purple-50 dark:bg-purple-500/10" },
+                { label: "Con LinkedIn", value: leads.filter(l => l.linkedin_url).length, bg: "bg-amber-50 dark:bg-amber-500/10" },
+              ].map(({ label, value, bg }) => (
+                <div key={label} className={`${bg} rounded-xl p-4 border border-slate-100 dark:border-slate-800 text-center transition-transform hover:scale-[1.02]`}>
+                  <p className="text-2xl font-black text-slate-900 dark:text-slate-100 leading-none mb-1">{value}</p>
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-500 uppercase tracking-tighter">{label}</p>
                 </div>
               ))}
             </div>
           </Card>
 
           {campaign.status === "draft" && (
-            <Card className="p-5 border-dashed border-slate-700 bg-slate-900/20 text-center">
-              <Play className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-300 font-medium mb-1">La campaña no está activa</p>
-              <p className="text-sm text-slate-500 mb-4">Lanza la campaña desde el botón "Lanzar" para ver analíticas en tiempo real</p>
-              <Button onClick={toggleStatus} className="gap-2">
-                <Play className="w-4 h-4" /> Lanzar Campaña
+            <Card className="p-10 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 text-center shadow-inner">
+              <div className="w-16 h-16 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-100 dark:border-slate-700">
+                <Play className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+              </div>
+              <p className="text-slate-600 dark:text-slate-300 font-semibold mb-1">Campa\u00f1a en fase de borrador</p>
+              <p className="text-sm text-slate-500 dark:text-slate-500 mb-6 max-w-sm mx-auto">Configura tu secuencia y a\u00f1ade leads antes de lanzar para ver estad\u00edsticas de conversi\u00f3n</p>
+              <Button onClick={toggleStatus} className="gap-2 px-8 shadow-md" size="lg">
+                <Play className="w-4 h-4 fill-current" /> Lanzar Campa\u00f1a
               </Button>
             </Card>
           )}
         </div>
       )}
-      {/* ─── Confirmación: Eliminar lead ──────────────────────────────────────── */}
+
       {leadToDelete && (
         <div
-          className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setLeadToDelete(null)}
         >
-          <div
-            className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full space-y-4 shadow-2xl"
+          <Card
+            className="border-slate-200 dark:border-slate-700 p-6 max-w-sm w-full space-y-4 shadow-2xl bg-white dark:bg-slate-900"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                <Trash2 className="w-5 h-5 text-red-400" />
+              <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-slate-100">¿Eliminar este lead?</h3>
-                <p className="text-xs text-slate-500">Esta acción no se puede deshacer.</p>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100">\u00bfEliminar este lead?</h3>
+                <p className="text-xs text-slate-500">Cuidado: esta acci\u00f3n es irreversible.</p>
               </div>
             </div>
-            <p className="text-sm text-slate-400">El lead será eliminado de esta campaña permanentemente.</p>
-            <div className="flex gap-3 justify-end pt-1">
-              <Button variant="outline" onClick={() => setLeadToDelete(null)}>Cancelar</Button>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Se eliminar\u00e1 permanentemente de esta campa\u00f1a y de todas las secuencias asociadas.</p>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button variant="ghost" onClick={() => setLeadToDelete(null)} className="font-medium">Cancelar</Button>
               <Button
-                className="bg-red-500 hover:bg-red-600 border-0"
+                variant="destructive"
+                className="font-bold shadow-sm"
                 onClick={() => { removeLeadFromCampaign(leadToDelete); setLeadToDelete(null) }}
               >
-                Eliminar Lead
+                Eliminar definitivamente
               </Button>
             </div>
-          </div>
+          </Card>
         </div>
       )}
-      {/* ─── Modal: Importar Leads ───────────────────────────────────────────── */}
+
       {showAddLeadModal && id && (
         <LeadImportModal
           campaignId={id}
@@ -1098,16 +1002,14 @@ export default function CampaignDetailPage() {
   )
 }
 
-// ─── Helper: StatusBadge ─────────────────────────────────────────────────────
-
 function StatusBadge({ status, sent }: { status: string; sent: boolean }) {
-  if (sent) return <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-xs">✓ Enviado</Badge>
+  if (sent) return <Badge variant="success" className="text-[10px] px-2 py-0.5 shadow-sm">\u2713 Enviado</Badge>
   const map: Record<string, string> = {
-    new: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-    contacted: "bg-amber-500/10 border-amber-500/20 text-amber-400",
-    qualified: "bg-purple-500/10 border-purple-500/20 text-purple-400",
-    converted: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+    new: "bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400",
+    contacted: "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-400",
+    qualified: "bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20 text-purple-600 dark:text-purple-400",
+    converted: "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
   }
   const labels: Record<string, string> = { new: "Nuevo", contacted: "Contactado", qualified: "Cualificado", converted: "Convertido" }
-  return <Badge variant="outline" className={`${map[status] || map.new} text-xs`}>{labels[status] || "Nuevo"}</Badge>
+  return <Badge variant="outline" className={`${map[status] || map.new} text-[10px] px-2 py-0.5 font-bold shadow-sm`}>{labels[status] || "Nuevo"}</Badge>
 }
