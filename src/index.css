@@ -45,7 +45,6 @@ html.light table tbody tr:hover {
 html.light table thead tr:hover {
   background-color: transparent !important;
 }
-}
 
 /* Input/textarea/select native backgrounds */
 html.light input,
