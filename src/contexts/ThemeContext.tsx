@@ -1,6 +1,6 @@
 import * as React from "react"
 
-type Theme = "dark" | "light"
+type Theme = "dark"
 
 interface ThemeContextType {
   theme: Theme
@@ -13,23 +13,17 @@ export const ThemeContext = React.createContext<ThemeContextType>({
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = React.useState<Theme>(() => {
-    // If the user has manually set a preference, honour it
-    const stored = localStorage.getItem("theme") as Theme | null
-    if (stored === "light" || stored === "dark") return stored
-    // Otherwise follow the OS preference
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-  })
-
+  // Solo modo dark
+  const theme = "dark"
+  const setTheme = () => {}
   React.useEffect(() => {
     const root = document.documentElement
-    root.classList.remove("light", "dark")
-    if (theme === "light") root.classList.add("light")
+    root.classList.remove("light")
+    root.classList.add("dark")
     localStorage.setItem("theme", theme)
-  }, [theme])
-
+  }, [])
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: setThemeState }}>
+    <ThemeContext.Provider value={{ theme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   )
