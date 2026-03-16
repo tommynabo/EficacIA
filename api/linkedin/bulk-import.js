@@ -506,13 +506,32 @@ export default async function handler(req, res) {
 
         // Recuperar cookie de sesión requerida para Sales Navigator
         let liAt = bodyLiAt;
+        
         if (!liAt && account_id) {
-          liAt = await getLiAtFromUnipile(account_id);
+          // Buscar primero la cuenta en nuestra base de datos para obtener la cookie nativa o el ID real de Unipile
+          const { data: acc } = await supabaseAdmin
+            .from('linkedin_accounts')
+            .select('*')
+            .eq('id', account_id)
+            .single();
+
+          if (acc) {
+            if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
+              liAt = acc.session_cookie;
+            } else {
+              // Si la maneja Unipile, pasamos el ID correcto de Unipile o hacemos fallback al account_id
+              liAt = await getLiAtFromUnipile(acc.unipile_id || account_id);
+            }
+          } else {
+            liAt = await getLiAtFromUnipile(account_id);
+          }
         }
+
         if (!liAt) {
           liAt = await getLiAtForUser(userId);
         }
-        if (!liAt) {
+
+        if (!liAt || liAt.length < 20) {
           return res.status(400).json({ error: 'No se pudo obtener la cookie de sesión (li_at) requerida para Sales Navigator. Verifica la conexión de tu cuenta de LinkedIn.' });
         }
 

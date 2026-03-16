@@ -929,7 +929,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             {(loading || isPolling) ? (
               <>
                 <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                {isPolling ? (pollMessage || 'Buscando...') : 'Importando…'}
+                {isPolling ? (pollMessage || 'Buscando...') : 'Procesando...'}
               </>
             ) : importResult ? (
               <>
@@ -938,13 +938,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                {method === 'manual'
-                  ? 'Añadir Lead'
-                  : method === 'apollo'
-                  ? 'Buscar en LinkedIn'
-                  : method === 'csv' && csvStep === 'map' && csvRawData
-                  ? `Importar ${csvRawData.totalRows} leads`
-                  : 'Importar Leads'}
+                Añadir Leads
               </>
             )}
           </Button>
