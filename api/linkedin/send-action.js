@@ -394,6 +394,40 @@ async function sendMessage(unipileAccountId, linkedinId, message) {
   return await res.json();
 }
 
+/**
+ * Registra una cuenta en Unipile usando la cookie li_at.
+ */
+async function registerUnipileAccount(liAt) {
+  const dsn = (process.env.UNIPILE_DSN || '').trim();
+  const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+  if (!dsn || !apiKey) throw new Error('Unipile configuration missing');
+
+  try {
+    console.log('[SEND-ACTION][UNIPILE] Lazy connection: registering cookie account...');
+    const response = await fetch(`https://${dsn}/api/v1/accounts`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-API-KEY': apiKey,
+      },
+      body: JSON.stringify({
+        type: 'LINKEDIN',
+        connection_params: {
+          linkedin_cookie: liAt
+        }
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `Status ${response.status}`);
+    console.log('[SEND-ACTION][UNIPILE] Lazy connection successful:', data.id);
+    return data.id;
+  } catch (err) {
+    console.error('[SEND-ACTION][UNIPILE] Lazy connection failed:', err.message);
+    throw err;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -429,11 +463,34 @@ export default async function handler(req, res) {
     // Fetch the LinkedIn account
     const { data: account, error: accErr } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id, unipile_account_id, profile_name')
+      .select('id, unipile_account_id, profile_name, session_cookie')
       .eq('id', accountId)
       .single();
-    if (accErr || !account || !account.unipile_account_id) {
-      return res.status(400).json({ error: 'Cuenta de LinkedIn no encontrada o no conectada vía Unipile' });
+    
+    if (accErr || !account) return res.status(400).json({ error: 'Cuenta de LinkedIn no encontrada' });
+
+    let activeUnipileId = account.unipile_account_id;
+
+    // --- Lazy Unipile Connection ---
+    if (!activeUnipileId && account.session_cookie && account.session_cookie.length > 20) {
+      console.log(`[SEND-ACTION] Account ${accountId} missing Unipile ID but has cookie. Linking now...`);
+      try {
+        activeUnipileId = await registerUnipileAccount(account.session_cookie);
+        // Update DB so next time it's already there
+        await supabaseAdmin
+          .from('linkedin_accounts')
+          .update({ 
+            unipile_account_id: activeUnipileId,
+            connection_method: 'unipile'
+          })
+          .eq('id', accountId);
+      } catch (linkErr) {
+        return res.status(400).json({ error: `Error conectando cuenta a Unipile: ${linkErr.message}` });
+      }
+    }
+
+    if (!activeUnipileId) {
+      return res.status(400).json({ error: 'Cuenta de LinkedIn no está conectada vía Unipile (ID faltante)' });
     }
 
     const linkedinId = extractLinkedInId(lead.linkedin_url);
@@ -508,9 +565,9 @@ export default async function handler(req, res) {
     let result = { simulated: true };
     if (!simulate) {
       if (actionType === 'invitation') {
-        result = await sendInvitation(account.unipile_account_id, linkedinId, finalMessage);
+        result = await sendInvitation(activeUnipileId, linkedinId, finalMessage);
       } else if (actionType === 'message') {
-        result = await sendMessage(account.unipile_account_id, linkedinId, finalMessage);
+        result = await sendMessage(activeUnipileId, linkedinId, finalMessage);
       } else {
         return res.status(400).json({ error: `Tipo de acción no soportado: ${actionType}` });
       }

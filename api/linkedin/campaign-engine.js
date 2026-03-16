@@ -253,6 +253,10 @@ export default async function handler(req, res) {
       await supabaseAdmin.from('campaigns').update({
         sent_count: sentCount || 0,
         updated_at: now,
+        settings: {
+          ...campaign.settings,
+          last_heartbeat_at: now
+        }
       }).eq('id', campaign.id);
     }
 

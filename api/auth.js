@@ -130,7 +130,11 @@ async function handleMe(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const updates = req.body || {};
+      const { full_name, timezone } = req.body || {};
+      const updates = {};
+      if (full_name !== undefined) updates.full_name = full_name;
+      if (timezone !== undefined) updates.timezone = timezone;
+      
       const { data: user, error } = await supabase.from('users').update(updates).eq('id', decoded.userId).select().single();
       if (error) return res.status(400).json({ error: error.message });
       return res.status(200).json(user);

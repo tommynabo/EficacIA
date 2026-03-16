@@ -139,6 +139,55 @@ async function validateWithFeedCheck(liAt) {
   }
 }
 
+/**
+ * Registra una cuenta en Unipile usando la cookie li_at.
+ * Esto permite que las cuentas conectadas por cookie funcionen con el motor de campañas.
+ */
+async function registerUnipileAccount(liAt) {
+  const dsn = (process.env.UNIPILE_DSN || '').trim();
+  const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+
+  if (!dsn || !apiKey) {
+    console.error('[UNIPILE] Falta configuración (DSN/API_KEY)');
+    return { success: false, error: 'Configuración de Unipile incompleta en el servidor' };
+  }
+
+  try {
+    console.log('[UNIPILE] Intentando registro directo con cookie...');
+    const response = await fetch(`https://${dsn}/api/v1/accounts`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-API-KEY': apiKey,
+      },
+      body: JSON.stringify({
+        type: 'LINKEDIN',
+        connection_params: {
+          linkedin_cookie: liAt // Formato estándar de Unipile para conexión directa por cookie
+        }
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('[UNIPILE] Error en registro:', response.status, data);
+      return { 
+        success: false, 
+        error: data.message || `Error status ${response.status}` 
+      };
+    }
+
+    console.log('[UNIPILE] Registro exitoso. Account ID:', data.id);
+    return { success: true, accountId: data.id };
+
+  } catch (err) {
+    console.error('[UNIPILE] Error de conexión:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -227,6 +276,7 @@ export default async function handler(req, res) {
         username,
         profile_name: profileName,
         session_cookie: liAtClean,
+        connection_method: 'cookie',
         is_valid: true,
         last_validated_at: new Date().toISOString(),
       })
@@ -237,6 +287,26 @@ export default async function handler(req, res) {
       console.error('[DB] Error insertando cuenta:', insertError.message);
       return res.status(500).json({ error: insertError.message });
     }
+
+    // Intentar registrar en Unipile asíncronamente (para no bloquear la respuesta)
+    // Pero devolvemos el ID de la cuenta creada en nuestra DB
+    registerUnipileAccount(liAtClean).then(async (unipile) => {
+      if (unipile.success) {
+        await supabaseAdmin
+          .from('linkedin_accounts')
+          .update({ 
+            unipile_account_id: unipile.accountId,
+            connection_method: 'unipile', // Marcamos como vinculado
+            last_unipile_error: null
+          })
+          .eq('id', account.id);
+      } else {
+        await supabaseAdmin
+          .from('linkedin_accounts')
+          .update({ last_unipile_error: unipile.error })
+          .eq('id', account.id);
+      }
+    }).catch(console.error);
 
     return res.status(200).json({
       success: true,
