@@ -331,9 +331,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       setCookieError('')
       const text = await navigator.clipboard.readText()
       const liAt = text.trim()
-      if (!liAt || liAt.length < 20) {
+
+      // Validate: li_at cookies are long alphanumeric strings (no spaces, newlines, brackets)
+      if (!liAt || liAt.length < 50 || /[\s\n\r\[\]{}"']/.test(liAt)) {
         setCookieStatus('error')
-        setCookieError('El portapapeles no contiene una cookie v\u00e1lida. Usa el bookmarklet primero.')
+        setCookieError('El portapapeles no contiene una cookie válida. Primero ve a linkedin.com y haz clic en el bookmarklet "📎 EficacIA Cookie".')
         return
       }
       // Save via existing accounts API
