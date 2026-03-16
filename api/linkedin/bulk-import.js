@@ -162,10 +162,10 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
 // Frontend polls GET /api/linkedin/bulk-import?poll_token=xxx every 3s.
 //
 // Apify actor docs:
-//   LinkedIn search: https://apify.com/curious_coder/linkedin-search-scraper
-//   Sales Navigator: https://apify.com/bebity/linkedin-sales-navigator-scraper
-const ACTOR_LINKEDIN  = 'curious_coder~linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'bebity~linkedin-sales-navigator-scraper';
+//   LinkedIn search: https://apify.com/apify/linkedin-search-scraper
+//   Sales Navigator: https://apify.com/apify/linkedin-sales-navigator-scraper
+const ACTOR_LINKEDIN  = 'apify/linkedin-search-scraper';
+const ACTOR_SALES_NAV = 'apify/linkedin-sales-navigator-scraper';
 const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
@@ -487,158 +487,98 @@ export default async function handler(req, res) {
         const csvText = await fetchGoogleSheetsCsv(url);
         rawLeads = parseCsvToLeads(csvText);
 
-      // ── Apollo → Unipile Native LinkedIn Search (No cookies needed) ─────────
+      // ── Apollo → Google LinkedIn people search (no li_at needed) ──────────────
       } else if (importType === 'apollo') {
         const q = apollo_query || {};
         if (!q.titles && !q.keywords && !q.companies) {
           return res.status(400).json({ error: 'Introduce al menos un cargo, empresa o palabra clave.' });
         }
         const searchLimit = Math.min(limit, 50);
-        
-        // 1. Resolve Unipile Account ID
-        let unipileAccId = null;
-        if (account_id) {
-          const { data: dbAcc } = await supabaseAdmin
-            .from('linkedin_accounts')
-            .select('unipile_account_id')
-            .eq('id', account_id)
-            .single();
-          unipileAccId = dbAcc?.unipile_account_id;
-        }
-        if (!unipileAccId) {
-          const { data: mainAcc } = await supabaseAdmin.from('linkedin_accounts').select('unipile_account_id').eq('team_id', teamId).eq('is_valid', true).not('unipile_account_id', 'is', null).limit(1).single();
-          unipileAccId = mainAcc?.unipile_account_id;
-        }
-        if (!unipileAccId) throw new Error('No se ha encontrado una cuenta de LinkedIn conectada a Unipile.');
-
-        console.log('[APOLLO/UNIP] Starting Unipile Native Search for account:', unipileAccId);
-        
-        const dsn    = (process.env.UNIPILE_DSN    || '').trim();
-        const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
-        
-        const searchRes = await fetch(`https://${dsn}/api/v1/linkedin/search?account_id=${unipileAccId}&limit=${searchLimit}`, {
-          method: 'POST',
-          headers: {
-            'X-API-KEY': apiKey,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            api: 'classic',
-            category: 'people',
-            keywords: q.keywords || undefined,
-            job_title: q.titles ? q.titles.split(',')[0].trim() : undefined, // Unipile might only take one or needs IDs. Keywords is safer for multiple.
-          })
+        const googleQuery = buildGoogleLinkedInQuery(q);
+        console.log('[GOOGLE] apollo query:', googleQuery);
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
+        const pollToken = jwt.sign(
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
+          process.env.JWT_SECRET || 'dev-secret',
+          { expiresIn: '10m' }
+        );
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-        if (!searchRes.ok) throw new Error(`Error en búsqueda Unipile (${searchRes.status})`);
-
-        const searchData = await searchRes.json();
-        rawLeads = extractProfilesFromUnipileSearch(searchData.items || [], searchLimit);
-
-      // ── LinkedIn Search URL → Unipile Native Search (No cookies needed) ───
+      // ── LinkedIn Search URL → Google (no li_at needed) ───────────────────────
       } else if (importType === 'linkedin_search') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de búsqueda' });
         const searchLimit = Math.min(limit, 50);
-        
-        // Resolve Unipile Account ID
-        let unipileAccId = null;
-        if (account_id) {
-          const { data: dbAcc } = await supabaseAdmin.from('linkedin_accounts').select('unipile_account_id').eq('id', account_id).single();
-          unipileAccId = dbAcc?.unipile_account_id;
+        // Extract keywords from the LinkedIn search URL and build a Google query
+        let googleQuery;
+        try {
+          const normalizedUrl = url.trim().startsWith('http') ? url.trim() : 'https://' + url.trim();
+          const urlObj = new URL(normalizedUrl);
+          const keywords = urlObj.searchParams.get('keywords') || '';
+          googleQuery = buildGoogleLinkedInQuery({ keywords });
+        } catch {
+          googleQuery = `site:linkedin.com/in ${url}`;
         }
-        if (!unipileAccId) {
-          const { data: mainAcc } = await supabaseAdmin.from('linkedin_accounts').select('unipile_account_id').eq('team_id', teamId).eq('is_valid', true).not('unipile_account_id', 'is', null).limit(1).single();
-          unipileAccId = mainAcc?.unipile_account_id;
-        }
-        if (!unipileAccId) throw new Error('No se ha encontrado una cuenta de LinkedIn conectada a Unipile.');
-
-        console.log('[LI-SEARCH/UNIP] Starting Unipile Native Search for account:', unipileAccId);
-        
-        const dsn    = (process.env.UNIPILE_DSN    || '').trim();
-        const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
-        
-        const searchRes = await fetch(`https://${dsn}/api/v1/linkedin/search?account_id=${unipileAccId}&limit=${searchLimit}`, {
-          method: 'POST',
-          headers: {
-            'X-API-KEY': apiKey,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            api: url.includes('/sales/') ? 'SALES_NAVIGATOR' : 'classic',
-            category: 'people',
-            url: url
-          })
+        console.log('[GOOGLE] linkedin_search query:', googleQuery);
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
+        const pollToken = jwt.sign(
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
+          process.env.JWT_SECRET || 'dev-secret',
+          { expiresIn: '10m' }
+        );
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-        if (!searchRes.ok) throw new Error(`Error en búsqueda Unipile (${searchRes.status})`);
-
-        const searchData = await searchRes.json();
-        rawLeads = extractProfilesFromUnipileSearch(searchData.items || [], searchLimit);
-
-      // ── Sales Navigator → Unipile Native Search (NO Cookies needed) ────────
+      // ── Sales Navigator → Apify Scraper ────────────────────────────
       } else if (importType === 'sales_navigator') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
         const searchLimit = Math.min(limit, 50);
 
-        // 1. Resolve Unipile Account ID
-        let unipileAccId = null;
-        if (account_id) {
-          const { data: dbAcc } = await supabaseAdmin
+        // Resolve Session Cookie (li_at)
+        let liAt = bodyLiAt;
+        
+        if (!liAt && account_id) {
+          const { data: acc } = await supabaseAdmin
             .from('linkedin_accounts')
-            .select('unipile_account_id')
+            .select('*')
             .eq('id', account_id)
             .single();
-          unipileAccId = dbAcc?.unipile_account_id;
-        }
-        
-        // Fallback for user's main connected account if specific ID not found
-        if (!unipileAccId) {
-          const { data: mainAcc } = await supabaseAdmin
-            .from('linkedin_accounts')
-            .select('unipile_account_id')
-            .eq('team_id', teamId)
-            .eq('is_valid', true)
-            .not('unipile_account_id', 'is', null)
-            .limit(1)
-            .single();
-          unipileAccId = mainAcc?.unipile_account_id;
+
+          if (acc) {
+            if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
+              liAt = acc.session_cookie;
+            } else if (acc.unipile_account_id) {
+              liAt = await getLinkedInCookiesFromUnipile(acc.unipile_account_id);
+            }
+          }
         }
 
-        if (!unipileAccId) throw new Error('No se ha encontrado una cuenta de LinkedIn conectada a Unipile para realizar la búsqueda.');
+        if (!liAt) liAt = await getLiAtForUser(userId);
 
-        console.log('[SALES NAV] Starting Unipile Native Search for account:', unipileAccId);
-        
-        const dsn    = (process.env.UNIPILE_DSN    || '').trim();
-        const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
-        
-        const searchRes = await fetch(`https://${dsn}/api/v1/linkedin/search?account_id=${unipileAccId}&limit=${searchLimit}`, {
-          method: 'POST',
-          headers: {
-            'X-API-KEY': apiKey,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            api: 'SALES_NAVIGATOR',
-            category: 'people',
-            url: url
-          })
+        if (!liAt || liAt.length < 20) {
+          return res.status(400).json({ error: 'No se pudo obtener la cookie de sesión (li_at) requerida. Por favor, realiza una conexión manual o pega la cookie li_at en el modal.' });
+        }
+
+        console.log('[SALES NAV] Starting run with actor:', ACTOR_SALES_NAV);
+        const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
+          searchUrl: url,
+          cookie: liAt,
+          li_at: liAt,
+          limit: searchLimit,
         });
 
-        if (!searchRes.ok) {
-          const errText = await searchRes.text();
-          console.error('[UNIPILE SEARCH ERR]', searchRes.status, errText);
-          throw new Error(`Error en búsqueda nativa de Unipile (${searchRes.status}): ${errText.slice(0, 100)}`);
-        }
-
-        const searchData = await searchRes.json();
-        const items = searchData.items || [];
-        console.log(`[SALES NAV] Unipile returned ${items.length} leads directly.`);
-        
-        rawLeads = extractProfilesFromUnipileSearch(items, searchLimit);
-        // If we have leads directly, we don't return a poll_token, we proceed to insert.
+        const pollToken = jwt.sign(
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'sales_navigator' },
+          process.env.JWT_SECRET || 'dev-secret',
+          { expiresIn: '10m' }
+        );
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Extrayendo resultados de Sales Navigator...' });
 
       // ── Manual single lead ────────────────────────────────────────────────
       } else if (importType === 'manual') {
