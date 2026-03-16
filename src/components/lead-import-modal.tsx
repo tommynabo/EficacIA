@@ -321,8 +321,10 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [cookieStatus, setCookieStatus] = React.useState<'none' | 'saving' | 'saved' | 'error'>('none')
   const [cookieError, setCookieError] = React.useState('')
 
-  // Bookmarklet JS (copies li_at cookie to clipboard)
-  const bookmarkletCode = `javascript:(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('\u274c No se encontr\u00f3 la cookie li_at.\n\nAseg\u00farate de estar logueado en LinkedIn.');return;}navigator.clipboard.writeText(c[1]).then(function(){alert('\u2705 Cookie copiada!\n\nVe a EficacIA y haz clic en "Pegar Cookie".');}).catch(function(){prompt('Copia manualmente:',c[1]);});})()`
+  // Bookmarklet: extracts li_at from linkedin.com cookies and opens EficacIA
+  // with the cookie in the URL hash (hash fragments never reach the server = secure)
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://eficac-ia.vercel.app'
+  const bookmarkletCode = `javascript:void(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('No se encontró cookie li_at. Asegúrate de estar logueado en LinkedIn.');return;}window.open('${appUrl}/campaigns#li_at_connect='+encodeURIComponent(c[1]),'_blank');alert('Cookie enviada a EficacIA!');}())`
   const bookmarkletRef = React.useRef<HTMLAnchorElement>(null)
   React.useEffect(() => {
     if (bookmarkletRef.current) {
@@ -330,21 +332,11 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
     }
   }, [bookmarkletCode])
 
-  // Paste cookie from clipboard and auto-save
-  const handlePasteCookie = async () => {
+  // Save a cookie value via the accounts API
+  const saveCookieToAccount = async (liAt: string) => {
+    setCookieStatus('saving')
+    setCookieError('')
     try {
-      setCookieStatus('saving')
-      setCookieError('')
-      const text = await navigator.clipboard.readText()
-      const liAt = text.trim()
-
-      // Validate: li_at cookies are long alphanumeric strings (no spaces, newlines, brackets)
-      if (!liAt || liAt.length < 50 || /[\s\n\r\[\]{}"']/.test(liAt)) {
-        setCookieStatus('error')
-        setCookieError('El portapapeles no contiene una cookie válida. Primero ve a linkedin.com y haz clic en el bookmarklet "📎 EficacIA Cookie".')
-        return
-      }
-      // Save via existing accounts API
       const res = await fetch('/api/linkedin/accounts', {
         method: 'POST',
         headers: { ...getApiHeaders(), 'Content-Type': 'application/json' },
@@ -358,16 +350,14 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
       }
       setCookieStatus('saved')
       // Refresh accounts list
-      fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
-        .then(r => r.json())
-        .then(d => {
-          const accs: Account[] = (d.accounts || [])
-          setAccounts(accs)
-          if (accs.length > 0 && !selectedAccountId) setSelectedAccountId(accs[0].id)
-        })
-    } catch (err: any) {
+      const accRes = await fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
+      const accData = await accRes.json()
+      const accs: Account[] = (accData.accounts || [])
+      setAccounts(accs)
+      if (accs.length > 0 && !selectedAccountId) setSelectedAccountId(accs[0].id)
+    } catch {
       setCookieStatus('error')
-      setCookieError('No se pudo leer el portapapeles. Permite el acceso o pega manualmente.')
+      setCookieError('Error de conexión al guardar la cookie.')
     }
   }
 
@@ -385,6 +375,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [pollToken, setPollToken] = React.useState<string | null>(null)
   const [pollMessage, setPollMessage] = React.useState('')
 
+  // On mount: fetch accounts AND check URL hash for bookmarklet cookie
   React.useEffect(() => {
     fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
       .then(r => r.json())
@@ -893,32 +884,22 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                     📎 EficacIA Cookie
                   </a>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <span className="text-slate-300 font-semibold">Paso 2:</span> Ve a <span className="text-blue-400">linkedin.com</span> y haz clic en el marcador.
+                    <span className="text-slate-300 font-semibold">Paso 2:</span> Ve a <span className="text-blue-400">linkedin.com</span> (logueado) y haz clic en el marcador. Se abrirá EficacIA automáticamente con la cookie.
                   </p>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <span className="text-slate-300 font-semibold">Paso 3:</span> Vuelve aquí y pulsa:
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePasteCookie}
-                    disabled={cookieStatus === 'saving'}
-                    className={cn(
-                      'w-full text-xs font-bold',
-                      cookieStatus === 'saved' && 'border-emerald-500/50 text-emerald-400',
-                      cookieStatus === 'error' && 'border-red-500/50 text-red-400',
-                    )}
-                  >
-                    {cookieStatus === 'saving' ? 'Guardando...' :
-                     cookieStatus === 'saved' ? '✓ Cookie guardada correctamente' :
-                     '📋 Pegar Cookie'}
-                  </Button>
-                  {cookieStatus === 'error' && cookieError && (
-                    <p className="text-[10px] text-red-400">{cookieError}</p>
+                  {cookieStatus === 'saving' && (
+                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                      <Zap className="w-3 h-3 animate-pulse" /> Guardando cookie...
+                    </div>
                   )}
                   {cookieStatus === 'saved' && (
-                    <p className="text-[10px] text-emerald-400">¡Listo! Ahora puedes importar leads de Sales Navigator.</p>
+                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+                      <Check className="w-3 h-3" /> ¡Cookie guardada! Ya puedes importar leads de Sales Navigator.
+                    </div>
+                  )}
+                  {cookieStatus === 'error' && cookieError && (
+                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+                      <AlertCircle className="w-3 h-3" /> {cookieError}
+                    </div>
                   )}
                 </div>
               </div>
