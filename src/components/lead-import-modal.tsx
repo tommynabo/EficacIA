@@ -768,18 +768,9 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
               <LimitSlider value={liSearchLimit} onChange={setLiSearchLimit} />
 
-              <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-slate-400">LinkedIn Cookie (li_at)</label>
-                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Opcional / Override</label>
-                </div>
-                <Input
-                  value={manualLiAt}
-                  onChange={e => setManualLiAt(e.target.value)}
-                  placeholder="Paste li_at cookie here..."
-                  className="bg-slate-950 border-slate-700 text-sm font-mono"
-                />
-                <p className="text-[10px] text-slate-500">Unipile intentará obtener tu conexión, pero si falla puedes pegarla aquí. <span className="text-slate-400">DevTools → Aplicación → Cookies</span>.</p>
+              <div className="flex items-center gap-2 p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>Búsqueda automática activada (vía Apify).</span>
               </div>
             </div>
           )}
@@ -829,18 +820,9 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
               <LimitSlider value={snLimit} onChange={setSnLimit} />
 
-              <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-slate-400">LinkedIn Cookie (li_at)</label>
-                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Recomendado</label>
-                </div>
-                <Input
-                  value={manualLiAt}
-                  onChange={e => setManualLiAt(e.target.value)}
-                  placeholder="Paste li_at cookie here..."
-                  className="bg-slate-950 border-slate-700 text-sm font-mono"
-                />
-                <p className="text-[10px] text-slate-500">Obligatorio si la cuenta de Unipile falla. Búscala en <span className="text-slate-400">linkedin.com</span> → Inspeccionar → Aplicación → Cookies.</p>
+              <div className="flex items-center gap-2 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>Extracción de Sales Navigator automática (Sin necesidad de cookies).</span>
               </div>
             </div>
           )}

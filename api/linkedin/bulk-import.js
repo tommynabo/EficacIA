@@ -163,9 +163,9 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
 //
 // Apify actor docs:
 //   LinkedIn search: https://apify.com/apify/linkedin-search-scraper
-//   Sales Navigator: https://apify.com/apify/linkedin-sales-navigator-scraper
+//   Sales Navigator: https://apify.com/bestscrapers/linkedin-sales-navigator-scraper
 const ACTOR_LINKEDIN  = 'apify/linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'apify/linkedin-sales-navigator-scraper';
+const ACTOR_SALES_NAV = 'bestscrapers/linkedin-sales-navigator-scraper';
 const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
@@ -543,34 +543,12 @@ export default async function handler(req, res) {
         // Resolve Session Cookie (li_at)
         let liAt = bodyLiAt;
         
-        if (!liAt && account_id) {
-          const { data: acc } = await supabaseAdmin
-            .from('linkedin_accounts')
-            .select('*')
-            .eq('id', account_id)
-            .single();
-
-          if (acc) {
-            if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
-              liAt = acc.session_cookie;
-            } else if (acc.unipile_account_id) {
-              liAt = await getLinkedInCookiesFromUnipile(acc.unipile_account_id);
-            }
-          }
-        }
-
-        if (!liAt) liAt = await getLiAtForUser(userId);
-
-        if (!liAt || liAt.length < 20) {
-          return res.status(400).json({ error: 'No se pudo obtener la cookie de sesión (li_at) requerida. Por favor, realiza una conexión manual o pega la cookie li_at en el modal.' });
-        }
-
-        console.log('[SALES NAV] Starting run with actor:', ACTOR_SALES_NAV);
+        console.log('[SALES NAV] Starting run with no-cookie actor:', ACTOR_SALES_NAV);
         const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
-          searchUrl: url,
-          cookie: liAt,
-          li_at: liAt,
+          sales_url: url,
           limit: searchLimit,
+          // Optional: we can still pass cookies if we have them, as a fallback
+          ...(liAt && { cookies: [{ name: 'li_at', value: liAt }] })
         });
 
         const pollToken = jwt.sign(
