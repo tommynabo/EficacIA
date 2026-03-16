@@ -218,6 +218,22 @@ function extractProfilesFromApify(items, limit) {
   return profiles;
 }
 
+function extractProfilesFromSalesNavActor(items, limit) {
+  const profiles = [];
+  for (const item of (Array.isArray(items) ? items : [])) {
+    if (profiles.length >= limit) break;
+    profiles.push({
+      first_name:   item.first_name || item.firstName || '',
+      last_name:    item.last_name || item.lastName || '',
+      job_title:    item.job_title || item.title || item.position || '',
+      company:      item.company || item.companyName || '',
+      linkedin_url: item.linkedin_url || item.url || item.linkedinUrl || '',
+      email:        item.email || null,
+    });
+  }
+  return profiles;
+}
+
 async function getLiAtForUser(userId) {
   const { data } = await supabaseAdmin
     .from('linkedin_accounts')
@@ -367,9 +383,14 @@ export default async function handler(req, res) {
       }
       if (run.status === 'SUCCEEDED') {
         const items = await fetchApifyDataset(run.defaultDatasetId || pollData.datasetId, pollData.limit);
-        const rawLeads = pollData.actor === 'google'
-          ? extractProfilesFromGoogle(items, pollData.limit)
-          : extractProfilesFromApify(items, pollData.limit);
+        let rawLeads = [];
+        if (pollData.actor === 'google') {
+          rawLeads = extractProfilesFromGoogle(items, pollData.limit);
+        } else if (pollData.actor === 'sales_navigator') {
+          rawLeads = extractProfilesFromSalesNavActor(items, pollData.limit);
+        } else {
+          rawLeads = extractProfilesFromApify(items, pollData.limit);
+        }
         if (rawLeads.length === 0) {
           return res.status(200).json({ status: 'done', success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
         }
@@ -478,25 +499,36 @@ export default async function handler(req, res) {
         );
         return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── Sales Navigator → Google (no li_at needed) ─────────────────────────
+      // ── Sales Navigator → Native Scraper ─────────────────────────
       } else if (importType === 'sales_navigator') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
         const searchLimit = Math.min(limit, 50);
-        // Use parsed filters from the body (sent by frontend) to build a Google query
-        const f = filters || {};
-        const googleQuery = buildGoogleLinkedInQuery(f);
-        console.log('[GOOGLE] sales_navigator query:', googleQuery);
-        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
-          queries:          googleQuery,
-          maxPagesPerQuery: Math.ceil(searchLimit / 10),
-          resultsPerPage:   10,
+
+        // Recuperar cookie de sesión requerida para Sales Navigator
+        let liAt = bodyLiAt;
+        if (!liAt && account_id) {
+          liAt = await getLiAtFromUnipile(account_id);
+        }
+        if (!liAt) {
+          liAt = await getLiAtForUser(userId);
+        }
+        if (!liAt) {
+          return res.status(400).json({ error: 'No se pudo obtener la cookie de sesión (li_at) requerida para Sales Navigator. Verifica la conexión de tu cuenta de LinkedIn.' });
+        }
+
+        console.log('[SALES NAV] Starting native run...');
+        const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
+          urls: [url],
+          cookie: liAt,
+          limit: searchLimit,
         });
+
         const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'sales_navigator' },
           process.env.JWT_SECRET || 'dev-secret',
           { expiresIn: '10m' }
         );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en Sales Navigator…' });
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Extrayendo resultados directamente de Sales Navigator…' });
 
       // ── Manual single lead ────────────────────────────────────────────────
       } else if (importType === 'manual') {
