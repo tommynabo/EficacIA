@@ -110,6 +110,7 @@ export default function CampaignDetailPage() {
   // Leads state
   const [search, setSearch] = React.useState("")
   const [showAddLeadModal, setShowAddLeadModal] = React.useState(false)
+  const [cookieUpdateStatus, setCookieUpdateStatus] = React.useState<{type: 'success' | 'error', message: string} | null>(null)
   const [leadToDelete, setLeadToDelete] = React.useState<string | null>(null)
 
   // Sequence state
@@ -156,6 +157,50 @@ export default function CampaignDetailPage() {
     if (!id) return
     fetchAll()
   }, [id])
+
+  // Auto-detect cookie from bookmarklet URL hash: #li_at_connect=XXXX
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash
+      
+      // Case 1: Detect and save cookie
+      const match = hash.match(/li_at_connect=([^&]+)/)
+      if (match) {
+        const cookie = decodeURIComponent(match[1])
+        // Clean the hash but keep #bookmarklet to reopen modal
+        window.history.replaceState(null, '', window.location.pathname + window.location.search + '#bookmarklet')
+        
+        if (cookie && cookie.length > 50) {
+          saveCookieDirectly(cookie)
+        }
+      }
+
+      // Case 2: Open modal if #bookmarklet is present
+      if (window.location.hash === '#bookmarklet') {
+        setShowAddLeadModal(true)
+      }
+    }
+  }, [window.location.hash])
+
+  const saveCookieDirectly = async (liAt: string) => {
+    try {
+      const response = await fetch('/api/linkedin/accounts', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ li_at: liAt }),
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        setCookieUpdateStatus({ type: 'success', message: '¡LinkedIn conectado correctamente! Ya puedes usar Sales Navigator.' })
+        // Clear message after 5 seconds
+        setTimeout(() => setCookieUpdateStatus(null), 5000)
+      } else {
+        setCookieUpdateStatus({ type: 'error', message: data.error || 'Error al conectar la cookie.' })
+      }
+    } catch (err) {
+      setCookieUpdateStatus({ type: 'error', message: 'Error de red al conectar la cookie.' })
+    }
+  }
 
   const fetchAll = async () => {
     setLoading(true)
@@ -414,6 +459,25 @@ export default function CampaignDetailPage() {
 
   return (
     <div className="space-y-0">
+      {/* Notificación de actualización de cookie */}
+      {cookieUpdateStatus && (
+        <div className={`fixed top-4 right-4 z-[100] p-4 rounded-xl shadow-2xl border backdrop-blur-md flex items-center gap-3 animate-in fade-in slide-in-from-top-5 duration-300 ${
+          cookieUpdateStatus.type === 'success' 
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+            : 'bg-red-500/10 border-red-500/20 text-red-400'
+        }`}>
+          <div className={`p-2 rounded-full ${cookieUpdateStatus.type === 'success' ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+            {cookieUpdateStatus.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-bold">{cookieUpdateStatus.type === 'success' ? '¡Éxito!' : 'Error'}</span>
+            <span className="text-xs opacity-90">{cookieUpdateStatus.message}</span>
+          </div>
+          <button onClick={() => setCookieUpdateStatus(null)} className="ml-4 p-1 rounded-md hover:bg-white/10 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>

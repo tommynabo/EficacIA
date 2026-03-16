@@ -323,8 +323,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
   // Bookmarklet: extracts li_at from linkedin.com cookies and opens EficacIA
   // with the cookie in the URL hash (hash fragments never reach the server = secure)
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://eficac-ia.vercel.app'
-  const bookmarkletCode = `javascript:void(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('No se encontró cookie li_at. Asegúrate de estar logueado en LinkedIn.');return;}window.open('${appUrl}/campaigns#li_at_connect='+encodeURIComponent(c[1]),'_blank');alert('Cookie enviada a EficacIA!');}())`
+  const currentUrl = typeof window !== 'undefined' ? window.location.href.split('#')[0] : 'https://eficac-ia.vercel.app/campaigns'
+  const bookmarkletCode = `javascript:void(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('No se encontró cookie li_at. Asegúrate de estar logueado en LinkedIn.');return;}window.location.href='${currentUrl}#li_at_connect='+encodeURIComponent(c[1]);alert('Redirigiendo a EficacIA...');}())`
   const bookmarkletRef = React.useRef<HTMLAnchorElement>(null)
   React.useEffect(() => {
     if (bookmarkletRef.current) {
@@ -334,6 +334,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
   // Save a cookie value via the accounts API
   const saveCookieToAccount = async (liAt: string) => {
+    // This is still used if someone manually pastes or if we want to trigger it from modal
     setCookieStatus('saving')
     setCookieError('')
     try {
