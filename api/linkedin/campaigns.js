@@ -112,15 +112,17 @@ export default async function handler(req, res) {
       // When activating a campaign, initialize all pending leads for the engine
       if (updates.status === 'active' && campaign.status !== 'active') {
         const startTiming = updates.start_timing || 'now';
-        let delayMs = 0;
+        // For "now", set next_action_at to 1 min ago to ensure engine catches it immediately
+        let baseTime = Date.now();
         if (startTiming === '1h') delayMs = 60 * 60 * 1000;
         else if (startTiming === '1d') delayMs = 24 * 60 * 60 * 1000;
         else if (startTiming === '1w') delayMs = 7 * 24 * 60 * 60 * 1000;
+        else if (startTiming === 'now') delayMs = -60 * 1000; // 1 min ago for safety
 
-        const nextActionAt = new Date(Date.now() + delayMs).toISOString();
+        const nextActionAt = new Date(baseTime + delayMs).toISOString();
         filtered.started_at = filtered.started_at || new Date().toISOString();
 
-        // Set all 'new' / 'pending' leads to sequence_status='pending', next_action_at=nextActionAt
+        // Set all leads to sequence_status='pending', next_action_at=nextActionAt
         await supabaseAdmin
           .from('leads')
           .update({
@@ -130,7 +132,19 @@ export default async function handler(req, res) {
           })
           .eq('campaign_id', id)
           .eq('sent_message', false);
-        console.log(`[CAMPAIGNS] Campaign ${id} activated with timing "${startTiming}" — leads scheduled for ${nextActionAt}`);
+        
+        console.log(`[CAMPAIGNS] Campaign ${id} activated with timing "${startTiming}" — triggering engine...`);
+
+        // AUTO-TRIGGER ENGINE (Fire and forget)
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const host = req.headers.host;
+        const cronSecret = process.env.CRON_SECRET;
+        if (host && cronSecret) {
+          fetch(`${protocol}://${host}/api/linkedin/campaign-engine`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${cronSecret}` }
+          }).catch(e => console.error('[CAMPAIGNS] Auto-trigger fail:', e.message));
+        }
       }
 
       // When pausing, stop processing
