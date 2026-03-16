@@ -44,6 +44,10 @@ async function startApifyRun(actorSlug, input) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   if (!token) throw new Error('APIFY_API_TOKEN no configurado en Vercel.');
   const url = `https://api.apify.com/v2/acts/${actorSlug}/runs?token=${encodeURIComponent(token)}`;
+  
+  const safeInput = { ...input };
+  console.log(`[APIFY] Starting run: ${actorSlug} with input:`, JSON.stringify(safeInput).slice(0, 500));
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -51,8 +55,9 @@ async function startApifyRun(actorSlug, input) {
   });
   if (!res.ok) {
     const errText = await res.text();
+    console.error(`[APIFY] Error response (${res.status}):`, errText);
     if (res.status === 404) {
-      console.error(`[APIFY] El actor '${actorSlug}' no existe o no tienes acceso. Prueba a usar otro actor en send-action.js o suscribirte en Apify.`);
+      console.error(`[APIFY] El actor '${actorSlug}' no existe o no tienes acceso.`);
     }
     throw new Error(`Error al iniciar Apify (${res.status}): ${errText.substring(0, 100)}`);
   }
@@ -289,7 +294,9 @@ async function tryApifyScrape(lead, cvars) {
     const inputUrls = [lead.linkedin_url].filter(Boolean);
     if (inputUrls.length > 0) {
       try {
-        console.log(`[APIFY] Starting profile scraper for lead ${lead.id} (no real scraped data yet)...`);
+        console.log(`[APIFY] Starting profile scraper for lead ${lead.id} using URL: ${inputUrls[0]}`);
+        
+        // Profiles scraper usually expects an array of strings for profileUrls or urls
         const { runId } = await startApifyRun(ACTOR_PROFILE_SCRAPER, {
           urls: inputUrls,
           profileUrls: inputUrls,
