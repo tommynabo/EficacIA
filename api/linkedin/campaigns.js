@@ -114,6 +114,7 @@ export default async function handler(req, res) {
         const startTiming = updates.start_timing || 'now';
         // For "now", set next_action_at to 1 min ago to ensure engine catches it immediately
         let baseTime = Date.now();
+        let delayMs = 0;
         if (startTiming === '1h') delayMs = 60 * 60 * 1000;
         else if (startTiming === '1d') delayMs = 24 * 60 * 60 * 1000;
         else if (startTiming === '1w') delayMs = 7 * 24 * 60 * 60 * 1000;

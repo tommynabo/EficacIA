@@ -112,6 +112,7 @@ export default function CampaignDetailPage() {
   const [showAddLeadModal, setShowAddLeadModal] = React.useState(false)
   const [cookieUpdateStatus, setCookieUpdateStatus] = React.useState<{type: 'success' | 'error', message: string} | null>(null)
   const [leadToDelete, setLeadToDelete] = React.useState<string | null>(null)
+  const [showStatusMenu, setShowStatusMenu] = React.useState(false)
 
   // Sequence state
   const [steps, setSteps] = React.useState<SequenceStep[]>(DEFAULT_STEPS)
@@ -280,6 +281,7 @@ export default function CampaignDetailPage() {
       ...(started ? { started_at: started } : {}),
       ...(timing ? { start_timing: timing } : {})
     })
+    setShowStatusMenu(false)
   }
 
   const deleteCampaign = async () => {
@@ -517,9 +519,10 @@ export default function CampaignDetailPage() {
             {runningEngine ? "Ejecutando..." : "Ejecutar ahora"}
           </Button>
 
-          <div className="relative group">
+          <div className="relative">
             <Button
               variant="outline"
+              onClick={() => setShowStatusMenu(!showStatusMenu)}
               className={`gap-2 ${campaign.status === "active"
                 ? "border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
                 : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
@@ -529,28 +532,35 @@ export default function CampaignDetailPage() {
               {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
               <ChevronDown className="w-3 h-3 opacity-50" />
             </Button>
-            {campaign.status !== "active" && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200">
-                <button onClick={() => toggleStatus('now')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
-                  <Play className="w-3 h-3 text-emerald-500" /> Iniciar ahora
-                </button>
-                <button onClick={() => toggleStatus('1h')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-blue-500" /> En 1 hora
-                </button>
-                <button onClick={() => toggleStatus('1d')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-blue-500" /> En 1 día
-                </button>
-                <button onClick={() => toggleStatus('1w')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-blue-500" /> En 1 semana
-                </button>
-              </div>
-            )}
-            {campaign.status === "active" && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200">
-                <button onClick={() => toggleStatus()} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 flex items-center gap-2">
-                  <Pause className="w-3 h-3" /> Pausar ahora
-                </button>
-              </div>
+            {showStatusMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowStatusMenu(false)} 
+                />
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {campaign.status !== "active" ? (
+                    <>
+                      <button onClick={() => toggleStatus('now')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                        <Play className="w-3 h-3 text-emerald-500" /> Iniciar ahora
+                      </button>
+                      <button onClick={() => toggleStatus('1h')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-blue-500" /> En 1 hora
+                      </button>
+                      <button onClick={() => toggleStatus('1d')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-blue-500" /> En 1 día
+                      </button>
+                      <button onClick={() => toggleStatus('1w')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-blue-500" /> En 1 semana
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => toggleStatus()} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 flex items-center gap-2">
+                      <Pause className="w-3 h-3" /> Pausar ahora
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
 
