@@ -299,6 +299,7 @@ export default function CampaignDetailPage() {
     setTestLog(prev => [...prev, { time, type, msg }])
   }
 
+
   const sendToLead = async (lead: Lead, stepIndex?: number, simulate?: boolean) => {
     if (!campaign || steps.length === 0) return
     const selectedAccounts = campaign.settings?.linkedin_account_ids || []

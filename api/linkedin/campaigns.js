@@ -129,8 +129,7 @@ export default async function handler(req, res) {
             next_action_at: nextActionAt,
           })
           .eq('campaign_id', id)
-          .in('status', ['new', 'pending'])
-          .is('sent_message', false);
+          .eq('sent_message', false);
         console.log(`[CAMPAIGNS] Campaign ${id} activated with timing "${startTiming}" — leads scheduled for ${nextActionAt}`);
       }
 

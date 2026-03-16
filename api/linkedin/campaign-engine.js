@@ -125,7 +125,8 @@ export default async function handler(req, res) {
         .from('leads')
         .select('id, first_name, last_name, company, position, job_title, linkedin_url, email, custom_vars, current_step, sequence_status')
         .eq('campaign_id', campaign.id)
-        .or('sequence_status.eq.pending,and(sequence_status.eq.active,next_action_at.lte.' + now + ')')
+        .in('sequence_status', ['pending', 'active'])
+        .lte('next_action_at', now)
         .limit(remaining);
 
       if (!pendingLeads || pendingLeads.length === 0) {

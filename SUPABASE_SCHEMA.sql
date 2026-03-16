@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS public.leads (
   notes TEXT,
   status TEXT DEFAULT 'new', -- new, contacted, qualified, converted, rejected
   tags TEXT[], -- array of tags
+  sequence_status TEXT DEFAULT 'pending', -- pending, active, completed, paused
+  current_step INTEGER DEFAULT 0,
+  next_action_at TIMESTAMP,
+  last_action_at TIMESTAMP,
+  sent_message BOOLEAN DEFAULT false,
+  sent_at TIMESTAMP,
+  error_message TEXT,
+  ai_message TEXT,
+  custom_vars JSONB DEFAULT '{}',
+  job_title TEXT,
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now()
 );
@@ -83,6 +93,9 @@ CREATE TABLE IF NOT EXISTS public.campaigns (
   status TEXT DEFAULT 'draft', -- draft, active, paused, completed
   template_id UUID,
   leads_count INTEGER DEFAULT 0,
+  sent_count INTEGER DEFAULT 0,
+  sequence JSONB DEFAULT '[]',
+  settings JSONB DEFAULT '{}',
   started_at TIMESTAMP,
   ended_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT now(),
