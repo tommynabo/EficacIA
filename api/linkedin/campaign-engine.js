@@ -93,14 +93,30 @@ export default async function handler(req, res) {
       }
 
       // Get the LinkedIn account for this campaign
-      const accountIds = campaign.settings?.linkedin_account_ids || [];
-      if (accountIds.length === 0) {
+      const requestedAccountIds = campaign.settings?.linkedin_account_ids || [];
+      if (requestedAccountIds.length === 0) {
         console.log(`[ENGINE] Campaign ${campaign.id} has no LinkedIn account assigned, skipping`);
         continue;
       }
-      const accountId = accountIds[0]; // Use first assigned account
+
+      // Verify that at least one of these accounts actually exists and belongs to the team
+      const { data: validAccounts } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('id')
+        .eq('team_id', campaign.team_id)
+        .in('id', requestedAccountIds);
+
+      if (!validAccounts || validAccounts.length === 0) {
+        console.log(`[ENGINE] Campaign ${campaign.id} has no VALID LinkedIn accounts assigned, skipping`);
+        continue;
+      }
+
+      // Use the first valid ID from the requested list
+      const validSet = new Set(validAccounts.map(a => a.id));
+      const accountId = requestedAccountIds.find(id => validSet.has(id));
+
       if (!accountId) {
-        console.log(`[ENGINE] Campaign ${campaign.id} has an invalid or empty account assigned, skipping`);
+        console.log(`[ENGINE] Campaign ${campaign.id} has no resolvable accountId, skipping`);
         continue;
       }
 
