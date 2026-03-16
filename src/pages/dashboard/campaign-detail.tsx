@@ -1027,6 +1027,40 @@ export default function CampaignDetailPage() {
             </div>
           </Card>
 
+          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900 border-l-4 border-l-blue-500">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-500" />
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Horario y Estado del Motor</h3>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full">
+                <div className={`w-2 h-2 rounded-full ${(settings as any).last_heartbeat_at ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Motor: {(settings as any).last_heartbeat_at ? `Activo (${new Date((settings as any).last_heartbeat_at).toLocaleTimeString()})` : 'Esperando ejecución'}
+                </span>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Zona Horaria</label>
+                <select
+                  value={(settings as any).timezone || 'UTC'}
+                  onChange={(e) => setSettings(s => ({ ...s, timezone: e.target.value }))}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                >
+                  <option value="UTC">UTC (Universal Time Coordinated)</option>
+                  <option value="Europe/Madrid">Madrid (CET/CEST)</option>
+                  <option value="America/New_York">New York (EST/EDT)</option>
+                  <option value="America/Mexico_City">Mexico City (CST)</option>
+                  <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+                  <option value="Europe/London">London (GMT/BST)</option>
+                </select>
+                <p className="text-[11px] text-slate-500 italic">Los pasos de la secuencia se enviarán respetando este horario y los límites diarios.</p>
+              </div>
+            </div>
+          </Card>
+
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => fetchAll()}>Descartar</Button>
             <Button onClick={() => saveCampaign()} disabled={saving} className="gap-2 px-8 shadow-md">
