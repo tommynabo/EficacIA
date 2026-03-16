@@ -100,10 +100,9 @@ function parseCsvToLeads(csvText) {
   return leads;
 }
 
-// ─── Unipile: retrieve li_at cookie for a managed LinkedIn account ────────────
-// Unipile stores the session cookies internally. GET /api/v1/accounts/:id
-// returns connection_params.im.cookies which contains li_at.
-async function getLiAtFromUnipile(unipileAccountId) {
+// ─── Unipile: retrieve all LinkedIn cookies for a managed account ─────────────
+// Extracts li_at, JSESSIONID and any others to build a full cookie string.
+async function getLinkedInCookiesFromUnipile(unipileAccountId) {
   const dsn    = (process.env.UNIPILE_DSN    || '').trim();
   const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
   if (!dsn || !apiKey) return null;
@@ -116,21 +115,28 @@ async function getLiAtFromUnipile(unipileAccountId) {
       return null;
     }
     const data = await res.json();
-    // Unipile returns cookies as an array or as a cookie-string in connection_params
     const cookies = data.connection_params?.im?.cookies || data.connection_params?.cookies || [];
-    if (Array.isArray(cookies)) {
-      const liAt = cookies.find(c => c.name === 'li_at' || c.key === 'li_at');
-      if (liAt?.value) { console.log('[UNIPILE] li_at retrieved from Unipile account'); return liAt.value; }
-    }
-    // Some versions store as a raw cookie string "li_at=VALUE; other=..."
+    
+    // If it's already a string, return as is (it might be a full cookie string)
     if (typeof cookies === 'string') {
-      const m = cookies.match(/(?:^|;\s*)li_at=([^;]+)/);
-      if (m?.[1]) { console.log('[UNIPILE] li_at parsed from Unipile cookie string'); return m[1].trim(); }
+      console.log('[UNIPILE] Using raw cookie string from Unipile');
+      return cookies;
     }
-    // Also check top-level fields
-    const topLevel = data.li_at || data.liAt || data.connection_params?.li_at;
-    if (topLevel) { console.log('[UNIPILE] li_at from top-level field'); return topLevel; }
-    console.warn('[UNIPILE] li_at not found in account response. Keys:', Object.keys(data.connection_params || {}));
+
+    if (Array.isArray(cookies)) {
+      // Build a standard "key=value; key2=value2" string
+      const cookieStr = cookies
+        .map(c => `${c.name || c.key}=${c.value}`)
+        .join('; ');
+      
+      console.log(`[UNIPILE] Built cookie string with ${cookies.length} cookies`);
+      // We still want to verify if li_at is present as a minimum
+      if (!cookieStr.includes('li_at=')) {
+        console.warn('[UNIPILE] Warning: li_at not found in built cookie string');
+      }
+      return cookieStr;
+    }
+
     return null;
   } catch (err) {
     console.error('[UNIPILE] Error fetching cookies:', err.message);
@@ -517,20 +523,16 @@ export default async function handler(req, res) {
             .single();
 
           if (acc) {
-            console.log(`[SALES NAV] Found account in DB. unipile_account_id: ${acc.unipile_account_id}, has session_cookie: ${!!acc.session_cookie}`);
             if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
+              console.log('[SALES NAV] Using session_cookie from DB (manual connect)');
               liAt = acc.session_cookie;
-              console.log('[SALES NAV] Using native session_cookie from DB');
             } else if (acc.unipile_account_id) {
-              console.log(`[SALES NAV] Requesting cookie from Unipile for account: ${acc.unipile_account_id}`);
-              liAt = await getLiAtFromUnipile(acc.unipile_account_id);
-            } else {
-              console.warn('[SALES NAV] Account has no unipile_account_id or session_cookie. Falling back to account_id UUID...');
-              liAt = await getLiAtFromUnipile(account_id);
+              console.log('[SALES NAV] Fetching full cookie string from Unipile for account:', acc.unipile_account_id);
+              liAt = await getLinkedInCookiesFromUnipile(acc.unipile_account_id);
             }
           } else {
             console.warn(`[SALES NAV] Account ${account_id} not found in DB. Falling back to Unipile with original ID...`);
-            liAt = await getLiAtFromUnipile(account_id);
+            liAt = await getLinkedInCookiesFromUnipile(account_id);
           }
         }
 
