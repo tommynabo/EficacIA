@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/linkedin/campaign-engine",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "headers": [
