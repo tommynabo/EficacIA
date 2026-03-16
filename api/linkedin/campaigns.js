@@ -111,19 +111,27 @@ export default async function handler(req, res) {
 
       // When activating a campaign, initialize all pending leads for the engine
       if (updates.status === 'active' && campaign.status !== 'active') {
+        const startTiming = updates.start_timing || 'now';
+        let delayMs = 0;
+        if (startTiming === '1h') delayMs = 60 * 60 * 1000;
+        else if (startTiming === '1d') delayMs = 24 * 60 * 60 * 1000;
+        else if (startTiming === '1w') delayMs = 7 * 24 * 60 * 60 * 1000;
+
+        const nextActionAt = new Date(Date.now() + delayMs).toISOString();
         filtered.started_at = filtered.started_at || new Date().toISOString();
-        // Set all 'new' / 'pending' leads to sequence_status='pending', next_action_at=now
+
+        // Set all 'new' / 'pending' leads to sequence_status='pending', next_action_at=nextActionAt
         await supabaseAdmin
           .from('leads')
           .update({
             sequence_status: 'pending',
             current_step: 0,
-            next_action_at: new Date().toISOString(),
+            next_action_at: nextActionAt,
           })
           .eq('campaign_id', id)
           .in('status', ['new', 'pending'])
           .is('sent_message', false);
-        console.log(`[CAMPAIGNS] Campaign ${id} activated — leads initialized for engine`);
+        console.log(`[CAMPAIGNS] Campaign ${id} activated with timing "${startTiming}" — leads scheduled for ${nextActionAt}`);
       }
 
       // When pausing, stop processing

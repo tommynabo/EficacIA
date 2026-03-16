@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   trial_ends_at TIMESTAMP,
   stripe_customer_id TEXT UNIQUE,
   stripe_subscription_id TEXT,
+  timezone TEXT DEFAULT 'UTC',
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now()
 );

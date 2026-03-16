@@ -63,6 +63,7 @@ export default async function handler(req, res) {
   }
 
   const now = new Date().toISOString();
+  console.log(`[ENGINE] Heartbeat: ${now}`);
   const stats = { campaigns: 0, processed: 0, errors: 0, skipped: 0 };
 
   try {

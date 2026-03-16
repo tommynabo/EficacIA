@@ -116,6 +116,7 @@ export default function CampaignDetailPage() {
   // Sequence state
   const [steps, setSteps] = React.useState<SequenceStep[]>(DEFAULT_STEPS)
   const [activeStepId, setActiveStepId] = React.useState<string | null>("1")
+  const [engineHeartbeat, setEngineHeartbeat] = React.useState<string | null>(null)
   const messageTextareaRef = React.useRef<HTMLTextAreaElement>(null)
 
   // Compute custom variable names from all loaded leads
@@ -148,6 +149,7 @@ export default function CampaignDetailPage() {
     daily_limit_visits: 40,
     stop_on_reply: true,
     linkedin_account_ids: [] as string[],
+    timezone: 'UTC',
     ai_prompt: "Analiza el perfil y escribe un comentario de 1-2 oraciones sobre su experiencia reciente o un post interesante.",
   })
 
@@ -257,6 +259,9 @@ export default function CampaignDetailPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error guardando")
       setCampaign(data.campaign)
+      if (data.stats && data.stats.heartbeat) {
+        setEngineHeartbeat(data.stats.heartbeat);
+      }
       setSuccess("\u2713 Guardado correctamente")
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
@@ -266,11 +271,15 @@ export default function CampaignDetailPage() {
     }
   }
 
-  const toggleStatus = async () => {
+  const toggleStatus = async (timing?: string) => {
     if (!campaign) return
     const newStatus = campaign.status === "active" ? "paused" : "active"
     const started = newStatus === "active" ? new Date().toISOString() : undefined
-    await saveCampaign({ status: newStatus, ...(started ? { started_at: started } : {}) })
+    await saveCampaign({ 
+      status: newStatus, 
+      ...(started ? { started_at: started } : {}),
+      ...(timing ? { start_timing: timing } : {})
+    })
   }
 
   const deleteCampaign = async () => {
@@ -507,17 +516,42 @@ export default function CampaignDetailPage() {
             {runningEngine ? "Ejecutando..." : "Ejecutar ahora"}
           </Button>
 
-          <Button
-            onClick={toggleStatus}
-            variant="outline"
-            className={`gap-2 ${campaign.status === "active"
-              ? "border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-              : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-              }`}
-          >
-            {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
-          </Button>
+          <div className="relative group">
+            <Button
+              variant="outline"
+              className={`gap-2 ${campaign.status === "active"
+                ? "border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+                : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                }`}
+            >
+              {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
+              <ChevronDown className="w-3 h-3 opacity-50" />
+            </Button>
+            {campaign.status !== "active" && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200">
+                <button onClick={() => toggleStatus('now')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                  <Play className="w-3 h-3 text-emerald-500" /> Iniciar ahora
+                </button>
+                <button onClick={() => toggleStatus('1h')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-blue-500" /> En 1 hora
+                </button>
+                <button onClick={() => toggleStatus('1d')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-blue-500" /> En 1 día
+                </button>
+                <button onClick={() => toggleStatus('1w')} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-blue-500" /> En 1 semana
+                </button>
+              </div>
+            )}
+            {campaign.status === "active" && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200">
+                <button onClick={() => toggleStatus()} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 flex items-center gap-2">
+                  <Pause className="w-3 h-3" /> Pausar ahora
+                </button>
+              </div>
+            )}
+          </div>
 
           <Button
             onClick={() => saveCampaign()}
@@ -580,6 +614,13 @@ export default function CampaignDetailPage() {
         <Card className="border-emerald-500/30 bg-emerald-500/5 p-3 mb-4">
           <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" /><p className="text-sm text-emerald-600 dark:text-emerald-400">{success}</p></div>
         </Card>
+      )}
+
+      {engineHeartbeat && (
+        <div className="flex items-center gap-2 mb-4 px-1 text-[10px] text-slate-400 font-medium">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          Motor activo • Última ejecución: {new Date(engineHeartbeat).toLocaleTimeString()}
+        </div>
       )}
 
       <div className="border-b border-slate-200 dark:border-slate-800 mb-6">
@@ -730,7 +771,7 @@ export default function CampaignDetailPage() {
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
                     <div className="flex items-center gap-1.5 text-sm font-medium bg-slate-50 dark:bg-slate-900 px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 my-1">
                       <Clock className="w-3.5 h-3.5" />
-                      Esperar {formatDelay(step.delayDays, step.delayUnit)}
+                      Esperar {formatDelay(step.delayDays, step.delayUnit || 'days')}
                     </div>
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
                   </div>
@@ -812,6 +853,36 @@ export default function CampaignDetailPage() {
                       {activeStep.content.length > 200 && ' ⚠ Supera límite recomendado'}
                     </div>
                   )}
+
+                  <div className="flex gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5 block">Tiempo de espera</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={activeStep.delayDays}
+                          onChange={e => updateStep(activeStep.id, { delayDays: parseInt(e.target.value) || 0 })}
+                          className="w-20 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 h-9"
+                        />
+                        <select
+                          value={activeStep.delayUnit || 'days'}
+                          onChange={e => updateStep(activeStep.id, { delayUnit: e.target.value as any })}
+                          className="flex-1 h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-3 text-sm text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none"
+                        >
+                          <option value="minutes">Minutos</option>
+                          <option value="hours">Horas</option>
+                          <option value="days">Días</option>
+                          <option value="weeks">Semanas</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex items-end">
+                      <p className="text-[11px] text-slate-500 italic mb-2">
+                        {activeStep.delayDays === 0 ? "Se envía inmediatamente" : `Se envía ${formatDelay(activeStep.delayDays, activeStep.delayUnit || 'days')} después`}
+                      </p>
+                    </div>
+                  </div>
 
                   <div className="mt-4 space-y-4">
                     <div>
@@ -1014,7 +1085,7 @@ export default function CampaignDetailPage() {
               </div>
               <p className="text-slate-600 dark:text-slate-300 font-semibold mb-1">Campaña en fase de borrador</p>
               <p className="text-sm text-slate-500 dark:text-slate-500 mb-6 max-w-sm mx-auto">Configura tu secuencia y añade leads antes de lanzar para ver estadísticas de conversión</p>
-              <Button onClick={toggleStatus} className="gap-2 px-8 shadow-md" size="lg">
+              <Button onClick={() => toggleStatus('now')} className="gap-2 px-8 shadow-md" size="lg">
                 <Play className="w-4 h-4 fill-current" /> Lanzar Campaña
               </Button>
             </Card>
