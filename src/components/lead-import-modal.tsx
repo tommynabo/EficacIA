@@ -323,6 +323,12 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
   // Bookmarklet JS (copies li_at cookie to clipboard)
   const bookmarkletCode = `javascript:(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('\u274c No se encontr\u00f3 la cookie li_at.\n\nAseg\u00farate de estar logueado en LinkedIn.');return;}navigator.clipboard.writeText(c[1]).then(function(){alert('\u2705 Cookie copiada!\n\nVe a EficacIA y haz clic en "Pegar Cookie".');}).catch(function(){prompt('Copia manualmente:',c[1]);});})()`
+  const bookmarkletRef = React.useRef<HTMLAnchorElement>(null)
+  React.useEffect(() => {
+    if (bookmarkletRef.current) {
+      bookmarkletRef.current.setAttribute('href', bookmarkletCode)
+    }
+  }, [bookmarkletCode])
 
   // Paste cookie from clipboard and auto-save
   const handlePasteCookie = async () => {
@@ -878,7 +884,8 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
                     <span className="text-slate-300 font-semibold">Paso 1:</span> Arrastra este botón a tu barra de marcadores:
                   </p>
                   <a
-                    href={bookmarkletCode}
+                    ref={bookmarkletRef}
+                    href="#bookmarklet"
                     onClick={(e) => e.preventDefault()}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-grab active:cursor-grabbing transition-colors select-none"
                     title="Arrastra este botón a tu barra de marcadores"
