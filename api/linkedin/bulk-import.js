@@ -115,28 +115,41 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
       return null;
     }
     const data = await res.json();
-    const cookies = data.connection_params?.im?.cookies || data.connection_params?.cookies || [];
+    const cp = data.connection_params || {};
+    const im = cp.im || {};
     
-    // If it's already a string, return as is (it might be a full cookie string)
+    // Try different possible paths for cookies
+    let cookies = im.cookies || cp.cookies || data.cookies || null;
+    
+    console.log('[UNIPILE] Account structure keys:', Object.keys(data));
+    console.log('[UNIPILE] connection_params keys:', Object.keys(cp));
+    if (im) console.log('[UNIPILE] connection_params.im keys:', Object.keys(im));
+
+    // If it's already a string, return as is
     if (typeof cookies === 'string') {
-      console.log('[UNIPILE] Using raw cookie string from Unipile');
+      console.log('[UNIPILE] Found raw cookie string');
       return cookies;
     }
 
+    // Fallback: search for li_at directly if no cookies array
+    if (!cookies || !Array.isArray(cookies)) {
+      const liAt = im.li_at || cp.li_at || data.li_at;
+      if (liAt) {
+        console.log('[UNIPILE] Found li_at in alternative path');
+        return `li_at=${liAt}`;
+      }
+    }
+
     if (Array.isArray(cookies)) {
-      // Build a standard "key=value; key2=value2" string
       const cookieStr = cookies
         .map(c => `${c.name || c.key}=${c.value}`)
         .join('; ');
       
       console.log(`[UNIPILE] Built cookie string with ${cookies.length} cookies`);
-      // We still want to verify if li_at is present as a minimum
-      if (!cookieStr.includes('li_at=')) {
-        console.warn('[UNIPILE] Warning: li_at not found in built cookie string');
-      }
       return cookieStr;
     }
 
+    console.warn('[UNIPILE] No cookies found. Full Response:', JSON.stringify(data).slice(0, 500));
     return null;
   } catch (err) {
     console.error('[UNIPILE] Error fetching cookies:', err.message);
