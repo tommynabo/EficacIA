@@ -938,7 +938,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                Añadir Leads
+                AÑADIR LEADS
               </>
             )}
           </Button>

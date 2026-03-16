@@ -210,8 +210,8 @@ export default function LeadsPage() {
           onClick={() => setShowImportModal(true)}
           className="gap-2"
         >
-          <FileUp className="w-4 h-4" />
-          Importar Leads
+          <Plus className="w-4 h-4" />
+          AÑADIR LEADS
         </Button>
       </div>
 
@@ -310,9 +310,9 @@ export default function LeadsPage() {
           </div>
         ) : leads.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-slate-400 mb-4">No hay leads aún</p>
+            <p className="text-slate-400 mb-2 uppercase font-medium">SIN LEADS</p>
             <p className="text-sm text-slate-500">
-              Importa tus contactos para empezar a enviar mensajes
+              Añade contactos para empezar a enviar mensajes
             </p>
           </div>
         ) : (
@@ -401,7 +401,7 @@ export default function LeadsPage() {
       {showImportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4">Importar Leads</h2>
+            <h2 className="text-xl font-bold text-white mb-4">AÑADIR LEADS</h2>
 
             <div className="space-y-4 mb-6">
               <div>

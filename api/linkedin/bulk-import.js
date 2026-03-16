@@ -508,6 +508,7 @@ export default async function handler(req, res) {
         let liAt = bodyLiAt;
         
         if (!liAt && account_id) {
+          console.log(`[SALES NAV] Looking up account ${account_id} in DB...`);
           // Buscar primero la cuenta en nuestra base de datos para obtener la cookie nativa o el ID real de Unipile
           const { data: acc } = await supabaseAdmin
             .from('linkedin_accounts')
@@ -516,13 +517,19 @@ export default async function handler(req, res) {
             .single();
 
           if (acc) {
+            console.log(`[SALES NAV] Found account in DB. unipile_account_id: ${acc.unipile_account_id}, has session_cookie: ${!!acc.session_cookie}`);
             if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
               liAt = acc.session_cookie;
+              console.log('[SALES NAV] Using native session_cookie from DB');
+            } else if (acc.unipile_account_id) {
+              console.log(`[SALES NAV] Requesting cookie from Unipile for account: ${acc.unipile_account_id}`);
+              liAt = await getLiAtFromUnipile(acc.unipile_account_id);
             } else {
-              // Si la maneja Unipile, pasamos el ID correcto de Unipile o hacemos fallback al account_id
-              liAt = await getLiAtFromUnipile(acc.unipile_id || account_id);
+              console.warn('[SALES NAV] Account has no unipile_account_id or session_cookie. Falling back to account_id UUID...');
+              liAt = await getLiAtFromUnipile(account_id);
             }
           } else {
+            console.warn(`[SALES NAV] Account ${account_id} not found in DB. Falling back to Unipile with original ID...`);
             liAt = await getLiAtFromUnipile(account_id);
           }
         }

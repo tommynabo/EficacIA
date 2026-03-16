@@ -229,12 +229,12 @@ export default function CampaignDetailPage() {
   }
 
   const deleteCampaign = async () => {
-    if (!confirm(`\u00bfEliminar la campa\u00f1a "${campaign?.name}"? Esta acci\u00f3n no se puede deshacer.`)) return
+    if (!confirm(`¿Eliminar la campaña "${campaign?.name}"? Esta acción no se puede deshacer.`)) return
     await fetch(`/api/linkedin/campaigns?id=${id}`, { method: "DELETE", headers: apiHeaders() })
     navigate("/dashboard/campaigns")
   }
 
-  // --- Env\u00edo directo a un lead espec\u00edfico ------------------------------------
+  // --- Envío directo a un lead específico ------------------------------------
 
   const [sendingLeadId, setSendingLeadId] = React.useState<string | null>(null)
   const [testLog, setTestLog] = React.useState<Array<{ time: string; type: 'info' | 'success' | 'error'; msg: string }>>([])
@@ -249,19 +249,19 @@ export default function CampaignDetailPage() {
     if (!campaign || steps.length === 0) return
     const selectedAccounts = campaign.settings?.linkedin_account_ids || []
     if (selectedAccounts.length === 0) {
-      addLog('error', '\u26a0 Selecciona una cuenta de LinkedIn en la pesta\u00f1a Opciones.')
+      addLog('error', '⚠️ Selecciona una cuenta de LinkedIn en la pestaña Opciones.')
       setShowTestPanel(true)
       return
     }
     const step = steps[stepIndex ?? 0]
     if (!step) {
-      addLog('error', `\u26a0 No hay paso ${(stepIndex ?? 0) + 1} en la secuencia.`)
+      addLog('error', `⚠ No hay paso ${(stepIndex ?? 0) + 1} en la secuencia.`)
       setShowTestPanel(true)
       return
     }
     setSendingLeadId(lead.id)
     setShowTestPanel(true)
-    addLog('info', `${simulate ? '[SIMULACRO] ' : ''}Enviando ${step.type === 'invitation' ? 'invitaci\u00f3n' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
+    addLog('info', `${simulate ? '[SIMULACRO] ' : ''}Enviando ${step.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name} ${lead.last_name}...`)
     try {
       const res = await fetch(`/api/linkedin/send-action`, {
         method: "POST",
@@ -278,30 +278,30 @@ export default function CampaignDetailPage() {
       })
       const data = await res.json()
       if (res.status === 202) {
-        addLog('info', `\u23f3 ${data.message || 'Procesando perfil...'} Reintentando en 5s...`)
+        addLog('info', `⏳ ${data.message || 'Procesando perfil...'} Reintentando en 5s...`)
         setTimeout(() => sendToLead(lead, stepIndex, simulate), 5000)
         return
       } else if (res.ok) {
-        addLog('success', `\u2713 ${data.message || 'Enviado'} \u2014 "${(data.message_sent || '').slice(0, 250)}"`)
+        addLog('success', `✓ ${data.message || 'Enviado'} — "${(data.message_sent || '').slice(0, 250)}"`)
         fetchAll()
       } else {
-        addLog('error', `\u2717 Error: ${data.error || 'Error desconocido'}`)
+        addLog('error', `✗ Error: ${data.error || 'Error desconocido'}`)
       }
     } catch (err: unknown) {
-      addLog('error', `\u2717 Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
     } finally {
       setSendingLeadId(null)
     }
   }
 
-  // --- Ejecutar motor de campa\u00f1a manualmente ----------------------------------
+  // --- Ejecutar motor de campaña manualmente ----------------------------------
 
   const [runningEngine, setRunningEngine] = React.useState(false)
 
   const triggerEngineNow = async () => {
     setRunningEngine(true)
     setShowTestPanel(true)
-    addLog('info', '\u26a1 Ejecutando motor de campa\u00f1a manualmente...')
+    addLog('info', '⚡ Ejecutando motor de campaña manualmente...')
     try {
       const res = await fetch(`/api/linkedin/campaign-engine`, {
         method: "POST",
@@ -310,13 +310,13 @@ export default function CampaignDetailPage() {
       const data = await res.json()
       if (res.ok) {
         const s = data.stats || {}
-        addLog('success', `\u2713 Motor ejecutado \u2014 Campa\u00f1as: ${s.campaigns || 0}, Procesados: ${s.processed || 0}, Errores: ${s.errors || 0}, Omitidos: ${s.skipped || 0}`)
+        addLog('success', `✓ Motor ejecutado — Campañas: ${s.campaigns || 0}, Procesados: ${s.processed || 0}, Errores: ${s.errors || 0}, Omitidos: ${s.skipped || 0}`)
         fetchAll()
       } else {
-        addLog('error', `\u2717 Error motor: ${data.error || 'Error desconocido'}`)
+        addLog('error', `✗ Error motor: ${data.error || 'Error desconocido'}`)
       }
     } catch (err: unknown) {
-      addLog('error', `\u2717 Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
+      addLog('error', `✗ Error de red: ${err instanceof Error ? err.message : 'desconocido'}`)
     } finally {
       setRunningEngine(false)
     }
@@ -387,8 +387,8 @@ export default function CampaignDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4">
         <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-slate-400">Campa\u00f1a no encontrada</p>
-        <Button asChild variant="outline"><Link to="/dashboard/campaigns">Volver a Campa\u00f1as</Link></Button>
+        <p className="text-slate-400">Campaña no encontrada</p>
+        <Button asChild variant="outline"><Link to="/dashboard/campaigns">Volver a Campañas</Link></Button>
       </div>
     )
   }
@@ -421,7 +421,7 @@ export default function CampaignDetailPage() {
           </Button>
           <div>
             <h2 className="text-xl font-bold tracking-tight">{campaign.name}</h2>
-            <p className="text-sm text-slate-400">{campaign.description || "Sin descripci\u00f3n"}</p>
+            <p className="text-sm text-slate-400">{campaign.description || "Sin descripción"}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -437,10 +437,10 @@ export default function CampaignDetailPage() {
             variant="outline"
             size="sm"
             className="gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-            title="Ejecuta el motor de campa\u00f1a ahora mismo (sin esperar al cron)"
+            title="Ejecuta el motor de campaña ahora mismo (sin esperar al cron)"
           >
             <Zap className={`w-4 h-4 ${runningEngine ? "animate-spin" : ""}`} />
-            {runningEngine ? "Ejecutando\u2026" : "Ejecutar ahora"}
+            {runningEngine ? "Ejecutando..." : "Ejecutar ahora"}
           </Button>
 
           <Button
@@ -452,7 +452,7 @@ export default function CampaignDetailPage() {
               }`}
           >
             {campaign.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {campaign.status === "active" ? "Pausar campa\u00f1a" : "Lanzar campa\u00f1a"}
+            {campaign.status === "active" ? "Pausar campaña" : "Lanzar campaña"}
           </Button>
 
           <Button
@@ -469,7 +469,7 @@ export default function CampaignDetailPage() {
             variant="ghost"
             size="icon"
             className="text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-            title="Eliminar campa\u00f1a"
+            title="Eliminar campaña"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -481,7 +481,7 @@ export default function CampaignDetailPage() {
           <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Log de env\u00edos</span>
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Log de envíos</span>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0">{testLog.length}</Badge>
             </div>
             <div className="flex items-center gap-2">
@@ -521,7 +521,7 @@ export default function CampaignDetailPage() {
       <div className="border-b border-slate-200 dark:border-slate-800 mb-6">
         <nav className="flex gap-8">
           {(["leads", "sequences", "options", "analytics"] as const).map(tab => {
-            const labels = { leads: "Leads", sequences: "Secuencias", options: "Opciones", analytics: "Anal\u00edtica" }
+            const labels = { leads: "Leads", sequences: "Secuencias", options: "Opciones", analytics: "Analítica" }
             return (
               <button
                 key={tab}
@@ -554,7 +554,7 @@ export default function CampaignDetailPage() {
               </div>
             </div>
             <Button onClick={() => setShowAddLeadModal(true)} className="gap-2">
-              <Plus className="w-4 h-4" /> A\u00f1adir Leads
+              <Plus className="w-4 h-4" /> AÑADIR LEADS
             </Button>
           </div>
 
@@ -562,11 +562,11 @@ export default function CampaignDetailPage() {
             <Card className="p-12 flex flex-col items-center justify-center gap-4 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20">
               <Users className="w-12 h-12 text-slate-300 dark:text-slate-600" />
               <div className="text-center">
-                <p className="font-medium text-slate-600 dark:text-slate-300 mb-1">Sin leads a\u00fan</p>
-                <p className="text-sm text-slate-400 dark:text-slate-500">A\u00f1ade leads para empezar tu campa\u00f1a de outreach</p>
+                <p className="font-medium text-slate-600 dark:text-slate-300 mb-1 uppercase">SIN LEADS</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">Añade leads para empezar tu campaña de outreach</p>
               </div>
               <Button onClick={() => setShowAddLeadModal(true)} variant="outline" className="gap-2">
-                <Plus className="w-4 h-4" /> A\u00f1adir Leads
+                <Plus className="w-4 h-4" /> AÑADIR LEADS
               </Button>
             </Card>
           ) : (
@@ -604,12 +604,12 @@ export default function CampaignDetailPage() {
                         <td className="px-5 py-4">
                           <StatusBadge status={lead.status} sent={lead.sent_message} />
                         </td>
-                        <td className="px-5 py-4 text-slate-700 dark:text-slate-300 text-sm">{lead.company || "\u2014"}</td>
-                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400 text-sm">{lead.position || "\u2014"}</td>
+                        <td className="px-5 py-4 text-slate-700 dark:text-slate-300 text-sm">{lead.company || "—"}</td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400 text-sm">{lead.position || "—"}</td>
                         <td className="px-5 py-4">
                           {lead.sent_message ? (
                             <div className="flex justify-center">
-                              <Badge variant="success" className="text-[10px] px-2 py-0.5">\u2713 Enviado</Badge>
+                              <Badge variant="success" className="text-[10px] px-2 py-0.5">✓ Enviado</Badge>
                             </div>
                           ) : (
                             <div className="flex flex-col gap-1.5 items-center">
@@ -618,7 +618,7 @@ export default function CampaignDetailPage() {
                                 disabled={sendingLeadId === lead.id || !lead.linkedin_url}
                                 size="sm"
                                 className="h-7 px-3 text-[11px] font-semibold w-24 shadow-sm"
-                                title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitaci\u00f3n' : 'mensaje'} a ${lead.first_name}`}
+                                title={!lead.linkedin_url ? 'Sin URL de LinkedIn' : `Enviar ${steps[0]?.type === 'invitation' ? 'invitación' : 'mensaje'} a ${lead.first_name}`}
                               >
                                 {sendingLeadId === lead.id ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -679,15 +679,15 @@ export default function CampaignDetailPage() {
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="font-mono text-[10px] px-2 py-0.5 border-slate-200 dark:border-slate-700">Paso {index + 1}</Badge>
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {step.type === "invitation" ? "\u2709\ufe0f Invitaci\u00f3n" : "\ud83d\udcac Mensaje"}
+                        {step.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"}
                       </span>
                     </div>
                     <div className="flex items-center gap-0.5">
                       {index > 0 && (
-                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "up") }} title="Subir">\u2191</button>
+                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "up") }} title="Subir">↑</button>
                       )}
                       {index < steps.length - 1 && (
-                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "down") }} title="Bajar">\u2193</button>
+                        <button className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onClick={e => { e.stopPropagation(); moveStep(index, "down") }} title="Bajar">↓</button>
                       )}
                       {index > 0 && (
                         <button className="p-1 text-slate-400 hover:text-red-500" onClick={e => { e.stopPropagation(); removeStep(step.id) }} title="Eliminar">
@@ -696,13 +696,13 @@ export default function CampaignDetailPage() {
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 truncate mt-1">{step.content || "Sin contenido a\u00fan\u2026"}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 truncate mt-1">{step.content || "Sin contenido aún..."}</p>
                 </Card>
               </div>
             ))}
 
             <Button variant="outline" className="w-full border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white gap-2 bg-transparent" onClick={addStep}>
-              <Plus className="w-4 h-4" /> A\u00f1adir Paso
+              <Plus className="w-4 h-4" /> AÑADIR PASO
             </Button>
           </div>
 
@@ -711,7 +711,7 @@ export default function CampaignDetailPage() {
               <Card className="p-6 space-y-5 h-full border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-                    {activeStep.type === "invitation" ? "\u2709\ufe0f Invitaci\u00f3n" : "\ud83d\udcac Mensaje"} \u2014 Paso {steps.findIndex(s => s.id === activeStep.id) + 1}
+                    {activeStep.type === "invitation" ? "✉️ Invitación" : "💬 Mensaje"} — Paso {steps.findIndex(s => s.id === activeStep.id) + 1}
                   </h3>
                   {steps.findIndex(s => s.id === activeStep.id) > 0 && (
                     <select
@@ -719,7 +719,7 @@ export default function CampaignDetailPage() {
                       onChange={e => updateStep(activeStep.id, { type: e.target.value as "invitation" | "message" })}
                       className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none"
                     >
-                      <option value="invitation">Invitaci\u00f3n</option>
+                      <option value="invitation">Invitación</option>
                       <option value="message">Mensaje</option>
                     </select>
                   )}
@@ -738,20 +738,20 @@ export default function CampaignDetailPage() {
                   <textarea
                     ref={messageTextareaRef}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none h-44 shadow-inner"
-                    placeholder="Escribe tu mensaje aqu\u00ed... Usa las variables de abajo para personalizarlo."
+                    placeholder="Escribe tu mensaje aquí... Usa las variables de abajo para personalizarlo."
                     value={activeStep.content}
                     onChange={e => updateStep(activeStep.id, { content: e.target.value })}
                   />
                   {activeStep.type === "invitation" && (
                     <div className={`text-[11px] mt-2 text-right font-medium ${activeStep.content.length > 200 ? 'text-red-500 transition-colors' : 'text-slate-500'}`}>
                       {activeStep.content.length} / 200 caracteres
-                      {activeStep.content.length > 200 && ' \u26a0 Supera l\u00edmite recomendado'}
+                      {activeStep.content.length > 200 && ' ⚠ Supera límite recomendado'}
                     </div>
                   )}
 
                   <div className="mt-4 space-y-4">
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">Variables B\u00e1sicas</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">Variables Básicas</span>
                       <div className="flex flex-wrap gap-2">
                         {['nombre', 'apellido', 'empresa', 'cargo', 'sector'].map(v => (
                           <button
@@ -819,7 +819,7 @@ export default function CampaignDetailPage() {
         <div className="max-w-4xl space-y-6">
           <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
             <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-4">Cuentas de LinkedIn</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Selecciona las cuentas que utilizar\u00e1 esta campa\u00f1a</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Selecciona las cuentas que utilizará esta campaña</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {accounts.map(acc => (
                 <div
@@ -841,7 +841,7 @@ export default function CampaignDetailPage() {
                     <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{acc.profile_name || acc.username}</p>
                     <p className="text-xs text-slate-500 flex items-center gap-1">
                       <span className={`w-1.5 h-1.5 rounded-full ${acc.is_valid ? "bg-emerald-500" : "bg-red-500"}`} />
-                      {acc.is_valid ? "Conectada" : "Error de sesi\u00f3n"}
+                      {acc.is_valid ? "Conectada" : "Error de sesión"}
                     </p>
                   </div>
                   <Switch checked={settings.linkedin_account_ids.includes(acc.id)} onCheckedChange={() => { }} />
@@ -850,14 +850,14 @@ export default function CampaignDetailPage() {
               {accounts.length === 0 && (
                 <div className="col-span-full py-10 text-center bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
                   <p className="text-sm text-slate-500">No hay cuentas de LinkedIn conectadas.</p>
-                  <Button variant="link" asChild className="text-blue-600"><Link to="/dashboard/settings">Ir a Configuraci\u00f3n</Link></Button>
+                  <Button variant="link" asChild className="text-blue-600"><Link to="/dashboard/settings">Ir a Configuración</Link></Button>
                 </div>
               )}
             </div>
           </Card>
 
           <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-1">L\u00edmites Diarios</h3>
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-1">Límites Diarios</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Controla el volumen de acciones para evitar restricciones de LinkedIn</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
@@ -899,7 +899,7 @@ export default function CampaignDetailPage() {
             </Badge>
             {campaign.started_at && (
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                Campa\u00f1a iniciada: {new Date(campaign.started_at).toLocaleDateString("es-ES")}
+                Campaña iniciada: {new Date(campaign.started_at).toLocaleDateString("es-ES")}
               </p>
             )}
           </div>
@@ -948,10 +948,10 @@ export default function CampaignDetailPage() {
               <div className="w-16 h-16 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-100 dark:border-slate-700">
                 <Play className="w-8 h-8 text-slate-300 dark:text-slate-600" />
               </div>
-              <p className="text-slate-600 dark:text-slate-300 font-semibold mb-1">Campa\u00f1a en fase de borrador</p>
-              <p className="text-sm text-slate-500 dark:text-slate-500 mb-6 max-w-sm mx-auto">Configura tu secuencia y a\u00f1ade leads antes de lanzar para ver estad\u00edsticas de conversi\u00f3n</p>
+              <p className="text-slate-600 dark:text-slate-300 font-semibold mb-1">Campaña en fase de borrador</p>
+              <p className="text-sm text-slate-500 dark:text-slate-500 mb-6 max-w-sm mx-auto">Configura tu secuencia y añade leads antes de lanzar para ver estadísticas de conversión</p>
               <Button onClick={toggleStatus} className="gap-2 px-8 shadow-md" size="lg">
-                <Play className="w-4 h-4 fill-current" /> Lanzar Campa\u00f1a
+                <Play className="w-4 h-4 fill-current" /> Lanzar Campaña
               </Button>
             </Card>
           )}
@@ -972,11 +972,11 @@ export default function CampaignDetailPage() {
                 <Trash2 className="w-6 h-6 text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100">\u00bfEliminar este lead?</h3>
-                <p className="text-xs text-slate-500">Cuidado: esta acci\u00f3n es irreversible.</p>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100">¿Eliminar este lead?</h3>
+                <p className="text-xs text-slate-500">Cuidado: esta acción es irreversible.</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Se eliminar\u00e1 permanentemente de esta campa\u00f1a y de todas las secuencias asociadas.</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Se eliminará permanentemente de esta campaña y de todas las secuencias asociadas.</p>
             <div className="flex gap-3 justify-end pt-2">
               <Button variant="ghost" onClick={() => setLeadToDelete(null)} className="font-medium">Cancelar</Button>
               <Button
@@ -1003,7 +1003,7 @@ export default function CampaignDetailPage() {
 }
 
 function StatusBadge({ status, sent }: { status: string; sent: boolean }) {
-  if (sent) return <Badge variant="success" className="text-[10px] px-2 py-0.5 shadow-sm">\u2713 Enviado</Badge>
+  if (sent) return <Badge variant="success" className="text-[10px] px-2 py-0.5 shadow-sm">✓ Enviado</Badge>
   const map: Record<string, string> = {
     new: "bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400",
     contacted: "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-400",
