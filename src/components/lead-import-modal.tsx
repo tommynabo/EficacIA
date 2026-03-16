@@ -317,6 +317,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [snUrl, setSnUrl] = React.useState('')
   const [snParsed, setSnParsed] = React.useState<ParsedSNFilters | null>(null)
   const [snLimit, setSnLimit] = React.useState(25)
+  const [manualLiAt, setManualLiAt] = React.useState('')
 
   // Manual
   const [manualLead, setManualLead] = React.useState({
@@ -450,7 +451,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
         // Always send a fully-qualified URL so the backend can parse it
         const normalizedLiUrl = liSearchUrl.trim().startsWith('http') ? liSearchUrl.trim() : 'https://' + liSearchUrl.trim()
-        body = { ...body, type: 'linkedin_search', url: normalizedLiUrl, account_id: selectedAccountId, limit: liSearchLimit }
+        body = { ...body, type: 'linkedin_search', url: normalizedLiUrl, account_id: selectedAccountId, limit: liSearchLimit, li_at: manualLiAt }
 
       } else if (method === 'sales_navigator') {
         if (!snParsed?.isValid) throw new Error(snParsed?.error || 'URL de Sales Navigator no válida')
@@ -458,7 +459,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
           throw new Error(snParsed.error)
         }
         if (!selectedAccountId) throw new Error('Selecciona una cuenta de LinkedIn')
-        body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit }
+        body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit, li_at: manualLiAt }
 
       } else if (method === 'apollo') {
         if (!apolloQuery.titles && !apolloQuery.keywords && !apolloQuery.companies) {
@@ -766,6 +767,20 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               )}
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
               <LimitSlider value={liSearchLimit} onChange={setLiSearchLimit} />
+
+              <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-slate-400">LinkedIn Cookie (li_at)</label>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Opcional pero recomendado</label>
+                </div>
+                <Input
+                  value={manualLiAt}
+                  onChange={e => setManualLiAt(e.target.value)}
+                  placeholder="Paste li_at cookie here..."
+                  className="bg-slate-950 border-slate-700 text-sm font-mono"
+                />
+                <p className="text-[10px] text-slate-500">Pega tu cookie `li_at` si la extracción automática falla. Obténla en <span className="text-slate-400">Inspeccionar → Aplicación → Cookies</span>.</p>
+              </div>
             </div>
           )}
 
@@ -813,6 +828,20 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
               <LimitSlider value={snLimit} onChange={setSnLimit} />
+
+              <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-slate-400">LinkedIn Cookie (li_at)</label>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Opcional pero recomendado</label>
+                </div>
+                <Input
+                  value={manualLiAt}
+                  onChange={e => setManualLiAt(e.target.value)}
+                  placeholder="Paste li_at cookie here..."
+                  className="bg-slate-950 border-slate-700 text-sm font-mono"
+                />
+                <p className="text-[10px] text-slate-500">Pega tu cookie `li_at` si la extracción automática falla. Obténla en <span className="text-slate-400">Inspeccionar → Aplicación → Cookies</span> en LinkedIn.</p>
+              </div>
             </div>
           )}
 
