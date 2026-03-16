@@ -318,6 +318,50 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
   const [snParsed, setSnParsed] = React.useState<ParsedSNFilters | null>(null)
   const [snLimit, setSnLimit] = React.useState(25)
   const [manualLiAt, setManualLiAt] = React.useState('')
+  const [cookieStatus, setCookieStatus] = React.useState<'none' | 'saving' | 'saved' | 'error'>('none')
+  const [cookieError, setCookieError] = React.useState('')
+
+  // Bookmarklet JS (copies li_at cookie to clipboard)
+  const bookmarkletCode = `javascript:(function(){var c=document.cookie.match(/li_at=([^;]+)/);if(!c){alert('\u274c No se encontr\u00f3 la cookie li_at.\n\nAseg\u00farate de estar logueado en LinkedIn.');return;}navigator.clipboard.writeText(c[1]).then(function(){alert('\u2705 Cookie copiada!\n\nVe a EficacIA y haz clic en "Pegar Cookie".');}).catch(function(){prompt('Copia manualmente:',c[1]);});})()`
+
+  // Paste cookie from clipboard and auto-save
+  const handlePasteCookie = async () => {
+    try {
+      setCookieStatus('saving')
+      setCookieError('')
+      const text = await navigator.clipboard.readText()
+      const liAt = text.trim()
+      if (!liAt || liAt.length < 20) {
+        setCookieStatus('error')
+        setCookieError('El portapapeles no contiene una cookie v\u00e1lida. Usa el bookmarklet primero.')
+        return
+      }
+      // Save via existing accounts API
+      const res = await fetch('/api/linkedin/accounts', {
+        method: 'POST',
+        headers: { ...getApiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ li_at: liAt }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setCookieStatus('error')
+        setCookieError(data.error || 'Error al guardar la cookie')
+        return
+      }
+      setCookieStatus('saved')
+      // Refresh accounts list
+      fetch('/api/linkedin/accounts', { headers: getApiHeaders() })
+        .then(r => r.json())
+        .then(d => {
+          const accs: Account[] = (d.accounts || [])
+          setAccounts(accs)
+          if (accs.length > 0 && !selectedAccountId) setSelectedAccountId(accs[0].id)
+        })
+    } catch (err: any) {
+      setCookieStatus('error')
+      setCookieError('No se pudo leer el portapapeles. Permite el acceso o pega manualmente.')
+    }
+  }
 
   // Manual
   const [manualLead, setManualLead] = React.useState({
@@ -820,9 +864,54 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
               <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
               <LimitSlider value={snLimit} onChange={setSnLimit} />
 
-              <div className="flex items-center gap-2 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                <Zap className="w-3.5 h-3.5 shrink-0" />
-                <span>Extracción de Sales Navigator automática (Sin necesidad de cookies).</span>
+              {/* Cookie Bookmarklet Section */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
+                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                  Conectar Cookie de LinkedIn
+                </div>
+
+                <div className="space-y-2 p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <span className="text-slate-300 font-semibold">Paso 1:</span> Arrastra este botón a tu barra de marcadores:
+                  </p>
+                  <a
+                    href={bookmarkletCode}
+                    onClick={(e) => e.preventDefault()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-grab active:cursor-grabbing transition-colors select-none"
+                    title="Arrastra este botón a tu barra de marcadores"
+                  >
+                    📎 EficacIA Cookie
+                  </a>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <span className="text-slate-300 font-semibold">Paso 2:</span> Ve a <span className="text-blue-400">linkedin.com</span> y haz clic en el marcador.
+                  </p>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <span className="text-slate-300 font-semibold">Paso 3:</span> Vuelve aquí y pulsa:
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePasteCookie}
+                    disabled={cookieStatus === 'saving'}
+                    className={cn(
+                      'w-full text-xs font-bold',
+                      cookieStatus === 'saved' && 'border-emerald-500/50 text-emerald-400',
+                      cookieStatus === 'error' && 'border-red-500/50 text-red-400',
+                    )}
+                  >
+                    {cookieStatus === 'saving' ? 'Guardando...' :
+                     cookieStatus === 'saved' ? '✓ Cookie guardada correctamente' :
+                     '📋 Pegar Cookie'}
+                  </Button>
+                  {cookieStatus === 'error' && cookieError && (
+                    <p className="text-[10px] text-red-400">{cookieError}</p>
+                  )}
+                  {cookieStatus === 'saved' && (
+                    <p className="text-[10px] text-emerald-400">¡Listo! Ahora puedes importar leads de Sales Navigator.</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
