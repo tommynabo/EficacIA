@@ -163,9 +163,9 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
 //
 // Apify actor docs:
 //   LinkedIn search: https://apify.com/apify/linkedin-search-scraper
-//   Sales Navigator: https://apify.com/bestscrapers/linkedin-sales-navigator-scraper
+//   Sales Navigator: https://apify.com/muhammad_usama/apify-sales-navigator-no-cookies
 const ACTOR_LINKEDIN  = 'apify/linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'bestscrapers/linkedin-sales-navigator-scraper';
+const ACTOR_SALES_NAV = 'muhammad_usama/apify-sales-navigator-no-cookies';
 const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
@@ -242,11 +242,11 @@ function extractProfilesFromSalesNavActor(items, limit) {
   for (const item of (Array.isArray(items) ? items : [])) {
     if (profiles.length >= limit) break;
     profiles.push({
-      first_name:   item.first_name || item.firstName || '',
-      last_name:    item.last_name || item.lastName || '',
-      job_title:    item.job_title || item.title || item.position || '',
-      company:      item.company || item.companyName || '',
-      linkedin_url: item.linkedin_url || item.url || item.linkedinUrl || '',
+      first_name:   item.first_name || item.firstName || (item.fullName ? item.fullName.split(' ')[0] : '') || '',
+      last_name:    item.last_name || item.lastName || (item.fullName ? item.fullName.split(' ').slice(1).join(' ') : '') || '',
+      job_title:    item.job_title || item.title || item.position || item.occupation || '',
+      company:      item.company || item.companyName || item.currentCompany || '',
+      linkedin_url: item.linkedin_url || item.url || item.linkedinUrl || item.profileUrl || '',
       email:        item.email || null,
     });
   }
@@ -545,9 +545,9 @@ export default async function handler(req, res) {
         
         console.log('[SALES NAV] Starting run with no-cookie actor:', ACTOR_SALES_NAV);
         const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
-          sales_url: url,
+          linkedinSearchUrl: url,
           limit: searchLimit,
-          // Optional: we can still pass cookies if we have them, as a fallback
+          // Optional: passing cookies if available, though actor is "no-cookie"
           ...(liAt && { cookies: [{ name: 'li_at', value: liAt }] })
         });
 
