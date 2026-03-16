@@ -164,8 +164,8 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
 // Apify actor docs:
 //   LinkedIn search: https://apify.com/apify/linkedin-search-scraper
 //   Sales Navigator: https://apify.com/muhammad_usama/apify-sales-navigator-no-cookies
-const ACTOR_LINKEDIN  = 'apify/linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'muhammad_usama/apify-sales-navigator-no-cookies';
+const ACTOR_LINKEDIN  = 'apify~linkedin-search-scraper';
+const ACTOR_SALES_NAV = 'muhammad_usama~apify-sales-navigator-no-cookies';
 const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
