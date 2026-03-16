@@ -407,8 +407,14 @@ export default async function handler(req, res) {
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
+  
   if (!leadId || !accountId || !actionType) {
-    return res.status(400).json({ error: 'Faltan leadId, accountId o actionType' });
+    const missing = [];
+    if (!leadId) missing.push('leadId');
+    if (!accountId) missing.push('accountId');
+    if (!actionType) missing.push('actionType');
+    console.error(`[SEND-ACTION] Missing payload fields: ${missing.join(', ')}`);
+    return res.status(400).json({ error: `Faltan campos requeridos: ${missing.join(', ')}` });
   }
 
   try {

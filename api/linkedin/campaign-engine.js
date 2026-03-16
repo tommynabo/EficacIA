@@ -99,6 +99,10 @@ export default async function handler(req, res) {
         continue;
       }
       const accountId = accountIds[0]; // Use first assigned account
+      if (!accountId) {
+        console.log(`[ENGINE] Campaign ${campaign.id} has an invalid or empty account assigned, skipping`);
+        continue;
+      }
 
       const dailyLimit = campaign.settings?.daily_limit_invitations || campaign.settings?.daily_limit_messages || 25;
 
@@ -187,8 +191,17 @@ export default async function handler(req, res) {
           });
 
           if (!sendRes.ok) {
-            const err = await sendRes.json().catch(() => ({}));
-            console.error(`[ENGINE] Failed to process lead ${lead.id}:`, err.error || sendRes.status);
+            const errData = await sendRes.json().catch(() => ({}));
+            const errMsg = errData.error || `Error ${sendRes.status}`;
+            console.error(`[ENGINE] Failed to process lead ${lead.id}: ${errMsg}`);
+            
+            // Mark lead as failed in DB to avoid constant retries if the error is permanent
+            await supabaseAdmin.from('leads').update({
+              sequence_status: 'failed',
+              error_message: errMsg,
+              last_action_at: now
+            }).eq('id', lead.id);
+
             stats.errors++;
             continue;
           }
