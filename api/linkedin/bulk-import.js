@@ -241,6 +241,83 @@ function extractProfilesFromApify(items, limit) {
   return profiles;
 }
 
+// ─── Direct LinkedIn Sales Navigator API ────────────────────────────────────
+// Calls LinkedIn's internal salesApiLeadSearch with the user's session cookie.
+// Returns the EXACT same profiles shown in the Sales Navigator search URL.
+async function fetchSalesNavProfiles(snUrl, liAt, count = 25) {
+  const urlObj = new URL(snUrl);
+  const queryParam = urlObj.searchParams.get('query') || '';
+  if (!queryParam) throw new Error('No se encontraron filtros de búsqueda en la URL de Sales Navigator.');
+
+  const results = [];
+  const pageSize = Math.min(count, 25);
+  let start = 0;
+
+  while (results.length < count) {
+    const remaining = count - results.length;
+    const thisPageSize = Math.min(pageSize, remaining);
+
+    const apiUrl = `https://www.linkedin.com/sales-api/salesApiLeadSearch?q=searchQuery&query=${encodeURIComponent(queryParam)}&start=${start}&count=${thisPageSize}&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-14`;
+
+    console.log(`[SN-API] Fetching page start=${start} count=${thisPageSize}`);
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Cookie': `li_at=${liAt}; JSESSIONID="ajax:0"`,
+        'csrf-token': 'ajax:0',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'x-restli-protocol-version': '2.0.0',
+        'x-li-lang': 'en_US',
+        'Accept': 'application/json',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+      },
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      console.error('[SN-API] Auth failed:', response.status);
+      throw new Error('Tu sesión de LinkedIn ha expirado. Ve a Cuentas LinkedIn y vuelve a conectar tu cuenta.');
+    }
+    if (response.status === 429) {
+      console.warn('[SN-API] Rate limited');
+      throw new Error('LinkedIn está limitando las peticiones. Espera unos minutos e inténtalo de nuevo.');
+    }
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      console.error('[SN-API] Error:', response.status, errText.slice(0, 300));
+      throw new Error(`Error de LinkedIn Sales Navigator (${response.status}). Puede que tu sesión haya expirado.`);
+    }
+
+    const data = await response.json();
+    const elements = data.elements || [];
+    console.log(`[SN-API] Got ${elements.length} elements`);
+
+    if (elements.length === 0) break;
+
+    for (const el of elements) {
+      if (results.length >= count) break;
+      const firstName = el.firstName || '';
+      const lastName = el.lastName || '';
+      const currentPos = (el.currentPositions || [])[0] || {};
+      const jobTitle = currentPos.title || el.title || '';
+      const company = currentPos.companyName || currentPos.companyUrnResolutionResult?.name || el.companyName || '';
+      let linkedinUrl = '';
+      const profileId = el.publicIdentifier || el.entityUrn?.split(':').pop() || '';
+      if (profileId) linkedinUrl = `https://www.linkedin.com/in/${profileId}/`;
+      results.push({
+        first_name: firstName, last_name: lastName,
+        job_title: jobTitle, company: company,
+        linkedin_url: linkedinUrl, email: null,
+        custom_vars: { location: el.geoRegion || '' },
+      });
+    }
+    start += elements.length;
+    if (elements.length < thisPageSize) break;
+  }
+
+  console.log(`[SN-API] Total profiles extracted: ${results.length}`);
+  return results;
+}
+
 function extractProfilesFromUnipileSearch(items, limit) {
   const profiles = [];
   for (const item of (Array.isArray(items) ? items : [])) {
@@ -596,27 +673,56 @@ export default async function handler(req, res) {
         );
         return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── Sales Navigator → Google Search (parsed from SN URL filters) ────
+      // ── Sales Navigator → Direct LinkedIn API (exact profiles) ──────────
       } else if (importType === 'sales_navigator') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
         const searchLimit = Math.min(limit, 50);
 
-        // Parse the Sales Navigator URL filters into a Google query
-        const googleQuery = parseSalesNavUrlToGoogleQuery(url);
-        console.log('[SALES NAV] Using Google search approach. Query:', googleQuery);
+        // 1. Resolve Session Cookie (li_at) from user's connected account
+        let liAt = bodyLiAt; // Manual override from body (if any)
 
-        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
-          queries:          googleQuery,
-          maxPagesPerQuery: Math.ceil(searchLimit / 10),
-          resultsPerPage:   10,
-        });
+        if (!liAt && account_id) {
+          const { data: acc } = await supabaseAdmin
+            .from('linkedin_accounts')
+            .select('*')
+            .eq('id', account_id)
+            .single();
 
-        const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
-          process.env.JWT_SECRET || 'dev-secret',
-          { expiresIn: '10m' }
-        );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Extrayendo perfiles de Sales Navigator…' });
+          if (acc) {
+            if (acc.session_cookie && acc.session_cookie !== 'managed_by_unipile') {
+              liAt = acc.session_cookie;
+              console.log('[SALES NAV] Using stored session_cookie from account', account_id);
+            } else if (acc.unipile_account_id) {
+              liAt = await getLinkedInCookiesFromUnipile(acc.unipile_account_id);
+              console.log('[SALES NAV] Tried Unipile cookie, got:', liAt ? 'yes' : 'no');
+            }
+          }
+        }
+
+        // Fallback: any valid cookie from user's accounts
+        if (!liAt) {
+          liAt = await getLiAtForUser(userId);
+          if (liAt) console.log('[SALES NAV] Using fallback cookie from getLiAtForUser');
+        }
+
+        if (!liAt || liAt.length < 20) {
+          return res.status(400).json({
+            error: 'No se encontró una cookie de sesión válida. Ve a Cuentas LinkedIn y reconecta tu cuenta.'
+          });
+        }
+
+        // 2. Call LinkedIn's own Sales Navigator API directly
+        console.log('[SALES NAV] Calling LinkedIn API directly for exact profiles...');
+        rawLeads = await fetchSalesNavProfiles(url, liAt, searchLimit);
+
+        if (rawLeads.length === 0) {
+          return res.status(200).json({
+            success: true,
+            imported: 0,
+            message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros en Sales Navigator.'
+          });
+        }
+        // Falls through to insertLeadsIntoDB below
 
       // ── Manual single lead ────────────────────────────────────────────────
       } else if (importType === 'manual') {
