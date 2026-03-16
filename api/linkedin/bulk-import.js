@@ -157,15 +157,10 @@ async function getLinkedInCookiesFromUnipile(unipileAccountId) {
   }
 }
 
-// ─── Apify LinkedIn Search (async — works within Vercel 10s limit) ───────────
-// Each search starts an Apify actor run and returns a poll_token (signed JWT).
-// Frontend polls GET /api/linkedin/bulk-import?poll_token=xxx every 3s.
-//
-// Apify actor docs:
-//   LinkedIn search: https://apify.com/apify/linkedin-search-scraper
-//   Sales Navigator: https://apify.com/muhammad_usama/apify-sales-navigator-no-cookies
-const ACTOR_LINKEDIN  = 'apify~linkedin-search-scraper';
-const ACTOR_SALES_NAV = 'muhammad_usama~apify-sales-navigator-no-cookies';
+// ─── Apify-powered search (async — works within Vercel 10s limit) ────────────
+// All search methods (Apollo, LinkedIn Search, Sales Navigator) use the Google
+// Search Scraper to find LinkedIn profiles. No paid actors or cookies needed.
+//   Actor: https://apify.com/apify/google-search-scraper
 const ACTOR_GOOGLE    = 'apify~google-search-scraper';
 
 async function startApifyRun(actorSlug, input) {
@@ -181,8 +176,20 @@ async function startApifyRun(actorSlug, input) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
+    const errBody = await res.text().catch(() => '');
+    console.error('[APIFY] 401 Unauthorized:', errBody);
     throw new Error('Apify API Token inválido. Verifica APIFY_API_TOKEN en Vercel.');
+  }
+  if (res.status === 402) {
+    const errBody = await res.text().catch(() => '');
+    console.error('[APIFY] 402 Payment Required:', errBody);
+    throw new Error('Créditos Apify insuficientes o suscripción al actor requerida. Revisa tu cuenta en apify.com.');
+  }
+  if (res.status === 403) {
+    const errBody = await res.text().catch(() => '');
+    console.error('[APIFY] 403 Forbidden:', errBody);
+    throw new Error(`Sin permisos para ejecutar el actor ${actorSlug}. Es posible que necesites "alquilar" (rent) este actor en apify.com/store primero.`);
   }
   if (res.status === 404) {
     throw new Error(`Actor de Apify no encontrado: ${actorSlug}. Verifica que el nombre sea correcto.`);
@@ -200,18 +207,18 @@ async function startApifyRun(actorSlug, input) {
 async function checkApifyRun(runId) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${encodeURIComponent(token)}`);
-  if (!res.ok) throw new Error(`Error al verificar búsqueda (${res.status})`);
+  if (!res.ok) throw new Error(`Error polling Apify run: ${res.status}`);
   const data = await res.json();
   console.log('[APIFY POLL] Run', runId, '→ status:', data.data?.status);
   return data.data; // { status, defaultDatasetId, ... }
 }
 
-async function fetchApifyDataset(datasetId, limit) {
+async function fetchApifyDataset(datasetId, limit = 50) {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   const res = await fetch(
     `https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&limit=${limit}&format=json`
   );
-  if (!res.ok) throw new Error(`Error al obtener resultados (${res.status})`);
+  if (!res.ok) throw new Error(`Error fetching dataset: ${res.status}`);
   const items = await res.json();
   console.log('[APIFY DATASET] datasetId:', datasetId, '| items received:', Array.isArray(items) ? items.length : typeof items);
   return items;
@@ -221,32 +228,13 @@ function extractProfilesFromApify(items, limit) {
   const profiles = [];
   for (const item of (Array.isArray(items) ? items : [])) {
     if (profiles.length >= limit) break;
-    const firstName = item.firstName || item.first_name || item.given_name || '';
-    const lastName  = item.lastName  || item.last_name  || item.family_name || '';
-    const fullName  = item.fullName  || item.name       || `${firstName} ${lastName}`.trim();
-    const nameParts = fullName.split(' ');
+    if (!item.url && !item.linkedin_url && !item.linkedinUrl) continue;
     profiles.push({
-      first_name:   firstName   || nameParts[0] || '',
-      last_name:    lastName    || nameParts.slice(1).join(' ') || '',
-      job_title:    item.headline || item.title || item.jobTitle || item.job_title || item.position || '',
-      company:      item.companyName || item.company || item.currentCompany || item.organizationName || item.organization_name || '',
-      linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl || item.url || '',
-      email:        item.email || null,
-    });
-  }
-  return profiles;
-}
-
-function extractProfilesFromSalesNavActor(items, limit) {
-  const profiles = [];
-  for (const item of (Array.isArray(items) ? items : [])) {
-    if (profiles.length >= limit) break;
-    profiles.push({
-      first_name:   item.first_name || item.firstName || (item.fullName ? item.fullName.split(' ')[0] : '') || '',
-      last_name:    item.last_name || item.lastName || (item.fullName ? item.fullName.split(' ').slice(1).join(' ') : '') || '',
-      job_title:    item.job_title || item.title || item.position || item.occupation || '',
-      company:      item.company || item.companyName || item.currentCompany || '',
-      linkedin_url: item.linkedin_url || item.url || item.linkedinUrl || item.profileUrl || '',
+      first_name:   item.first_name || item.firstName || '',
+      last_name:    item.last_name || item.lastName || '',
+      job_title:    item.job_title || item.title || item.position || '',
+      company:      item.company || item.companyName || '',
+      linkedin_url: item.linkedin_url || item.url || item.linkedinUrl || '',
       email:        item.email || null,
     });
   }
@@ -302,6 +290,84 @@ function buildGoogleLinkedInQuery(filters = {}) {
   if (locations.length) parts.push('(' + locations.map(l => `"${l}"`).join(' OR ') + ')');
   if (keywords.length)  parts.push(keywords.join(' '));
   return parts.join(' ');
+}
+
+// ─── Parse Sales Navigator URL into Google search query ─────────────────────
+// Extracts keywords and filter text values from a SN URL and builds an
+// equivalent Google site:linkedin.com/in query.
+function parseSalesNavUrlToGoogleQuery(snUrl) {
+  try {
+    const normalizedUrl = snUrl.trim().startsWith('http') ? snUrl.trim() : 'https://' + snUrl.trim();
+    const urlObj = new URL(normalizedUrl);
+
+    // The query param is inside parentheses: ?query=(...)
+    const rawQuery = urlObj.searchParams.get('query') || '';
+    // Decode double-encoded values
+    const decoded = decodeURIComponent(decodeURIComponent(rawQuery));
+
+    const parts = ['site:linkedin.com/in'];
+
+    // Extract keywords from the query string
+    const kwMatch = decoded.match(/keywords[:\s]*([^,)]+)/i);
+    if (kwMatch) {
+      parts.push(kwMatch[1].trim());
+    }
+
+    // Extract region/location text values
+    const regionTexts = [];
+    const regionRegex = /type[:\s]*REGION.*?values[:\s]*List\(([^)]+)\)/is;
+    const regionMatch = decoded.match(regionRegex);
+    if (regionMatch) {
+      const textMatches = regionMatch[1].matchAll(/text[:\s]*([^,)]+)/gi);
+      for (const m of textMatches) {
+        const clean = m[1].trim().replace(/%20/g, ' ');
+        if (clean && clean.length > 2) regionTexts.push(clean);
+      }
+    }
+    if (regionTexts.length) {
+      parts.push('(' + regionTexts.slice(0, 3).map(r => `"${r}"`).join(' OR ') + ')');
+    }
+
+    // Extract job title text values
+    const titleTexts = [];
+    const titleRegex = /type[:\s]*(?:FUNCTION|SENIORITY_LEVEL|TITLE).*?values[:\s]*List\(([^)]+)\)/is;
+    const titleMatch = decoded.match(titleRegex);
+    if (titleMatch) {
+      const textMatches = titleMatch[1].matchAll(/text[:\s]*([^,)]+)/gi);
+      for (const m of textMatches) {
+        const clean = m[1].trim().replace(/%20/g, ' ');
+        if (clean && clean.length > 2) titleTexts.push(clean);
+      }
+    }
+    if (titleTexts.length) {
+      parts.push('(' + titleTexts.slice(0, 3).map(t => `"${t}"`).join(' OR ') + ')');
+    }
+
+    // Extract company text values
+    const companyTexts = [];
+    const companyRegex = /type[:\s]*(?:CURRENT_COMPANY|COMPANY).*?values[:\s]*List\(([^)]+)\)/is;
+    const companyMatch = decoded.match(companyRegex);
+    if (companyMatch) {
+      const textMatches = companyMatch[1].matchAll(/text[:\s]*([^,)]+)/gi);
+      for (const m of textMatches) {
+        const clean = m[1].trim().replace(/%20/g, ' ');
+        if (clean && clean.length > 2) companyTexts.push(clean);
+      }
+    }
+    if (companyTexts.length) {
+      parts.push('(' + companyTexts.slice(0, 3).map(c => `"${c}"`).join(' OR ') + ')');
+    }
+
+    const query = parts.join(' ');
+    console.log('[SN→GOOGLE] Parsed SN URL into Google query:', query);
+    return query;
+  } catch (err) {
+    console.warn('[SN→GOOGLE] Could not parse SN URL, using raw keywords:', err.message);
+    // Fallback: try to extract any readable text
+    const kwMatch = snUrl.match(/keywords[=:]+([^&]+)/i);
+    const fallback = kwMatch ? decodeURIComponent(kwMatch[1]).replace(/[+%20]/g, ' ') : 'linkedin';
+    return `site:linkedin.com/in ${fallback}`;
+  }
 }
 
 // Parse Google Search Scraper dataset items into lead records.
@@ -420,13 +486,8 @@ export default async function handler(req, res) {
       if (run.status === 'SUCCEEDED') {
         const items = await fetchApifyDataset(run.defaultDatasetId || pollData.datasetId, pollData.limit);
         let rawLeads = [];
-        if (pollData.actor === 'google') {
-          rawLeads = extractProfilesFromGoogle(items, pollData.limit);
-        } else if (pollData.actor === 'sales_navigator') {
-          rawLeads = extractProfilesFromSalesNavActor(items, pollData.limit);
-        } else {
-          rawLeads = extractProfilesFromApify(items, pollData.limit);
-        }
+        // All methods now use Google Search Scraper
+        rawLeads = extractProfilesFromGoogle(items, pollData.limit);
         if (rawLeads.length === 0) {
           return res.status(200).json({ status: 'done', success: true, imported: 0, message: '✓ Búsqueda completada sin resultados. Prueba con otros filtros.' });
         }
@@ -444,7 +505,7 @@ export default async function handler(req, res) {
     const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters, apollo_query, li_at: bodyLiAt } = req.body || {};
     const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
 
-    console.log('[BULK-IMPORT] POST type:', importType, '| has account_id:', !!account_id, '| has li_at in body:', !!(bodyLiAt && bodyLiAt.length > 20));
+    console.log('[BULK-IMPORT] POST type:', importType, '| has account_id:', !!account_id);
 
     if (!importType || importType === 'unknown') {
       return res.status(400).json({ error: 'Tipo de importación no especificado' });
@@ -487,7 +548,7 @@ export default async function handler(req, res) {
         const csvText = await fetchGoogleSheetsCsv(url);
         rawLeads = parseCsvToLeads(csvText);
 
-      // ── Apollo → Google LinkedIn people search (no li_at needed) ──────────────
+      // ── Apollo → Google LinkedIn people search ────────────────────────────
       } else if (importType === 'apollo') {
         const q = apollo_query || {};
         if (!q.titles && !q.keywords && !q.companies) {
@@ -508,7 +569,7 @@ export default async function handler(req, res) {
         );
         return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── LinkedIn Search URL → Google (no li_at needed) ───────────────────────
+      // ── LinkedIn Search URL → Google ──────────────────────────────────────
       } else if (importType === 'linkedin_search') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de búsqueda' });
         const searchLimit = Math.min(limit, 50);
@@ -535,28 +596,27 @@ export default async function handler(req, res) {
         );
         return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Buscando perfiles en LinkedIn…' });
 
-      // ── Sales Navigator → Apify Scraper ────────────────────────────
+      // ── Sales Navigator → Google Search (parsed from SN URL filters) ────
       } else if (importType === 'sales_navigator') {
         if (!url) return res.status(400).json({ error: 'Se requiere la URL de Sales Navigator' });
         const searchLimit = Math.min(limit, 50);
 
-        // Resolve Session Cookie (li_at)
-        let liAt = bodyLiAt;
-        
-        console.log('[SALES NAV] Starting run with no-cookie actor:', ACTOR_SALES_NAV);
-        const { runId, datasetId } = await startApifyRun(ACTOR_SALES_NAV, {
-          linkedinSearchUrl: url,
-          limit: searchLimit,
-          // Optional: passing cookies if available, though actor is "no-cookie"
-          ...(liAt && { cookies: [{ name: 'li_at', value: liAt }] })
+        // Parse the Sales Navigator URL filters into a Google query
+        const googleQuery = parseSalesNavUrlToGoogleQuery(url);
+        console.log('[SALES NAV] Using Google search approach. Query:', googleQuery);
+
+        const { runId, datasetId } = await startApifyRun(ACTOR_GOOGLE, {
+          queries:          googleQuery,
+          maxPagesPerQuery: Math.ceil(searchLimit / 10),
+          resultsPerPage:   10,
         });
 
         const pollToken = jwt.sign(
-          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'sales_navigator' },
+          { runId, datasetId, teamId, campaignId: campaign_id || null, limit: searchLimit, userId, actor: 'google' },
           process.env.JWT_SECRET || 'dev-secret',
           { expiresIn: '10m' }
         );
-        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Extrayendo resultados de Sales Navigator...' });
+        return res.status(202).json({ status: 'processing', poll_token: pollToken, message: 'Extrayendo perfiles de Sales Navigator…' });
 
       // ── Manual single lead ────────────────────────────────────────────────
       } else if (importType === 'manual') {
