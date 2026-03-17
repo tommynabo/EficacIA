@@ -28,8 +28,8 @@ const App = () => {
     // Load config from chrome storage
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['token', 'backendUrl'], (result) => {
-        if (result.token) setToken(result.token);
-        if (result.backendUrl) setBackendUrl(result.backendUrl);
+        if (typeof result.token === 'string') setToken(result.token);
+        if (typeof result.backendUrl === 'string') setBackendUrl(result.backendUrl);
       });
     }
 

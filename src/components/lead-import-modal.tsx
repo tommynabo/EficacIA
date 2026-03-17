@@ -3,6 +3,7 @@ import { X, FileText, Search, Briefcase, UserPlus, Upload, Check, AlertCircle, L
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { cn } from "@/src/lib/utils"
+import { Card } from "./ui/card"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -821,88 +822,31 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
           {/* ── Sales Navigator ── */}
           {method === 'sales_navigator' && (
-            <div className="space-y-4">
-              <div className="text-sm text-slate-500 bg-slate-800/40 rounded-lg p-3.5">
-                <p><strong className="text-slate-300">Cómo obtener la URL:</strong> Abre Sales Navigator, realiza tu búsqueda con los filtros deseados y copia la URL completa del navegador.</p>
-                <p className="mt-1 text-slate-600">Funciona con URLs de búsqueda: linkedin.com/sales/search/people?query=...</p>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm text-slate-400">URL de Sales Navigator</label>
-                <Input
-                  value={snUrl}
-                  onChange={e => handleSnUrlChange(e.target.value)}
-                  placeholder="https://www.linkedin.com/sales/search/people?query=..."
-                  className="bg-slate-950 border-slate-700 text-sm font-mono"
-                />
-              </div>
-
-              {/* Live filter preview — the key differentiator */}
-              {snParsed && snParsed.isValid && !snParsed.error && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-emerald-400">
-                    <Check className="w-4 h-4" />
-                    Filtros detectados correctamente
-                  </div>
-                  <div className="space-y-1.5">
-                    <FilterSection title="Títulos" items={snParsed.titles} />
-                    <FilterSection title="Regiones" items={snParsed.regions} />
-                    <FilterSection title="Empresas" items={snParsed.companies} />
-                    <FilterSection title="Industrias" items={snParsed.industries} />
-                    <FilterSection title="Seniority" items={snParsed.seniority} />
-                    <FilterSection title="Keywords" items={snParsed.keywords} />
-                  </div>
+            <div className="space-y-6 py-4">
+              <Card className="border-violet-500/30 bg-violet-500/5 p-6 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center mx-auto">
+                  <Briefcase className="w-8 h-8 text-violet-400" />
                 </div>
-              )}
-
-              {snParsed && snParsed.error && (
-                <div className="flex items-start gap-2 p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{snParsed.error}</span>
-                </div>
-              )}
-
-              <AccountSelector accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
-              <LimitSlider value={snLimit} onChange={setSnLimit} />
-
-              {/* Cookie Bookmarklet Section */}
-              <div className="space-y-3 pt-3 border-t border-slate-800">
-                <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
-                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                  Conectar Cookie de LinkedIn
-                </div>
-
-                <div className="space-y-2 p-3 rounded-lg bg-slate-900/60 border border-slate-800">
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <span className="text-slate-300 font-semibold">Paso 1:</span> Arrastra este botón a tu barra de marcadores:
+                <div className="space-y-2">
+                  <h3 className="text-lg font-bold text-violet-400">Importación Evolucionada</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed max-w-sm mx-auto">
+                    El sistema de importación desde Sales Navigator ha evolucionado. Ahora es más rápido, seguro y sin bloqueos usando nuestra extensión de Chrome oficial.
                   </p>
-                  <a
-                    ref={bookmarkletRef}
-                    href="#bookmarklet"
-                    onClick={(e) => e.preventDefault()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-grab active:cursor-grabbing transition-colors select-none"
-                    title="Arrastra este botón a tu barra de marcadores"
-                  >
-                    📎 EficacIA Cookie
-                  </a>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <span className="text-slate-300 font-semibold">Paso 2:</span> Ve a <span className="text-blue-400">linkedin.com</span> (logueado) y haz clic en el marcador. Se abrirá EficacIA automáticamente con la cookie.
-                  </p>
-                  {cookieStatus === 'saving' && (
-                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
-                      <Zap className="w-3 h-3 animate-pulse" /> Guardando cookie...
-                    </div>
-                  )}
-                  {cookieStatus === 'saved' && (
-                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                      <Check className="w-3 h-3" /> ¡Cookie guardada! Ya puedes importar leads de Sales Navigator.
-                    </div>
-                  )}
-                  {cookieStatus === 'error' && cookieError && (
-                    <div className="flex items-center gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
-                      <AlertCircle className="w-3 h-3" /> {cookieError}
-                    </div>
-                  )}
                 </div>
+                <Button 
+                  onClick={() => window.location.href = '/dashboard/settings?tab=extension'}
+                  className="bg-violet-600 hover:bg-violet-700 text-white font-bold gap-2 px-8 py-6 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.3)] transition-all hover:scale-[1.02]"
+                >
+                  <Search className="w-5 h-5" />
+                  Instalar Extensión Oficial
+                </Button>
+              </Card>
+
+              <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-800 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Ya no necesitas pegar URLs aquí. Al instalar la extensión, aparecerá un botón directo en LinkedIn Sales Navigator para añadir los leads a tus campañas de EficacIA en tiempo real.
+                </p>
               </div>
             </div>
           )}

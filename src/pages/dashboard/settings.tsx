@@ -7,17 +7,21 @@ import { ShieldAlert, CheckCircle2, Plus, Moon, Sun } from "lucide-react"
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = React.useState("proxies")
+  const [activeTab, setActiveTab] = React.useState("profile")
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Ajustes</h2>
-        <p className="text-slate-400">Configura tu cuenta y preferencias de seguridad.</p>
+        <p className="text-slate-400">Configura tu cuenta y preferencias de la extensión.</p>
       </div>
 
       <div className="flex items-center gap-2 border-b border-slate-800 pb-4 flex-wrap">
-        {[{ key: "profile", label: "Perfil" }, { key: "proxies", label: "Proxies", badge: "Obligatorio" }, { key: "billing", label: "Facturación" }].map(({ key, label, badge }) => (
+        {[
+          { key: "profile", label: "Perfil" }, 
+          { key: "extension", label: "Extensión Eficacia", badge: "Nueva" }, 
+          { key: "billing", label: "Facturación" }
+        ].map(({ key, label, badge }) => (
           <button
             key={key}
             className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${activeTab === key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}
@@ -25,7 +29,7 @@ export default function SettingsPage() {
           >
             {label}
             {badge && (
-              <Badge variant="destructive" className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px] px-1.5 py-0">
                 {badge}
               </Badge>
             )}
@@ -33,53 +37,79 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {activeTab === "proxies" && (
+      {activeTab === "extension" && (
         <div className="space-y-6">
-          <Card className="border-red-500/30 bg-red-500/5">
+          <Card className="border-violet-500/30 bg-violet-500/5">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5 text-red-500" />
+                <div className="w-10 h-10 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5 text-violet-500" />
                 </div>
                 <div>
-                  <CardTitle className="text-red-400">Protección de Cuenta Requerida</CardTitle>
-                  <CardDescription className="text-red-300/70">
-                    Para evitar baneos en LinkedIn, es obligatorio configurar un proxy residencial antes de iniciar cualquier campaña.
+                  <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator</CardTitle>
+                  <CardDescription className="text-violet-300/70">
+                    Esta extensión está diseñada EXCLUSIVAMENTE para funcionar en la página de resultados de LinkedIn Sales Navigator.
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Tus Proxies</CardTitle>
-                  <CardDescription>Añade y gestiona tus proxies residenciales.</CardDescription>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Guía de Instalación</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">1</div>
+                  <p className="text-sm text-slate-300">Descarga la extensión comprimida (.zip) usando el botón de abajo.</p>
                 </div>
-                <Button className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Añadir Proxy
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">2</div>
+                  <p className="text-sm text-slate-300">Ve a <code className="bg-slate-950 px-1 py-0.5 rounded text-blue-400">chrome://extensions</code> y activa el "Modo Desarrollador".</p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">3</div>
+                  <p className="text-sm text-slate-300">Haz clic en "Cargar descomprimido" y selecciona la carpeta de la extensión extraída.</p>
+                </div>
+                
+                <Button className="w-full mt-4 bg-white text-black hover:bg-zinc-200 gap-2 font-bold py-6 cursor-not-allowed opacity-70">
+                  <Plus className="w-5 h-5 rotate-45" />
+                  Descargar Extensión (.zip)
                 </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">192.168.1.1:8080</p>
-                    <p className="text-xs text-slate-500">España, Madrid • HTTP</p>
-                  </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Token de Autenticación</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-slate-400">Copia este token y pégalo en la configuración de la extensión para vincular tu cuenta.</p>
+                <div className="flex gap-2">
+                  <Input 
+                    readOnly 
+                    value={typeof window !== 'undefined' ? localStorage.getItem('auth_token') || 'No se encontró token' : 'Cargando...'} 
+                    className="bg-slate-950 border-slate-800 font-mono text-xs text-slate-500"
+                  />
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      const token = localStorage.getItem('auth_token');
+                      if (token) navigator.clipboard.writeText(token);
+                    }}
+                  >
+                    Copiar
+                  </Button>
                 </div>
-                <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Activo
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-start gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  Este token es personal y asegura que los leads se guarden correctamente en tus campañas.
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -114,8 +144,6 @@ export default function SettingsPage() {
           <p className="text-slate-400">Gestión de facturación próximamente.</p>
         </Card>
       )}
-
-      {/* Eliminado: subpágina de apariencia */}
     </div>
   )
 }

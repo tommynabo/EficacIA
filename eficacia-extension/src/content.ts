@@ -75,10 +75,17 @@ async function startScrapingProcess() {
       await new Promise(r => setTimeout(r, 3000));
     }
 
-    // 4. Send data to backend
-    await sendLeadsToBackend();
+    // 4. Send data to background (which handles the fetch)
+    chrome.runtime.sendMessage({ 
+      type: 'SUBMIT_LEADS',
+      payload: {
+        campaign_id: currentCampaignId,
+        leads: leadsExtracted,
+        token: authToken,
+        backendUrl: apiBaseUrl
+      }
+    });
 
-    chrome.runtime.sendMessage({ type: 'SCRAPING_FINISHED' });
   } catch (error: any) {
     console.error("[EficacIA] Scraping error:", error);
     chrome.runtime.sendMessage({ 
@@ -91,35 +98,48 @@ async function startScrapingProcess() {
 }
 
 async function scrollToBottom() {
-  const distance = 100;
-  const delay = 100;
-  while (document.scrollingElement && document.scrollingElement.scrollTop + window.innerHeight < document.scrollingElement.scrollHeight) {
+  const distance = 500;
+  const delay = 300;
+  
+  // Sales Navigator search results usually have a specific scrollable area or the whole document
+  const scrollElement = document.querySelector('.search-results__result-list') || document.scrollingElement || document.documentElement;
+  
+  let currentScroll = 0;
+  const maxScroll = scrollElement.scrollHeight;
+  
+  while (currentScroll < maxScroll) {
     window.scrollBy(0, distance);
+    currentScroll += distance;
     await new Promise(r => setTimeout(r, delay));
   }
+  
   // Extra wait for images/async content
-  await new Promise(r => setTimeout(r, 1000));
+  await new Promise(r => setTimeout(r, 1500));
 }
 
 function extractLeadsFromPage(): Lead[] {
   const leads: Lead[] = [];
-  // Sales Navigator selector for search result items
-  const items = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
+  // Updated selectors for Sales Navigator
+  const listItems = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
   
-  items.forEach(item => {
+  listItems.forEach(item => {
     try {
+      // Name and Profile Link
       const nameEl = item.querySelector('[data-anonymize="person-name"], .result-lockup__name a');
-      const titleEl = item.querySelector('[data-anonymize="job-title"], .result-lockup__highlight-keyword');
-      const companyEl = item.querySelector('[data-anonymize="company-name"], .result-lockup__position-company');
-      const locationEl = item.querySelector('[data-anonymize="location"], .result-lockup__location');
       const profileLink = item.querySelector('a[data-control-name="view_profile"], .result-lockup__name a') as HTMLAnchorElement;
 
       if (nameEl && profileLink) {
         const fullName = nameEl.textContent?.trim() || "";
-        const [first_name, ...lastParts] = fullName.split(" ");
-        const last_name = lastParts.join(" ");
+        const parts = fullName.split(" ");
+        const first_name = parts[0] || "";
+        const last_name = parts.slice(1).join(" ") || "";
 
-        // Clean LinkedIn URL
+        // Título, Empresa, Ubicación
+        const titleEl = item.querySelector('[data-anonymize="job-title"], .result-lockup__highlight-keyword');
+        const companyEl = item.querySelector('[data-anonymize="company-name"], .result-lockup__position-company');
+        const locationEl = item.querySelector('[data-anonymize="location"], .result-lockup__location');
+
+        // Clean LinkedIn URL (remove parameters)
         let linkedin_url = profileLink.href;
         if (linkedin_url.includes('?')) {
           linkedin_url = linkedin_url.split('?')[0];
@@ -135,7 +155,7 @@ function extractLeadsFromPage(): Lead[] {
         });
       }
     } catch (e) {
-      console.warn("[EficacIA] Skipped a lead due to parsing error", e);
+      console.warn("[EficacIA] Parsing error", e);
     }
   });
 
@@ -143,33 +163,20 @@ function extractLeadsFromPage(): Lead[] {
 }
 
 async function goToNextPage(): Promise<boolean> {
-  const nextButton = document.querySelector('button.search-results__pagination-next-button, .artdeco-pagination__button--next') as HTMLButtonElement;
-  if (nextButton && !nextButton.disabled) {
-    nextButton.click();
+  // Primary selector for next button in Sales Navigator
+  const nextBtn = document.querySelector('.artdeco-pagination__button--next') as HTMLButtonElement;
+  
+  if (nextBtn && !nextBtn.disabled) {
+    nextBtn.click();
     return true;
   }
-  return false;
-}
-
-async function sendLeadsToBackend() {
-  console.log(`[EficacIA] Sending ${leadsExtracted.length} leads to backend...`);
   
-  const response = await fetch(`${apiBaseUrl}/api/linkedin/bulk-import`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`
-    },
-    body: JSON.stringify({
-      campaign_id: currentCampaignId,
-      leads: leadsExtracted
-    })
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Backend error: ${response.status}`);
+  // Fallback selector
+  const fallbackNext = document.querySelector('button.search-results__pagination-next-button') as HTMLButtonElement;
+  if (fallbackNext && !fallbackNext.disabled) {
+    fallbackNext.click();
+    return true;
   }
-
-  console.log("[EficacIA] Sync complete!");
+  
+  return false;
 }
