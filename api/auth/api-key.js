@@ -44,21 +44,39 @@ export default async function handler(req, res) {
   // POST: Generate new API key
   if (req.method === 'POST') {
     try {
-      // Use native crypto to avoid 'uuid' dependency
       const newKey = `efi_${crypto.randomUUID().replace(/-/g, '')}`;
 
-      const { data, error } = await supabaseAdmin
+      // First, try to see if a key already exists for this user
+      const { data: existingData } = await supabaseAdmin
         .from('api_keys')
-        .upsert({ user_id: userId, key_value: newKey }, { onConflict: 'user_id' })
-        .select()
-        .single();
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-      if (error) {
-        console.error('[API-KEY] DB Error:', error);
-        return res.status(500).json({ error: error.message });
+      let result;
+      if (existingData) {
+        // Update existing
+        result = await supabaseAdmin
+          .from('api_keys')
+          .update({ key_value: newKey })
+          .eq('id', existingData.id)
+          .select()
+          .single();
+      } else {
+        // Insert new
+        result = await supabaseAdmin
+          .from('api_keys')
+          .insert({ user_id: userId, key_value: newKey })
+          .select()
+          .single();
       }
 
-      return res.status(200).json({ apiKey: data.key_value });
+      if (result.error) {
+        console.error('[API-KEY] DB Error:', result.error);
+        return res.status(500).json({ error: result.error.message });
+      }
+
+      return res.status(200).json({ apiKey: result.data.key_value });
     } catch (e) {
       console.error('[API-KEY] Runtime Error:', e);
       return res.status(500).json({ error: e.message });
