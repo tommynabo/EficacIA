@@ -76,11 +76,11 @@ export default function SettingsPage() {
                 
                 <Button 
                   asChild
-                  className="w-full mt-4 bg-white text-black hover:bg-zinc-200 gap-2 font-bold py-6 shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:scale-[1.02]"
+                  className="w-full mt-4 bg-white text-black hover:bg-zinc-200 font-bold py-7 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-white/5"
                 >
-                  <a href="/eficacia-extension.zip" download>
-                    <Download className="w-5 h-5" />
-                    Descargar Extensión (.zip)
+                  <a href="/eficacia-extension.zip" download className="flex items-center justify-center w-full gap-3">
+                    <Download className="w-6 h-6 shrink-0" />
+                    <span className="text-base">Descargar Extensión (.zip)</span>
                   </a>
                 </Button>
               </CardContent>
