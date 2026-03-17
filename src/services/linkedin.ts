@@ -1,5 +1,5 @@
 export class LinkedInService {
-  private static baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+  private static baseUrl = import.meta.env.VITE_API_URL ?? ''
 
   /**
    * Obtiene todos los leads del usuario

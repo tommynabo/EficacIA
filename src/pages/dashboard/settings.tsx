@@ -21,7 +21,7 @@ export default function SettingsPage() {
     try {
       setIsLoadingKey(true)
       const token = localStorage.getItem('auth_token')
-      const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const envUrl = import.meta.env.VITE_API_URL || ''
       const res = await fetch(`${envUrl}/api/auth/api-key`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -40,7 +40,7 @@ export default function SettingsPage() {
     try {
       setIsLoadingKey(true)
       const token = localStorage.getItem('auth_token')
-      const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const envUrl = import.meta.env.VITE_API_URL || ''
       const res = await fetch(`${envUrl}/api/auth/api-key`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }

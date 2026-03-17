@@ -16,7 +16,7 @@ export function PaymentCheckout({ plan, onClose, onSuccess }: CheckoutProps) {
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [cardElement, setCardElement] = useState<any>(null)
   const [stripe, setStripe] = useState<any>(null)
-  const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+  const API_URL = import.meta.env.VITE_API_URL ?? ''
 
   // Carga Stripe
   useEffect(() => {
