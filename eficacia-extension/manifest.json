@@ -2,12 +2,13 @@
   "manifest_version": 3,
   "name": "EficacIA Connector",
   "version": "1.0.0",
-  "description": "Scrape profiles from LinkedIn Sales Navigator directly to EficacIA.",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": [
-    "https://*.linkedin.com/sales/search/people*",
-    "https://*/*"
-  ],
+  "description": "Extrae leads de Sales Navigator directamente a tus campañas de EficacIA.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_popup": "index.html"
   },
@@ -21,9 +22,6 @@
       "js": ["src/content.ts"]
     }
   ],
-  "icons": {
-    "16": "public/icon16.png",
-    "48": "public/icon48.png",
-    "128": "public/icon128.png"
-  }
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://*.linkedin.com/*"]
 }

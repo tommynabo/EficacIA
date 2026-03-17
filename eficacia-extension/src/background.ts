@@ -1,7 +1,7 @@
 // EficacIA Background Service Worker
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('EficacIA Extension Installed');
+  console.log('EficacIA Extension Installed (Bolt Branding)');
 });
 
 // Listener for messages
@@ -20,17 +20,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       });
       
-    // Return true to indicate we will send a response asynchronously (though we use runtime.sendMessage)
+    // Return true to indicate we will send a response asynchronously
     return true;
-  }
-  
-  if (message.type === 'PING') {
-    sendResponse({ type: 'PONG' });
   }
 });
 
 async function submitLeads(campaign_id: string, leads: any[], token: string, backendUrl: string) {
-  console.log(`[EficacIA Background] Sending ${leads.length} leads to ${backendUrl}...`);
+  console.log(`[EficacIA Background] Submitting ${leads.length} leads to ${backendUrl}...`);
   
   const response = await fetch(`${backendUrl}/api/linkedin/bulk-import`, {
     method: 'POST',

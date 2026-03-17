@@ -44,7 +44,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.33",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/bcryptjs": "^2.4.2",
+    "@types/chrome": "^0.1.38",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
@@ -55,6 +58,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.2",
     "tailwindcss": "^4.1.14",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }

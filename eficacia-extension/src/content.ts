@@ -72,10 +72,10 @@ async function startScrapingProcess() {
       }
       
       // Wait for page load
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 4000));
     }
 
-    // 4. Send data to background (which handles the fetch)
+    // 4. Send data to background
     chrome.runtime.sendMessage({ 
       type: 'SUBMIT_LEADS',
       payload: {
@@ -98,10 +98,9 @@ async function startScrapingProcess() {
 }
 
 async function scrollToBottom() {
-  const distance = 500;
-  const delay = 300;
+  const distance = 400;
+  const delay = 200;
   
-  // Sales Navigator search results usually have a specific scrollable area or the whole document
   const scrollElement = document.querySelector('.search-results__result-list') || document.scrollingElement || document.documentElement;
   
   let currentScroll = 0;
@@ -111,20 +110,23 @@ async function scrollToBottom() {
     window.scrollBy(0, distance);
     currentScroll += distance;
     await new Promise(r => setTimeout(r, delay));
+    
+    // Check if we already reached the actual bottom (dynamic content)
+    if (currentScroll % 2000 === 0) {
+        // Pause briefly to allow items to render
+        await new Promise(r => setTimeout(r, 500));
+    }
   }
   
-  // Extra wait for images/async content
   await new Promise(r => setTimeout(r, 1500));
 }
 
 function extractLeadsFromPage(): Lead[] {
   const leads: Lead[] = [];
-  // Updated selectors for Sales Navigator
   const listItems = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
   
   listItems.forEach(item => {
     try {
-      // Name and Profile Link
       const nameEl = item.querySelector('[data-anonymize="person-name"], .result-lockup__name a');
       const profileLink = item.querySelector('a[data-control-name="view_profile"], .result-lockup__name a') as HTMLAnchorElement;
 
@@ -134,12 +136,10 @@ function extractLeadsFromPage(): Lead[] {
         const first_name = parts[0] || "";
         const last_name = parts.slice(1).join(" ") || "";
 
-        // Título, Empresa, Ubicación
         const titleEl = item.querySelector('[data-anonymize="job-title"], .result-lockup__highlight-keyword');
         const companyEl = item.querySelector('[data-anonymize="company-name"], .result-lockup__position-company');
         const locationEl = item.querySelector('[data-anonymize="location"], .result-lockup__location');
 
-        // Clean LinkedIn URL (remove parameters)
         let linkedin_url = profileLink.href;
         if (linkedin_url.includes('?')) {
           linkedin_url = linkedin_url.split('?')[0];
@@ -163,7 +163,6 @@ function extractLeadsFromPage(): Lead[] {
 }
 
 async function goToNextPage(): Promise<boolean> {
-  // Primary selector for next button in Sales Navigator
   const nextBtn = document.querySelector('.artdeco-pagination__button--next') as HTMLButtonElement;
   
   if (nextBtn && !nextBtn.disabled) {
@@ -171,7 +170,6 @@ async function goToNextPage(): Promise<boolean> {
     return true;
   }
   
-  // Fallback selector
   const fallbackNext = document.querySelector('button.search-results__pagination-next-button') as HTMLButtonElement;
   if (fallbackNext && !fallbackNext.disabled) {
     fallbackNext.click();
