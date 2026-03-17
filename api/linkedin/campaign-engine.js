@@ -1,18 +1,14 @@
 /**
  * /api/linkedin/campaign-engine
  *
- * Vercel Cron Job — runs every 2 minutes.
- * Processes active campaigns: finds leads whose next_action_at has passed,
- * executes the current sequence step, and schedules the next one.
- *
- * Flow:
- *  1. Find campaigns with status = 'active'
- *  2. For each campaign, find leads where next_action_at <= NOW
- *  3. Execute the step (invitation or message) via /api/linkedin/send-action
- *  4. Advance lead to next step and schedule next_action_at
- *
- * Security: Vercel cron calls include an Authorization header with CRON_SECRET.
- * Also callable manually with JWT auth for testing.
+ * ESTRATEGIA DE JITTER HUMANO (SERVERLESS COMPATIBLE):
+ * 1. El Cron Job se ejecuta cada 2-5 minutos.
+ * 2. En lugar de procesar muchos leads "en bloque", procesamos un máximo de 1 LEAD por ejecución del Cron.
+ * 3. Al terminar cada acción, reprogramamos el 'next_action_at' con el retraso del paso secuencial
+ *    MÁS un "Humano Jitter" aleatorio (ej: 5-15 minutos extra) para que el próximo lead del mismo lote
+ *    no se dispare inmediatamente en el siguiente ciclo del Cron.
+ * 4. Esto mantiene a la función de Vercel siempre por debajo del tiempo de Timeout
+ *    y espacia las acciones de forma orgánica en el tiempo.
  */
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
@@ -32,16 +28,11 @@ function getUserId(req) {
 }
 
 function verifyCron(req) {
-  // Vercel sends CRON_SECRET in Authorization header for cron jobs
   const auth = req.headers.authorization;
   if (auth === `Bearer ${process.env.CRON_SECRET}`) return true;
-  // Also allow authenticated users (for manual trigger / test)
   return !!getUserId(req);
 }
 
-/**
- * Convert delay to milliseconds based on unit.
- */
 function delayToMs(value, unit = 'days') {
   const multipliers = {
     minutes: 60 * 1000,
@@ -50,6 +41,14 @@ function delayToMs(value, unit = 'days') {
     weeks: 7 * 24 * 60 * 60 * 1000,
   };
   return value * (multipliers[unit] || multipliers.days);
+}
+
+/**
+ * Genera un retraso aleatorio entre min y max minutos para simular comportamiento humano
+ */
+function getHumanJitterMs(minMinutes = 5, maxMinutes = 15) {
+  const minutes = Math.floor(Math.random() * (maxMinutes - minMinutes + 1) + minMinutes);
+  return minutes * 60 * 1000;
 }
 
 export default async function handler(req, res) {
@@ -62,69 +61,35 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'No autorizado' });
   }
 
-  const now = new Date().toISOString();
-  console.log(`[ENGINE] Heartbeat: ${now}`);
+  const now = new Date();
+  console.log(`[ENGINE] Heartbeat: ${now.toISOString()}`);
   const stats = { campaigns: 0, processed: 0, errors: 0, skipped: 0 };
 
   try {
-    // 1. Find active campaigns
+    // 1. Buscamos todas las campañas activas
     const { data: campaigns, error: campErr } = await supabaseAdmin
       .from('campaigns')
       .select('id, name, sequence, settings, team_id')
       .eq('status', 'active');
 
-    if (campErr) {
-      console.error('[ENGINE] Error fetching campaigns:', campErr.message);
-      return res.status(500).json({ error: campErr.message });
-    }
-
+    if (campErr) throw campErr;
     if (!campaigns || campaigns.length === 0) {
       return res.status(200).json({ message: 'No hay campañas activas', stats });
     }
 
     stats.campaigns = campaigns.length;
-    console.log(`[ENGINE] Processing ${campaigns.length} active campaign(s)`);
 
+    // Procesamos campañas una por una
     for (const campaign of campaigns) {
       const sequence = campaign.sequence || [];
-      if (sequence.length === 0) {
-        console.log(`[ENGINE] Campaign ${campaign.id} has no sequence steps, skipping`);
-        continue;
-      }
+      const accountIds = campaign.settings?.linkedin_account_ids || [];
+      if (sequence.length === 0 || accountIds.length === 0) continue;
 
-      // Get the LinkedIn account for this campaign
-      const requestedAccountIds = campaign.settings?.linkedin_account_ids || [];
-      if (requestedAccountIds.length === 0) {
-        console.log(`[ENGINE] Campaign ${campaign.id} has no LinkedIn account assigned, skipping`);
-        continue;
-      }
-
-      // Verify that at least one of these accounts actually exists and belongs to the team
-      const { data: validAccounts } = await supabaseAdmin
-        .from('linkedin_accounts')
-        .select('id')
-        .eq('team_id', campaign.team_id)
-        .in('id', requestedAccountIds);
-
-      if (!validAccounts || validAccounts.length === 0) {
-        console.log(`[ENGINE] Campaign ${campaign.id} has no VALID LinkedIn accounts assigned, skipping`);
-        continue;
-      }
-
-      // Use the first valid ID from the requested list
-      const validSet = new Set(validAccounts.map(a => a.id));
-      const accountId = requestedAccountIds.find(id => validSet.has(id));
-
-      if (!accountId) {
-        console.log(`[ENGINE] Campaign ${campaign.id} has no resolvable accountId, skipping`);
-        continue;
-      }
-
+      // Limites diarios y control de volumen
       const dailyLimit = campaign.settings?.daily_limit_invitations || campaign.settings?.daily_limit_messages || 25;
-
-      // Check how many actions we've done today for this campaign
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
+
       const { count: todayCount } = await supabaseAdmin
         .from('leads')
         .select('*', { count: 'exact', head: true })
@@ -132,25 +97,24 @@ export default async function handler(req, res) {
         .gte('last_action_at', todayStart.toISOString());
 
       if (todayCount >= dailyLimit) {
-        console.log(`[ENGINE] Campaign ${campaign.id} hit daily limit (${todayCount}/${dailyLimit})`);
+        console.log(`[ENGINE] Campaign ${campaign.name} hit daily limit (${todayCount})`);
         continue;
       }
 
-      const remaining = dailyLimit - (todayCount || 0);
-
-      // 2. Find leads ready to process
-      //    - sequence_status = 'active' AND next_action_at <= now
-      //    - OR sequence_status = 'pending' (never started, first step)
-      const { data: pendingLeads } = await supabaseAdmin
+      // 2. BUSCAMOS LEADS LISTOS (JITTER COMPATIBLE)
+      // Seleccionamos solo 1 LEAD por campaña por cada ejecución del Cron para forzar el espaciado temporal.
+      const { data: lead } = await supabaseAdmin
         .from('leads')
-        .select('id, first_name, last_name, company, position, job_title, linkedin_url, email, custom_vars, current_step, sequence_status')
+        .select('*')
         .eq('campaign_id', campaign.id)
         .in('sequence_status', ['pending', 'active'])
-        .lte('next_action_at', now)
-        .limit(remaining);
+        .lte('next_action_at', now.toISOString())
+        .order('next_action_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-      if (!pendingLeads || pendingLeads.length === 0) {
-        // Check if all leads are completed
+      if (!lead) {
+        // Si no hay leads listos para procesar AHORA, revisamos si la campaña terminó
         const { count: activeCount } = await supabaseAdmin
           .from('leads')
           .select('*', { count: 'exact', head: true })
@@ -158,108 +122,83 @@ export default async function handler(req, res) {
           .in('sequence_status', ['pending', 'active']);
 
         if (activeCount === 0) {
-          // All leads completed — mark campaign as completed
           await supabaseAdmin.from('campaigns').update({
             status: 'completed',
-            ended_at: now,
-            updated_at: now,
+            ended_at: now.toISOString()
           }).eq('id', campaign.id);
-          console.log(`[ENGINE] Campaign ${campaign.id} completed — all leads processed`);
         }
         continue;
       }
 
-      console.log(`[ENGINE] Campaign "${campaign.name}": ${pendingLeads.length} lead(s) to process`);
+      // 3. EJECUCIÓN DE ACCIÓN
+      const stepIndex = lead.current_step || 0;
+      const step = sequence[stepIndex];
 
-      // 3. Process each lead
-      for (const lead of pendingLeads) {
-        const stepIndex = lead.current_step || 0;
-        const step = sequence[stepIndex];
-
-        if (!step) {
-          // Lead has completed all steps
-          await supabaseAdmin.from('leads').update({
-            sequence_status: 'completed',
-            current_step: stepIndex,
-          }).eq('id', lead.id);
-          stats.skipped++;
-          continue;
-        }
-
-        try {
-          // Call send-action internally
-          const protocol = req.headers['x-forwarded-proto'] || 'https';
-          const host = req.headers.host;
-          const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
-            },
-            body: JSON.stringify({
-              leadId: lead.id,
-              accountId,
-              actionType: step.type,
-              content: step.content || '',
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-            }),
-          });
-
-          if (!sendRes.ok) {
-            const errData = await sendRes.json().catch(() => ({}));
-            const errMsg = errData.error || `Error ${sendRes.status}`;
-            console.error(`[ENGINE] Failed to process lead ${lead.id}: ${errMsg}`);
-            
-            // Mark lead as failed in DB to avoid constant retries if the error is permanent
-            await supabaseAdmin.from('leads').update({
-              sequence_status: 'failed',
-              error_message: errMsg,
-              last_action_at: now
-            }).eq('id', lead.id);
-
-            stats.errors++;
-            continue;
-          }
-
-          // 4. Advance to next step and schedule
-          const nextStepIndex = stepIndex + 1;
-          const nextStep = sequence[nextStepIndex];
-
-          if (nextStep) {
-            // Calculate when the next step should fire
-            const delayMs = delayToMs(nextStep.delayDays || 1, nextStep.delayUnit || 'days');
-            const nextActionAt = new Date(Date.now() + delayMs).toISOString();
-
-            await supabaseAdmin.from('leads').update({
-              current_step: nextStepIndex,
-              sequence_status: 'active',
-              next_action_at: nextActionAt,
-            }).eq('id', lead.id);
-
-            console.log(`[ENGINE] Lead ${lead.first_name}: step ${stepIndex} done → next at ${nextActionAt}`);
-          } else {
-            // All steps completed
-            await supabaseAdmin.from('leads').update({
-              current_step: nextStepIndex,
-              sequence_status: 'completed',
-              next_action_at: null,
-            }).eq('id', lead.id);
-            console.log(`[ENGINE] Lead ${lead.first_name}: sequence completed`);
-          }
-
-          stats.processed++;
-
-          // Add jitter between sends (1-3 seconds) to look human
-          await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
-
-        } catch (err) {
-          console.error(`[ENGINE] Error processing lead ${lead.id}:`, err.message);
-          stats.errors++;
-        }
+      if (!step) {
+        await supabaseAdmin.from('leads').update({ sequence_status: 'completed' }).eq('id', lead.id);
+        continue;
       }
 
-      // Update campaign stats
+      try {
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const host = req.headers.host;
+        
+        // Llamada a la acción real de LinkedIn
+        const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
+          },
+          body: JSON.stringify({
+            leadId: lead.id,
+            accountId: accountIds[0],
+            actionType: step.type,
+            content: step.content || '',
+            campaignId: campaign.id,
+          }),
+        });
+
+        if (!sendRes.ok) {
+          const errData = await sendRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed call to send-action');
+        }
+
+        // 4. RE-PROGRAMACIÓN CON JITTER HUMANO
+        const nextStepIndex = stepIndex + 1;
+        const nextStep = sequence[nextStepIndex];
+
+        let nextActionAt = null;
+        if (nextStep) {
+          // Delay base (días/horas definidos en el paso) + JITTER (5-15 min)
+          const baseDelayMs = delayToMs(nextStep.delayDays || 1, nextStep.delayUnit || 'days');
+          const jitterMs = getHumanJitterMs(10, 30); // Entre 10 y 30 minutos de "vía libre"
+          nextActionAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString();
+        }
+
+        await supabaseAdmin.from('leads').update({
+          current_step: nextStepIndex,
+          sequence_status: nextStep ? 'active' : 'completed',
+          next_action_at: nextActionAt,
+          last_action_at: now.toISOString(),
+          error_message: null
+        }).eq('id', lead.id);
+
+        stats.processed++;
+        console.log(`[ENGINE] Lead ${lead.id} processed (Step ${stepIndex}). Next run set with Jitter: ${nextActionAt}`);
+
+      } catch (err) {
+        console.error(`[ENGINE] Error in lead ${lead.id}:`, err.message);
+        await supabaseAdmin.from('leads').update({
+          sequence_status: 'active', // Lo dejamos activo para reintento suave en el próximo ciclo
+          next_action_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(), // Penalización 20 min por error
+          error_message: err.message,
+          last_action_at: now.toISOString()
+        }).eq('id', lead.id);
+        stats.errors++;
+      }
+
+      // Actualizamos contadores de la campaña
       const { count: sentCount } = await supabaseAdmin
         .from('leads')
         .select('*', { count: 'exact', head: true })
@@ -268,15 +207,10 @@ export default async function handler(req, res) {
 
       await supabaseAdmin.from('campaigns').update({
         sent_count: sentCount || 0,
-        updated_at: now,
-        settings: {
-          ...campaign.settings,
-          last_heartbeat_at: now
-        }
+        updated_at: now.toISOString()
       }).eq('id', campaign.id);
     }
 
-    console.log(`[ENGINE] Done:`, stats);
     return res.status(200).json({ success: true, stats });
 
   } catch (err) {
