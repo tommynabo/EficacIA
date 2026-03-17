@@ -3,11 +3,58 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2 } from "lucide-react"
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = React.useState("profile")
+  const [apiKey, setApiKey] = React.useState<string | null>(null)
+  const [isLoadingKey, setIsLoadingKey] = React.useState(false)
+
+  React.useEffect(() => {
+    if (activeTab === "extension") {
+      fetchApiKey()
+    }
+  }, [activeTab])
+
+  const fetchApiKey = async () => {
+    try {
+      setIsLoadingKey(true)
+      const token = localStorage.getItem('auth_token')
+      const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const res = await fetch(`${envUrl}/api/auth/api-key`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setApiKey(data.apiKey)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoadingKey(false)
+    }
+  }
+
+  const generateApiKey = async () => {
+    try {
+      setIsLoadingKey(true)
+      const token = localStorage.getItem('auth_token')
+      const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const res = await fetch(`${envUrl}/api/auth/api-key`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setApiKey(data.apiKey)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoadingKey(false)
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -88,29 +135,37 @@ export default function SettingsPage() {
 
             <Card className="border-slate-800 bg-slate-900/40">
               <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Token de Autenticación</CardTitle>
+                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Token de Conexión (API Key)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-slate-400">Copia este token y pégalo en la configuración de la extensión para vincular tu cuenta.</p>
-                <div className="flex gap-2">
-                  <Input 
-                    readOnly 
-                    value={typeof window !== 'undefined' ? localStorage.getItem('auth_token') || 'No se encontró token' : 'Cargando...'} 
-                    className="bg-slate-950 border-slate-800 font-mono text-xs text-slate-500"
-                  />
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      const token = localStorage.getItem('auth_token');
-                      if (token) navigator.clipboard.writeText(token);
-                    }}
-                  >
-                    Copiar
-                  </Button>
-                </div>
+                <p className="text-sm text-slate-400">Genera y utiliza este token permanente en la extensión para vincular tu cuenta.</p>
+                {isLoadingKey ? (
+                  <div className="flex items-center justify-center p-4">
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+                  </div>
+                ) : apiKey ? (
+                   <div className="flex gap-2">
+                     <Input 
+                       readOnly 
+                       type="password"
+                       value={apiKey} 
+                       className="bg-slate-950 border-slate-800 font-mono text-xs text-slate-500"
+                     />
+                     <Button 
+                       variant="outline"
+                       onClick={() => navigator.clipboard.writeText(apiKey)}
+                     >
+                       Copiar
+                     </Button>
+                   </div>
+                ) : (
+                   <Button onClick={generateApiKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2">
+                     <Plus className="w-4 h-4" /> Generar Token de Conexión
+                   </Button>
+                )}
                 <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-start gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  Este token es personal y asegura que los leads se guarden correctamente en tus campañas.
+                  Este token es permanente y seguro. No lo compartas con nadie.
                 </div>
               </CardContent>
             </Card>

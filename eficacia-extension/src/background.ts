@@ -35,7 +35,7 @@ async function submitLeads(campaign_id: string, leads: any[], token: string, bac
       'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify({
-      importType: 'extension',
+      type: 'extension',
       campaign_id,
       leads
     })

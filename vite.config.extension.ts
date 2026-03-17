@@ -44,6 +44,14 @@ export default defineConfig({
     react(),
     crx({ manifest }),
   ],
+  server: {
+    port: 5173,
+    hmr: {
+      port: 5173,
+      // Se deshabilita por problemas conocidos de @crxjs con reloading de popups manifest v3
+      // Es recomendable usar 'npm run build' o cambiar a false si sigue fallando.
+    },
+  },
   build: {
     outDir: '../dist-extension',
     emptyOutDir: true,

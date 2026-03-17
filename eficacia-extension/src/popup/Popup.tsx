@@ -28,8 +28,8 @@ const Popup = () => {
     // Load config from chrome storage
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['token', 'backendUrl'], (result) => {
-        if (result.token) setToken(result.token);
-        if (result.backendUrl) setBackendUrl(result.backendUrl);
+        if (result.token) setToken(result.token as string);
+        if (result.backendUrl) setBackendUrl(result.backendUrl as string);
         
         if (!result.token) {
           setView('settings');
@@ -64,25 +64,63 @@ const Popup = () => {
   }, [token, backendUrl]);
 
   const fetchCampaigns = async () => {
+    if (!token || !backendUrl) return;
+    
     try {
+      setStatus('loading');
       const response = await fetch(`${backendUrl}/api/linkedin/campaigns`, {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token.trim()}`,
+          'Content-Type': 'application/json'
         }
       });
+      
+      if (response.status === 401) {
+        console.error("[CAMPAIGNS] Token invalid or expired");
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          chrome.storage.local.remove(['token'], () => {
+            setToken('');
+            setView('settings');
+            setStatus('error');
+            setErrorMessage('Tu token de conexión es inválido o ha expirado. Genera uno nuevo en Ajustes.');
+          });
+        }
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
-        setCampaigns(data);
-        if (data.length > 0 && !selectedCampaign) setSelectedCampaign(data[0].id);
+        console.log("[CAMPAIGNS] Fetch success:", data);
+        const campaignsList = data.campaigns || (Array.isArray(data) ? data : []);
+        setCampaigns(campaignsList);
+        if (campaignsList.length > 0 && !selectedCampaign) {
+          setSelectedCampaign(campaignsList[0].id);
+        }
+        setStatus('idle');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error ${response.status}`);
       }
-    } catch (err) {
-      console.error("Failed to fetch campaigns", err);
+    } catch (err: any) {
+      console.error("[POPUP] Failed to fetch campaigns:", err);
+      setStatus('error');
+      setErrorMessage(err.message === 'Failed to fetch' 
+        ? 'Error de red. Verifica que la URL del backend sea correcta.' 
+        : `Error: ${err.message}`
+      );
     }
   };
 
   const handleSaveSettings = () => {
+    if (!token.trim()) {
+      setStatus('error');
+      setErrorMessage('El token es obligatorio');
+      return;
+    }
+    
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.set({ token, backendUrl }, () => {
+      chrome.storage.local.set({ token: token.trim(), backendUrl: backendUrl.trim() }, () => {
         setView('main');
         fetchCampaigns();
       });
@@ -96,21 +134,31 @@ const Popup = () => {
       return;
     }
 
-    setIsScraping(true);
-    setStatus('loading');
-    setProgress(0);
+    try {
+      setIsScraping(true);
+      setStatus('loading');
+      setProgress(0);
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'START_SCRAPING',
-        payload: {
-          campaign_id: selectedCampaign,
-          limit: leadCount,
-          token,
-          backendUrl
-        }
-      });
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.url?.includes('linkedin.com/sales')) {
+        throw new Error('Solo puedes extraer leads desde LinkedIn Sales Navigator');
+      }
+
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'START_SCRAPING',
+          payload: {
+            campaign_id: selectedCampaign,
+            limit: leadCount,
+            token: token.trim(),
+            backendUrl: backendUrl.trim()
+          }
+        });
+      }
+    } catch (err: any) {
+      setIsScraping(false);
+      setStatus('error');
+      setErrorMessage(err.message);
     }
   };
 
@@ -149,11 +197,11 @@ const Popup = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Token de Usuario (JWT)</label>
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Token de Conexión (API Key)</label>
                 <textarea 
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder="Pega tu token aquí..."
+                  placeholder="efi_..."
                   className="w-full h-24 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none transition-all font-mono text-[11px]"
                 />
               </div>

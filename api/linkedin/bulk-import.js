@@ -1,22 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
+import { getAuthUser } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
-
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return null;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
 
 // ─── Google Sheets: extract sheet ID and fetch CSV ───────────────────────────
 async function fetchGoogleSheetsCsv(url) {
@@ -529,7 +518,8 @@ async function insertLeadsIntoDB(teamId, campaignId, rawLeads) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -537,8 +527,11 @@ export default async function handler(req, res) {
 
   console.log('[BULK-IMPORT]', req.method, req.query?.poll_token ? '(poll)' : '');
 
-  const userId = getUserId(req);
-  if (!userId) return res.status(401).json({ error: 'No autenticado' });
+  const { userId, error: authError } = await getAuthUser(req);
+  if (!userId) {
+    console.error('[BULK-IMPORT] Auth error:', authError);
+    return res.status(401).json({ error: authError || 'No autenticado' });
+  }
 
   // ── GET: poll Apify job status ──────────────────────────────────────────
   if (req.method === 'GET') {
@@ -612,8 +605,8 @@ export default async function handler(req, res) {
     let rawLeads = [];
 
     try {
-      // ── CSV / leads array ─────────────────────────────────────────────────
-      if (importType === 'csv' || importType === 'leads') {
+      // ── Extension / CSV / leads array ─────────────────────────────────────
+      if (importType === 'csv' || importType === 'leads' || importType === 'extension') {
         if (!leads || !Array.isArray(leads) || leads.length === 0) {
           return res.status(400).json({ error: 'No se proporcionaron leads para importar' });
         }
