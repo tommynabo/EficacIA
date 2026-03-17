@@ -3,7 +3,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Moon, Sun } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download } from "lucide-react"
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
@@ -74,9 +74,14 @@ export default function SettingsPage() {
                   <p className="text-sm text-slate-300">Haz clic en "Cargar descomprimido" y selecciona la carpeta de la extensión extraída.</p>
                 </div>
                 
-                <Button className="w-full mt-4 bg-white text-black hover:bg-zinc-200 gap-2 font-bold py-6 cursor-not-allowed opacity-70">
-                  <Plus className="w-5 h-5 rotate-45" />
-                  Descargar Extensión (.zip)
+                <Button 
+                  asChild
+                  className="w-full mt-4 bg-white text-black hover:bg-zinc-200 gap-2 font-bold py-6 shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:scale-[1.02]"
+                >
+                  <a href="/eficacia-extension.zip" download>
+                    <Download className="w-5 h-5" />
+                    Descargar Extensión (.zip)
+                  </a>
                 </Button>
               </CardContent>
             </Card>
