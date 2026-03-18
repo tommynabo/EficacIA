@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
@@ -7,7 +8,10 @@ import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2 } from "l
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = React.useState("profile")
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get("tab") ?? "profile"
+  const setActiveTab = (key: string) => setSearchParams({ tab: key }, { replace: true })
+
   const [apiKey, setApiKey] = React.useState<string | null>(null)
   const [isLoadingKey, setIsLoadingKey] = React.useState(false)
 

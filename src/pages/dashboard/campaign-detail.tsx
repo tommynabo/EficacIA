@@ -411,7 +411,7 @@ export default function CampaignDetailPage() {
   }
 
   const updateStep = (stepId: string, updates: Partial<SequenceStep>) => {
-    setSteps(steps.map(s => s.id === stepId ? { ...s, ...updates } : s))
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, ...updates } : s))
   }
 
   const moveStep = (index: number, direction: "up" | "down") => {
