@@ -11,7 +11,7 @@ import {
   ArrowLeft, Plus, Trash2, Bot, Save, Clock, Search, AlertCircle,
   Play, Pause, CheckCircle2, Users, Mail, MessageSquare, TrendingUp, Eye,
   MoreHorizontal, X, ChevronDown, Settings, BarChart2, Linkedin, Send,
-  Zap, Loader2, RefreshCw
+  Zap, Loader2, RefreshCw, Calendar
 } from "lucide-react"
 
 // --- Tipos --------------------------------------------------------------------
@@ -154,6 +154,21 @@ export default function CampaignDetailPage() {
     ai_prompt: "Analiza el perfil y escribe un comentario de 1-2 oraciones sobre su experiencia reciente o un post interesante.",
   })
 
+  // Schedule state
+  const [schedule, setSchedule] = React.useState<{
+    enabled: boolean
+    timezone: string
+    days: number[]
+    start_time: string
+    end_time: string
+  }>({
+    enabled: false,
+    timezone: 'Europe/Madrid',
+    days: [1, 2, 3, 4, 5],
+    start_time: '09:00',
+    end_time: '18:00',
+  })
+
   // --- Carga inicial ----------------------------------------------------------
 
   React.useEffect(() => {
@@ -234,6 +249,11 @@ export default function CampaignDetailPage() {
         setSettings({ ...settings, ...campData.campaign.settings })
       }
 
+      // Cargar schedule guardado
+      if (campData.campaign.schedule) {
+        setSchedule(prev => ({ ...prev, ...campData.campaign.schedule }))
+      }
+
       if (accountsRes.ok) {
         const accData = await accountsRes.json()
         setAccounts(accData.accounts || [])
@@ -255,7 +275,7 @@ export default function CampaignDetailPage() {
       const res = await fetch(`/api/linkedin/campaigns?id=${id}`, {
         method: "PUT",
         headers: apiHeaders(),
-        body: JSON.stringify({ sequence: steps, settings, ...extraUpdates }),
+        body: JSON.stringify({ sequence: steps, settings, schedule, ...extraUpdates }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error guardando")
@@ -1029,36 +1049,134 @@ export default function CampaignDetailPage() {
             </div>
           </Card>
 
-          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900 border-l-4 border-l-blue-500">
+          {/* Horario de Envío */}
+          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-blue-500" />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 leading-tight">Horario de Envío</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">El motor omitirá esta campaña fuera del horario configurado</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${schedule.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  {schedule.enabled ? 'Activo' : 'Inactivo'}
+                </span>
+                <Switch
+                  checked={schedule.enabled}
+                  onCheckedChange={v => setSchedule(s => ({ ...s, enabled: v }))}
+                />
+              </div>
+            </div>
+
+            <div className={`space-y-5 transition-opacity duration-200 ${schedule.enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+              {/* Zona Horaria */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-1.5">Zona Horaria</label>
+                <select
+                  value={schedule.timezone}
+                  onChange={e => setSchedule(s => ({ ...s, timezone: e.target.value }))}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                >
+                  <optgroup label="Europa">
+                    <option value="Europe/Madrid">Madrid — CET/CEST (UTC+1/+2)</option>
+                    <option value="Europe/London">Londres — GMT/BST (UTC+0/+1)</option>
+                    <option value="Europe/Paris">París — CET/CEST (UTC+1/+2)</option>
+                    <option value="Europe/Berlin">Berlín — CET/CEST (UTC+1/+2)</option>
+                    <option value="Europe/Lisbon">Lisboa — WET/WEST (UTC+0/+1)</option>
+                  </optgroup>
+                  <optgroup label="América Latina">
+                    <option value="America/Mexico_City">Ciudad de México — CST/CDT (UTC-6/-5)</option>
+                    <option value="America/Bogota">Bogotá — COT (UTC-5)</option>
+                    <option value="America/Lima">Lima — PET (UTC-5)</option>
+                    <option value="America/Santiago">Santiago — CLT/CLST (UTC-4/-3)</option>
+                    <option value="America/Argentina/Buenos_Aires">Buenos Aires — ART (UTC-3)</option>
+                    <option value="America/Caracas">Caracas — VET (UTC-4)</option>
+                    <option value="America/Sao_Paulo">São Paulo — BRT (UTC-3)</option>
+                  </optgroup>
+                  <optgroup label="Norteamérica">
+                    <option value="America/New_York">Nueva York — EST/EDT (UTC-5/-4)</option>
+                    <option value="America/Chicago">Chicago — CST/CDT (UTC-6/-5)</option>
+                    <option value="America/Los_Angeles">Los Ángeles — PST/PDT (UTC-8/-7)</option>
+                  </optgroup>
+                  <option value="UTC">UTC (Universal)</option>
+                </select>
+              </div>
+
+              {/* Días de la semana */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-2">Días activos</label>
+                <div className="flex gap-2">
+                  {[{d:1,l:'L'},{d:2,l:'M'},{d:3,l:'X'},{d:4,l:'J'},{d:5,l:'V'},{d:6,l:'S'},{d:0,l:'D'}].map(({d, l}) => {
+                    const active = schedule.days.includes(d)
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSchedule(s => ({
+                          ...s,
+                          days: active ? s.days.filter(x => x !== d) : [...s.days, d]
+                        }))}
+                        className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${
+                          active
+                            ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {l}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Franja horaria */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-1.5">Hora de inicio</label>
+                  <input
+                    type="time"
+                    value={schedule.start_time}
+                    onChange={e => setSchedule(s => ({ ...s, start_time: e.target.value }))}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-1.5">Hora de fin</label>
+                  <input
+                    type="time"
+                    value={schedule.end_time}
+                    onChange={e => setSchedule(s => ({ ...s, end_time: e.target.value }))}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Preview */}
+              {schedule.enabled && schedule.days.length > 0 && (
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg px-4 py-3 text-xs text-blue-400">
+                  <span className="font-semibold">Resumen:</span> El motor enviará mensajes de
+                  {' '}{schedule.start_time} a {schedule.end_time}
+                  {' '}los días{' '}
+                  {schedule.days.sort().map(d => ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d]).join(', ')}
+                  {' '}en zona horaria <span className="font-mono">{schedule.timezone}</span>.
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-6 border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-slate-900 border-l-4 border-l-slate-500">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-500" />
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Horario y Estado del Motor</h3>
+                <Clock className="w-5 h-5 text-slate-400" />
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Estado del Motor</h3>
               </div>
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full">
                 <div className={`w-2 h-2 rounded-full ${(settings as any).last_heartbeat_at ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Motor: {(settings as any).last_heartbeat_at ? `Activo (${new Date((settings as any).last_heartbeat_at).toLocaleTimeString()})` : 'Esperando ejecución'}
+                  {(settings as any).last_heartbeat_at ? `Activo (${new Date((settings as any).last_heartbeat_at).toLocaleTimeString()})` : 'Esperando ejecución'}
                 </span>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Zona Horaria</label>
-                <select
-                  value={(settings as any).timezone || 'UTC'}
-                  onChange={(e) => setSettings(s => ({ ...s, timezone: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none"
-                >
-                  <option value="UTC">UTC (Universal Time Coordinated)</option>
-                  <option value="Europe/Madrid">Madrid (CET/CEST)</option>
-                  <option value="America/New_York">New York (EST/EDT)</option>
-                  <option value="America/Mexico_City">Mexico City (CST)</option>
-                  <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
-                  <option value="Europe/London">London (GMT/BST)</option>
-                </select>
-                <p className="text-[11px] text-slate-500 italic">Los pasos de la secuencia se enviarán respetando este horario y los límites diarios.</p>
               </div>
             </div>
           </Card>

@@ -87,6 +87,48 @@ function getHumanJitterMs(minMinutes = 5, maxMinutes = 15) {
   return minutes * 60 * 1000;
 }
 
+/**
+ * Comprueba si `now` (UTC) cae dentro del horario de trabajo definido en el
+ * schedule de la campaña, convertido a la zona horaria del usuario.
+ * Devuelve true si se debe procesar (horario desactivado = siempre verdadero).
+ */
+function isWithinSchedule(schedule, now) {
+  if (!schedule || !schedule.enabled) return true;
+
+  const tz = schedule.timezone || 'UTC';
+  try {
+    // Extraer día de la semana y hora local usando la API nativa ECMA-402
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+
+    const dayStr = parts.find(p => p.type === 'weekday')?.value; // 'Mon', 'Tue'...
+    const hourStr = parts.find(p => p.type === 'hour')?.value || '0';
+    const minuteStr = parts.find(p => p.type === 'minute')?.value || '0';
+
+    const DAY_MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const currentDay = DAY_MAP[dayStr] ?? -1;
+    const currentMinutes = parseInt(hourStr) * 60 + parseInt(minuteStr);
+
+    const allowedDays = schedule.days || [1, 2, 3, 4, 5];
+    if (!allowedDays.includes(currentDay)) return false;
+
+    const [startH, startM] = (schedule.start_time || '09:00').split(':').map(Number);
+    const [endH, endM] = (schedule.end_time || '18:00').split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  } catch (e) {
+    console.warn(`[ENGINE] isWithinSchedule error (tz=${tz}):`, e.message);
+    return true; // ante la duda, dejar pasar
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -105,7 +147,7 @@ export default async function handler(req, res) {
     // 1. Buscamos todas las campañas activas
     const { data: campaigns, error: campErr } = await supabaseAdmin
       .from('campaigns')
-      .select('id, name, sequence, settings, team_id')
+      .select('id, name, sequence, settings, team_id, schedule')
       .eq('status', 'active');
 
     if (campErr) throw campErr;
@@ -120,6 +162,13 @@ export default async function handler(req, res) {
       const sequence = campaign.sequence || [];
       const accountIds = campaign.settings?.linkedin_account_ids || [];
       if (sequence.length === 0 || accountIds.length === 0) continue;
+
+      // --- Validación de Horario de Campaña ---
+      if (!isWithinSchedule(campaign.schedule, now)) {
+        console.log(`[ENGINE] Campaign "${campaign.name}" skipped — fuera del horario de trabajo (tz: ${campaign.schedule?.timezone || 'N/A'})`);
+        stats.skipped++;
+        continue;
+      }
 
       // --- Obtener configuración de throttle de la cuenta principal ---
       const primaryAccountId = accountIds[0];

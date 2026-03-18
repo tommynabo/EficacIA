@@ -85,6 +85,7 @@ export default async function handler(req, res) {
           ...campaign,
           sequence: campaign.sequence || [],
           settings: campaign.settings || {},
+          schedule: campaign.schedule || null,
           stats
         },
         leads: leads || [],
@@ -94,7 +95,7 @@ export default async function handler(req, res) {
     // PUT ?id=xxx — actualizar campaña (nombre, estado, secuencia, opciones)
     if (req.method === 'PUT' && !action) {
       const updates = req.body || {};
-      const allowed = ['name', 'description', 'status', 'sequence', 'settings', 'started_at', 'ended_at'];
+      const allowed = ['name', 'description', 'status', 'sequence', 'settings', 'schedule', 'started_at', 'ended_at'];
       const filtered = {};
       for (const key of allowed) {
         if (key in updates) filtered[key] = updates[key];
