@@ -190,7 +190,7 @@ async function registerUnipileAccount(liAt) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -205,7 +205,7 @@ export default async function handler(req, res) {
 
     const { data: accounts, error } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at, unipile_account_id')
+      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at, unipile_account_id, max_actions_per_hour')
       .eq('team_id', teamId)
       .order('created_at', { ascending: false });
 
@@ -360,6 +360,41 @@ export default async function handler(req, res) {
 
     if (error) return res.status(400).json({ error: error.message });
     return res.status(200).json({ success: true, message: 'Cuenta desconectada' });
+  }
+
+  // PATCH /api/linkedin/accounts?id=<uuid> — actualizar max_actions_per_hour
+  if (req.method === 'PATCH') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'ID de cuenta requerido' });
+
+    const { max_actions_per_hour } = req.body || {};
+    if (
+      max_actions_per_hour === undefined ||
+      !Number.isInteger(max_actions_per_hour) ||
+      max_actions_per_hour < 1 ||
+      max_actions_per_hour > 200
+    ) {
+      return res.status(400).json({ error: 'max_actions_per_hour debe ser un entero entre 1 y 200' });
+    }
+
+    // Verificar que la cuenta pertenece al equipo del usuario
+    const { data: teams } = await supabaseAdmin
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1);
+
+    const teamId = teams?.[0]?.id;
+    if (!teamId) return res.status(404).json({ error: 'Cuenta no encontrada' });
+
+    const { error: patchError } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .update({ max_actions_per_hour, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('team_id', teamId);
+
+    if (patchError) return res.status(500).json({ error: patchError.message });
+    return res.status(200).json({ success: true, max_actions_per_hour });
   }
 
   return res.status(405).json({ error: 'Método no permitido' });

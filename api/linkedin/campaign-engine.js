@@ -1,14 +1,18 @@
 /**
  * /api/linkedin/campaign-engine
  *
- * ESTRATEGIA DE JITTER HUMANO (SERVERLESS COMPATIBLE):
- * 1. El Cron Job se ejecuta cada 2-5 minutos.
- * 2. En lugar de procesar muchos leads "en bloque", procesamos un máximo de 1 LEAD por ejecución del Cron.
- * 3. Al terminar cada acción, reprogramamos el 'next_action_at' con el retraso del paso secuencial
- *    MÁS un "Humano Jitter" aleatorio (ej: 5-15 minutos extra) para que el próximo lead del mismo lote
- *    no se dispare inmediatamente en el siguiente ciclo del Cron.
- * 4. Esto mantiene a la función de Vercel siempre por debajo del tiempo de Timeout
- *    y espacia las acciones de forma orgánica en el tiempo.
+ * ESTRATEGIA DE THROTTLE DINÁMICO + JITTER HUMANO (SERVERLESS COMPATIBLE):
+ * 1. El Cron Job se ejecuta cada CRON_INTERVAL_MINUTES (por defecto 5 min → 12x/hora).
+ * 2. El tamaño del lote (batchSize) se calcula dinámicamente por cuenta:
+ *      batchSize = ceil(max_actions_per_hour / (60 / CRON_INTERVAL_MINUTES))
+ *    Ej: 5 acc/hr → 1 lead/ejecución; 60 acc/hr → 5; 120 acc/hr → 10.
+ * 3. Los leads del lote se procesan en serie con un "micro-jitter" entre ellos
+ *    para no saturar la API de Unipile en ráfaga.
+ * 4. Al terminar cada acción secuencial, se reprograma el 'next_action_at' con el
+ *    delay base del paso siguiente MÁS un jitter humano (10-30 min).
+ *
+ * UMBRAL DE RIESGO: max_actions_per_hour > 15 se considera Peligroso.
+ * El frontend advierte al usuario antes de guardar ese valor.
  */
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
@@ -31,6 +35,28 @@ function verifyCron(req) {
   const auth = req.headers.authorization;
   if (auth === `Bearer ${process.env.CRON_SECRET}`) return true;
   return !!getUserId(req);
+}
+
+/**
+ * Frecuencia del cron en minutos. Debe coincidir con el schedule de vercel.json.
+ * Si el cron corre cada 5 min → 12 ejecuciones/hora.
+ */
+const CRON_INTERVAL_MINUTES = 5;
+
+/**
+ * Calcula el tamaño del lote a procesar en esta ejecución, en base a las
+ * acciones por hora permitidas para la cuenta y la frecuencia del cron.
+ */
+function calcBatchSize(maxActionsPerHour = 5) {
+  const runsPerHour = 60 / CRON_INTERVAL_MINUTES; // 12 por defecto
+  return Math.max(1, Math.ceil(maxActionsPerHour / runsPerHour));
+}
+
+/**
+ * Retraso asíncrono (para micro-jitter entre leads del mismo lote).
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function delayToMs(value, unit = 'days') {
@@ -85,6 +111,18 @@ export default async function handler(req, res) {
       const accountIds = campaign.settings?.linkedin_account_ids || [];
       if (sequence.length === 0 || accountIds.length === 0) continue;
 
+      // --- Obtener configuración de throttle de la cuenta principal ---
+      const primaryAccountId = accountIds[0];
+      const { data: accountConfig } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('max_actions_per_hour')
+        .eq('id', primaryAccountId)
+        .maybeSingle();
+
+      const maxActionsPerHour = accountConfig?.max_actions_per_hour ?? 5;
+      const batchSize = calcBatchSize(maxActionsPerHour);
+      console.log(`[ENGINE] Campaign "${campaign.name}" → max_actions_per_hour=${maxActionsPerHour}, batchSize=${batchSize}`);
+
       // Limites diarios y control de volumen
       const dailyLimit = campaign.settings?.daily_limit_invitations || campaign.settings?.daily_limit_messages || 25;
       const todayStart = new Date();
@@ -101,20 +139,22 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // 2. BUSCAMOS LEADS LISTOS (JITTER COMPATIBLE)
-      // Seleccionamos solo 1 LEAD por campaña por cada ejecución del Cron para forzar el espaciado temporal.
-      const { data: lead } = await supabaseAdmin
+      // Cuántos leads podemos aún procesar hoy
+      const remainingToday = dailyLimit - (todayCount || 0);
+      const effectiveBatch = Math.min(batchSize, remainingToday);
+
+      // 2. BUSCAMOS LOTE DE LEADS LISTOS
+      const { data: leadsToProcess } = await supabaseAdmin
         .from('leads')
         .select('*')
         .eq('campaign_id', campaign.id)
         .in('sequence_status', ['pending', 'active'])
         .lte('next_action_at', now.toISOString())
         .order('next_action_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .limit(effectiveBatch);
 
-      if (!lead) {
-        // Si no hay leads listos para procesar AHORA, revisamos si la campaña terminó
+      if (!leadsToProcess || leadsToProcess.length === 0) {
+        // Revisar si la campaña terminó
         const { count: activeCount } = await supabaseAdmin
           .from('leads')
           .select('*', { count: 'exact', head: true })
@@ -130,72 +170,82 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // 3. EJECUCIÓN DE ACCIÓN
-      const stepIndex = lead.current_step || 0;
-      const step = sequence[stepIndex];
+      // 3. PROCESAMIENTO EN SERIE DEL LOTE (con micro-jitter entre leads)
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host;
 
-      if (!step) {
-        await supabaseAdmin.from('leads').update({ sequence_status: 'completed' }).eq('id', lead.id);
-        continue;
-      }
+      for (let i = 0; i < leadsToProcess.length; i++) {
+        const lead = leadsToProcess[i];
 
-      try {
-        const protocol = req.headers['x-forwarded-proto'] || 'https';
-        const host = req.headers.host;
-        
-        // Llamada a la acción real de LinkedIn
-        const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
-          },
-          body: JSON.stringify({
-            leadId: lead.id,
-            accountId: accountIds[0],
-            actionType: step.type,
-            content: step.content || '',
-            campaignId: campaign.id,
-          }),
-        });
-
-        if (!sendRes.ok) {
-          const errData = await sendRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'Failed call to send-action');
+        // Micro-jitter entre leads del mismo lote: 2-8 segundos
+        if (i > 0) {
+          const microJitter = Math.floor(Math.random() * 6000) + 2000;
+          await sleep(microJitter);
         }
 
-        // 4. RE-PROGRAMACIÓN CON JITTER HUMANO
-        const nextStepIndex = stepIndex + 1;
-        const nextStep = sequence[nextStepIndex];
+        const stepIndex = lead.current_step || 0;
+        const step = sequence[stepIndex];
 
-        let nextActionAt = null;
-        if (nextStep) {
-          // Delay base (días/horas definidos en el paso) + JITTER (5-15 min)
-          const baseDelayMs = delayToMs(nextStep.delayDays || 1, nextStep.delayUnit || 'days');
-          const jitterMs = getHumanJitterMs(10, 30); // Entre 10 y 30 minutos de "vía libre"
-          nextActionAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString();
+        if (!step) {
+          await supabaseAdmin.from('leads').update({ sequence_status: 'completed' }).eq('id', lead.id);
+          continue;
         }
 
-        await supabaseAdmin.from('leads').update({
-          current_step: nextStepIndex,
-          sequence_status: nextStep ? 'active' : 'completed',
-          next_action_at: nextActionAt,
-          last_action_at: now.toISOString(),
-          error_message: null
-        }).eq('id', lead.id);
+        try {
+          // Llamada a la acción real de LinkedIn
+          const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-engine-key': process.env.JWT_SECRET || 'dev-secret',
+            },
+            body: JSON.stringify({
+              leadId: lead.id,
+              accountId: primaryAccountId,
+              actionType: step.type,
+              content: step.content || '',
+              campaignId: campaign.id,
+            }),
+          });
 
-        stats.processed++;
-        console.log(`[ENGINE] Lead ${lead.id} processed (Step ${stepIndex}). Next run set with Jitter: ${nextActionAt}`);
+          if (!sendRes.ok) {
+            const errData = await sendRes.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed call to send-action');
+          }
 
-      } catch (err) {
-        console.error(`[ENGINE] Error in lead ${lead.id}:`, err.message);
-        await supabaseAdmin.from('leads').update({
-          sequence_status: 'active', // Lo dejamos activo para reintento suave en el próximo ciclo
-          next_action_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(), // Penalización 20 min por error
-          error_message: err.message,
-          last_action_at: now.toISOString()
-        }).eq('id', lead.id);
-        stats.errors++;
+          // 4. RE-PROGRAMACIÓN CON JITTER HUMANO
+          const nextStepIndex = stepIndex + 1;
+          const nextStep = sequence[nextStepIndex];
+
+          let nextActionAt = null;
+          if (nextStep) {
+            // Delay base (días/horas definidos en el paso) + JITTER (10-30 min)
+            const baseDelayMs = delayToMs(nextStep.delayDays || 1, nextStep.delayUnit || 'days');
+            const jitterMs = getHumanJitterMs(10, 30);
+            nextActionAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString();
+          }
+
+          await supabaseAdmin.from('leads').update({
+            current_step: nextStepIndex,
+            sequence_status: nextStep ? 'active' : 'completed',
+            next_action_at: nextActionAt,
+            last_action_at: now.toISOString(),
+            error_message: null
+          }).eq('id', lead.id);
+
+          stats.processed++;
+          console.log(`[ENGINE] Lead ${lead.id} processed (Step ${stepIndex}). Next: ${nextActionAt}`);
+
+        } catch (err) {
+          console.error(`[ENGINE] Error in lead ${lead.id}:`, err.message);
+          await supabaseAdmin.from('leads').update({
+            sequence_status: 'active',
+            next_action_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(), // +20 min penalización
+            error_message: err.message,
+            last_action_at: now.toISOString()
+          }).eq('id', lead.id);
+          stats.errors++;
+        }
       }
 
       // Actualizamos contadores de la campaña
