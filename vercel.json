@@ -4,12 +4,6 @@
   "installCommand": "npm install",
   "framework": "vite",
   "regions": ["iad1"],
-  "crons": [
-    {
-      "path": "/api/linkedin/campaign-engine",
-      "schedule": "*/5 * * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/assets/(.*)",

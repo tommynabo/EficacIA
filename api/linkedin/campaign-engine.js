@@ -31,10 +31,20 @@ function getUserId(req) {
   } catch { return null; }
 }
 
+/**
+ * Solo acepta peticiones que vengan con el header:
+ *   Authorization: Bearer <CRON_SECRET>
+ * Configura CRON_SECRET en las variables de entorno de Vercel.
+ * El servicio externo (cron-job.org) debe enviar este header en cada ping.
+ */
 function verifyCron(req) {
-  const auth = req.headers.authorization;
-  if (auth === `Bearer ${process.env.CRON_SECRET}`) return true;
-  return !!getUserId(req);
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.error('[ENGINE] CRON_SECRET no está configurado en las variables de entorno.');
+    return false;
+  }
+  const auth = req.headers.authorization || '';
+  return auth === `Bearer ${secret}`;
 }
 
 /**
