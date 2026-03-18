@@ -123,7 +123,7 @@ export default function SettingsPage() {
                 
                 <Button 
                   asChild
-                  className="w-full mt-4 bg-white text-black hover:bg-zinc-200 font-bold py-7 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-white/5"
+                  className="w-full mt-4 bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 font-bold py-7 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 active:scale-95 shadow-xl"
                 >
                   <a href="/eficacia-extension.zip" download className="flex items-center justify-center w-full gap-3">
                     <Download className="w-6 h-6 shrink-0" />

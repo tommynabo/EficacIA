@@ -743,17 +743,19 @@ export default function CampaignDetailPage() {
                                 )}
                                 <span className="ml-1.5">Enviar</span>
                               </Button>
+                              {import.meta.env.VITE_DEV_MODE === 'true' && (
                               <Button
                                 onClick={() => sendToLead(lead, 0, true)}
                                 disabled={sendingLeadId === lead.id || !lead.linkedin_url}
                                 variant="outline"
                                 size="sm"
                                 className="h-7 px-3 text-[11px] font-medium w-24 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                                title="Genera el texto con IA y comprueba si funciona sin enviarlo realmente"
+                                title="[DEV] Genera el texto con IA y comprueba si funciona sin enviarlo realmente"
                               >
                                 <Bot className="w-3.5 h-3.5" />
                                 <span className="ml-1.5">Simular</span>
                               </Button>
+                              )}
                             </div>
                           )}
                         </td>

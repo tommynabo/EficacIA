@@ -64,15 +64,12 @@ async function startScrapingProcess() {
 
       if (leadsExtracted.length >= targetLimit) break;
 
-      // 3. Go to next page if needed
+      // 3. Go to next page if needed (waits for DOM transition internally)
       const movedToNext = await goToNextPage();
       if (!movedToNext) {
         console.log("[EficacIA] No more pages found or reached the end.");
         break;
       }
-      
-      // Wait for page load
-      await new Promise(r => setTimeout(r, 4000));
     }
 
     // 4. Send data to background
@@ -97,28 +94,33 @@ async function startScrapingProcess() {
   }
 }
 
-async function scrollToBottom() {
-  const distance = 400;
-  const delay = 200;
-  
-  const scrollElement = document.querySelector('.search-results__result-list') || document.scrollingElement || document.documentElement;
-  
-  let currentScroll = 0;
-  const maxScroll = scrollElement.scrollHeight;
-  
-  while (currentScroll < maxScroll) {
-    window.scrollBy(0, distance);
-    currentScroll += distance;
-    await new Promise(r => setTimeout(r, delay));
-    
-    // Check if we already reached the actual bottom (dynamic content)
-    if (currentScroll % 2000 === 0) {
-        // Pause briefly to allow items to render
-        await new Promise(r => setTimeout(r, 500));
+async function scrollToBottom(): Promise<void> {
+  const scrollEl =
+    document.querySelector('.search-results__result-list') ||
+    document.scrollingElement ||
+    document.documentElement;
+
+  let previousHeight = -1;
+  let stableRounds = 0;
+  const STABLE_NEEDED = 3; // consecutive rounds with no height growth
+
+  while (stableRounds < STABLE_NEEDED) {
+    const currentHeight = (scrollEl as HTMLElement).scrollHeight;
+    window.scrollTo(0, currentHeight);
+
+    if (currentHeight === previousHeight) {
+      stableRounds++;
+    } else {
+      stableRounds = 0;
+      previousHeight = currentHeight;
     }
+
+    // Slightly longer pause when new content just appeared to let it fully render
+    await new Promise(r => setTimeout(r, stableRounds === 0 ? 800 : 400));
   }
-  
-  await new Promise(r => setTimeout(r, 1500));
+
+  // Final grace period for any trailing lazy images / hydration
+  await new Promise(r => setTimeout(r, 1200));
 }
 
 function extractLeadsFromPage(): Lead[] {
@@ -163,18 +165,59 @@ function extractLeadsFromPage(): Lead[] {
 }
 
 async function goToNextPage(): Promise<boolean> {
-  const nextBtn = document.querySelector('.artdeco-pagination__button--next') as HTMLButtonElement;
-  
-  if (nextBtn && !nextBtn.disabled) {
-    nextBtn.click();
-    return true;
+  const nextBtn = (
+    document.querySelector('.artdeco-pagination__button--next') ||
+    document.querySelector('button.search-results__pagination-next-button')
+  ) as HTMLButtonElement | null;
+
+  if (!nextBtn || nextBtn.disabled) return false;
+
+  // Snapshot the current first result so we can detect when the DOM has
+  // been replaced by the new page's results.
+  const previousFirstItem = document.querySelector(
+    'li.artdeco-list__item, .search-results__result-item'
+  );
+
+  nextBtn.click();
+
+  await waitForPageTransition(previousFirstItem);
+  return true;
+}
+
+/**
+ * Waits until the DOM list is replaced after a pagination click.
+ * Falls back to a generous fixed delay if the transition isn't detected
+ * within `timeoutMs` milliseconds.
+ */
+async function waitForPageTransition(
+  previousFirstItem: Element | null,
+  timeoutMs = 18000
+): Promise<void> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const currentFirstItem = document.querySelector(
+      'li.artdeco-list__item, .search-results__result-item'
+    );
+
+    // Detect: results list disappeared (loading state) OR a new first item appeared
+    const listGone = !currentFirstItem;
+    const itemChanged =
+      currentFirstItem !== null &&
+      previousFirstItem !== null &&
+      currentFirstItem !== previousFirstItem;
+    const hadNoItemsBefore = previousFirstItem === null && currentFirstItem !== null;
+
+    if (listGone || itemChanged || hadNoItemsBefore) {
+      // Give the new page a moment to fully hydrate before we start scrolling
+      await new Promise(r => setTimeout(r, 1500));
+      return;
+    }
+
+    await new Promise(r => setTimeout(r, 250));
   }
-  
-  const fallbackNext = document.querySelector('button.search-results__pagination-next-button') as HTMLButtonElement;
-  if (fallbackNext && !fallbackNext.disabled) {
-    fallbackNext.click();
-    return true;
-  }
-  
-  return false;
+
+  // Timeout: page never clearly transitioned — wait a fallback duration
+  console.warn('[EficacIA] waitForPageTransition timed out, proceeding anyway.');
+  await new Promise(r => setTimeout(r, 4000));
 }
