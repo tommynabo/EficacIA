@@ -409,43 +409,114 @@ async function scrollApolloTable(): Promise<void> {
   await sleep(500);
 }
 
+// ─── Apollo Row Container Detection ─────────────────────────────────────────
+// Climbs the DOM from the LinkedIn anchor to find the row-level container.
+// Works regardless of whether Apollo uses <tr>, aria roles, or hashed div classes.
+function getApolloRowContainer(anchor: HTMLAnchorElement): Element | null {
+  // Strategy 1: standard HTML table row
+  const tr = anchor.closest('tr');
+  if (tr) return tr;
+
+  // Strategy 2: WAI-ARIA grid row
+  const ariaRow = anchor.closest('[role="row"]');
+  if (ariaRow) return ariaRow;
+
+  // Strategy 3: climb up until we find a sibling-rich container.
+  // The "row element" is the direct child of the container holding all rows.
+  // We identify it when its parent has ≥3 same-tag siblings AND at least one
+  // other sibling also contains a linkedin.com/in/ link (confirming rows layout).
+  let candidate: Element | null = anchor.parentElement;
+  for (let depth = 0; depth < 12 && candidate; depth++) {
+    const parent = candidate.parentElement;
+    if (!parent) break;
+
+    const siblings = Array.from(parent.children).filter(
+      (c) => c.tagName === candidate!.tagName
+    );
+
+    if (
+      siblings.length >= 3 &&
+      candidate.tagName !== 'SPAN' &&
+      candidate.tagName !== 'A' &&
+      candidate.tagName !== 'BUTTON' &&
+      candidate.tagName !== 'TD'
+    ) {
+      const othersWithLinkedIn = siblings.filter(
+        (s) => s !== candidate && s.querySelector('a[href*="linkedin.com/in/"]')
+      );
+      if (othersWithLinkedIn.length >= 1) {
+        return candidate;
+      }
+    }
+
+    candidate = parent;
+  }
+
+  return null;
+}
+
 function extractApolloLeads(): Lead[] {
-  // Strategy: anchor on every visible LinkedIn /in/ URL, then walk up to the
-  // containing table row to extract name, title, and company from sibling cells.
-  // This is resilient to Apollo's hashed CSS class names changing on every deploy.
+  // Anchor heuristic: every visible linkedin.com/in/ link marks a contact row.
+  // Walk up the DOM to find the row container; extract data relative to that node.
+  // Immune to Apollo's hashed CSS class names changing on every deploy.
   const linkedinAnchors = Array.from(
     document.querySelectorAll<HTMLAnchorElement>('a[href*="linkedin.com/in/"]')
-  ).filter(a => /linkedin\.com\/in\/[^/?#\s]+/.test(a.href));
+  ).filter((a) => /linkedin\.com\/in\/[^/?#\s]+/.test(a.href));
 
   const seen = new Set<string>();
   const leads: Lead[] = [];
 
   for (const anchor of linkedinAnchors) {
     try {
-      // ── LinkedIn URL ───────────────────────────────────────────────────────
-      const match = anchor.href.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#\s]+)/);
+      // ── LinkedIn URL ─────────────────────────────────────────────────────
+      const match = anchor.href.match(
+        /(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#\s]+)/
+      );
       if (!match) continue;
       const linkedin_url = match[1].replace(/\/$/, '') + '/';
       if (seen.has(linkedin_url)) continue;
       seen.add(linkedin_url);
 
-      // Walk up to the nearest row container
-      const row = anchor.closest('tr') ?? anchor.closest('[class*="row"]') ?? anchor.closest('li');
+      // ── Row container ────────────────────────────────────────────────────
+      const row = getApolloRowContainer(anchor);
       if (!row) continue;
 
-      // ── Name ──────────────────────────────────────────────────────────────
-      // Apollo wraps the contact name in an anchor pointing to /people/ or /contacts/
+      // ── Name ─────────────────────────────────────────────────────────────
+      // Priority 1: Apollo's internal contact/people anchor
       const nameAnchor = row.querySelector<HTMLAnchorElement>(
         'a[href*="/people/"], a[href*="/contacts/"]'
       );
       let fullName = nameAnchor?.textContent?.trim() ?? '';
 
+      // Priority 2: any anchor with 1–5 words that looks like a personal name
       if (!fullName) {
-        // Fallback: first cell whose text looks like a name (short, no @ or leading digit)
-        const cells = row.querySelectorAll('td');
-        for (const cell of cells) {
+        for (const a of Array.from(row.querySelectorAll<HTMLAnchorElement>('a'))) {
+          if (a === anchor || a.href.includes('linkedin.com') || a.href.includes('/companies/')) continue;
+          const text = a.textContent?.trim() ?? '';
+          const words = text.split(/\s+/).filter(Boolean);
+          if (
+            words.length >= 1 &&
+            words.length <= 5 &&
+            text.length > 2 &&
+            text.length < 60 &&
+            !/[@\d({]/.test(text.charAt(0))
+          ) {
+            fullName = text;
+            break;
+          }
+        }
+      }
+
+      // Priority 3: first <td> with name-like content (starts with uppercase letter)
+      if (!fullName) {
+        for (const cell of row.querySelectorAll('td')) {
           const text = (cell.textContent?.trim() ?? '').split('\n')[0].trim();
-          if (text.length > 1 && text.length < 60 && !/[@\d]/.test(text.charAt(0))) {
+          if (
+            text.length > 2 &&
+            text.length < 60 &&
+            /^[A-ZÀ-Ü]/.test(text) &&
+            !/[@\d]/.test(text.charAt(0))
+          ) {
             fullName = text;
             break;
           }
@@ -457,33 +528,46 @@ function extractApolloLeads(): Lead[] {
       const last_name = nameParts.slice(1).join(' ') ?? '';
       if (!first_name) continue;
 
-      // ── Job Title & Company ───────────────────────────────────────────────
+      // ── Job Title & Company ──────────────────────────────────────────────
       const cells = Array.from(row.querySelectorAll('td'));
+      let job_title = '';
+      let company = '';
 
-      // Find which cell holds the name anchor to offset title/company correctly
-      let nameCellIdx = nameAnchor ? cells.findIndex(c => c.contains(nameAnchor)) : -1;
-      if (nameCellIdx < 0) nameCellIdx = 1; // default: name in cell 1, after checkbox
-
-      const titleCell = cells[nameCellIdx + 1];
-      const job_title = titleCell?.textContent?.trim().split('\n')[0].trim() ?? '';
-
+      // Company link is the most reliable signal
       const companyAnchor = row.querySelector<HTMLAnchorElement>(
         'a[href*="/companies/"], a[data-cy="company-name-link"]'
       );
-      const companyCell = cells[nameCellIdx + 2];
-      const company =
-        companyAnchor?.textContent?.trim() ??
-        companyCell?.textContent?.trim().split('\n')[0].trim() ??
-        '';
+      company = companyAnchor?.textContent?.trim() ?? '';
 
-      // ── Email (if unlocked) ───────────────────────────────────────────────
+      if (cells.length >= 2) {
+        // Find the cell that contains the name to offset to title / company cells
+        let nameCellIdx = nameAnchor
+          ? cells.findIndex((c) => c.contains(nameAnchor))
+          : -1;
+        if (nameCellIdx < 0) {
+          nameCellIdx = cells.findIndex((c) =>
+            (c.textContent?.trim() ?? '').includes(first_name)
+          );
+        }
+        if (nameCellIdx < 0) nameCellIdx = 1;
+
+        job_title =
+          cells[nameCellIdx + 1]?.textContent?.trim().split('\n')[0].trim() ?? '';
+
+        if (!company) {
+          company =
+            cells[nameCellIdx + 2]?.textContent?.trim().split('\n')[0].trim() ?? '';
+        }
+      }
+
+      // ── Email (if unlocked) ──────────────────────────────────────────────
       let email: string | undefined;
-      cells.forEach(cell => {
+      for (const cell of cells) {
         const text = cell.textContent?.trim() ?? '';
         if (!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
           email = text;
         }
-      });
+      }
 
       leads.push({ first_name, last_name, job_title, company, linkedin_url, location: '', email });
     } catch (e) {

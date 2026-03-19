@@ -581,6 +581,20 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Tipo de importación no especificado' });
     }
 
+    // ── Resolve accountId from campaign if not provided ─────────────────────
+    let resolvedAccountId = account_id || null;
+    if (!resolvedAccountId && campaign_id) {
+      const { data: camp } = await supabaseAdmin
+        .from('campaigns')
+        .select('account_id')
+        .eq('id', campaign_id)
+        .single();
+      if (camp?.account_id) {
+        resolvedAccountId = camp.account_id;
+        console.log('[BULK-IMPORT] Auto-resolved account_id from campaign:', resolvedAccountId);
+      }
+    }
+
     // ── Get or create team ──────────────────────────────────────────────────
     let teamId;
     const { data: teams } = await supabaseAdmin
@@ -674,11 +688,11 @@ export default async function handler(req, res) {
         // 1. Resolve Session Cookie (li_at) from user's connected account
         let liAt = bodyLiAt; // Manual override from body (if any)
 
-        if (!liAt && account_id) {
+        if (!liAt && resolvedAccountId) {
           const { data: acc } = await supabaseAdmin
             .from('linkedin_accounts')
             .select('*')
-            .eq('id', account_id)
+            .eq('id', resolvedAccountId)
             .single();
 
           if (acc) {

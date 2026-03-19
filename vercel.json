@@ -22,6 +22,7 @@
     { "source": "/api/auth/login", "destination": "/api/auth?action=login" },
     { "source": "/api/auth/register", "destination": "/api/auth?action=register" },
     { "source": "/api/auth/me", "destination": "/api/auth?action=me" },
+    { "source": "/callback", "destination": "/api/unipile" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
