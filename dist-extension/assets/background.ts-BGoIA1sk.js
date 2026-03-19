@@ -1,1 +1,39 @@
-chrome.runtime.onInstalled.addListener(()=>{console.log("EficacIA Extension Installed (Bolt Branding)")});chrome.runtime.onMessage.addListener((n,r,s)=>{if(n.type==="SUBMIT_LEADS"){const{campaign_id:o,leads:e,token:t,backendUrl:a}=n.payload;return c(o,e,t,a).then(()=>{chrome.runtime.sendMessage({type:"SCRAPING_FINISHED"})}).catch(i=>{chrome.runtime.sendMessage({type:"SCRAPING_ERROR",payload:{error:i.message||"Error al enviar leads al servidor"}})}),!0}});async function c(n,r,s,o){console.log(`[EficacIA Background] Submitting ${r.length} leads to ${o}...`);const e=await fetch(`${o}/api/linkedin/bulk-import`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${s}`},body:JSON.stringify({type:"extension",campaign_id:n,leads:r})});if(!e.ok){const t=await e.json().catch(()=>({}));throw new Error(t.message||`Error del servidor: ${e.status}`)}console.log("[EficacIA Background] Bulk import successful!")}
+// src/background.ts
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("EficacIA Extension Installed (Bolt Branding)");
+});
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "SUBMIT_LEADS") {
+    const { campaign_id, leads, token, backendUrl, source } = message.payload;
+    submitLeads(campaign_id, leads, token, backendUrl, source).then(() => {
+      chrome.runtime.sendMessage({ type: "SCRAPING_FINISHED" });
+    }).catch((error) => {
+      chrome.runtime.sendMessage({
+        type: "SCRAPING_ERROR",
+        payload: { error: error.message || "Error al enviar leads al servidor" }
+      });
+    });
+    return true;
+  }
+});
+async function submitLeads(campaign_id, leads, token, backendUrl, source) {
+  console.log(`[EficacIA Background] Submitting ${leads.length} leads (source: ${source ?? "extension"}) to ${backendUrl}...`);
+  const response = await fetch(`${backendUrl}/api/linkedin/bulk-import`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      type: "extension",
+      campaign_id,
+      leads,
+      ...source ? { source } : {}
+    })
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Error del servidor: ${response.status}`);
+  }
+  console.log("[EficacIA Background] Bulk import successful!");
+}

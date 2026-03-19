@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "EficacIA Connector",
-  "version": "1.0.0",
-  "description": "Extrae leads de Sales Navigator directamente a tus campañas de EficacIA.",
+  "version": "1.1.0",
+  "description": "Extrae leads de Sales Navigator y Apollo.io directamente a tus campañas de EficacIA.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -22,7 +22,9 @@
         "assets/content.ts-BShS41TX.js"
       ],
       "matches": [
-        "https://*.linkedin.com/sales/search/people*"
+        "https://*.linkedin.com/sales/search/people*",
+        "https://app.apollo.io/*",
+        "https://*.apollo.io/*"
       ]
     }
   ],
@@ -32,12 +34,16 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://*.linkedin.com/*"
+    "https://*.linkedin.com/*",
+    "https://app.apollo.io/*",
+    "https://*.apollo.io/*"
   ],
   "web_accessible_resources": [
     {
       "matches": [
-        "https://*.linkedin.com/*"
+        "https://*.linkedin.com/*",
+        "https://app.apollo.io/*",
+        "https://*.apollo.io/*"
       ],
       "resources": [
         "assets/content.ts-BShS41TX.js"

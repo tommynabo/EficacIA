@@ -1,5 +1,5 @@
 import * as React from "react"
-import { X, FileText, Search, Briefcase, UserPlus, Upload, Check, AlertCircle, Link2, ChevronDown, Zap } from "lucide-react"
+import { X, FileText, Search, Briefcase, UserPlus, Upload, Check, AlertCircle, Link2, ChevronDown, Zap, Database } from "lucide-react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { cn } from "@/src/lib/utils"
@@ -283,7 +283,7 @@ interface LeadImportModalProps {
 const METHODS: { id: ImportMethod; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'csv', label: 'CSV', icon: FileText, desc: 'Sube o pega un archivo CSV' },
   { id: 'google_sheets', label: 'Google Sheets', icon: Link2, desc: 'Enlace a hoja pública' },
-  { id: 'apollo', label: 'Personas', icon: Zap, desc: 'Búsqueda en LinkedIn via Apify' },
+  { id: 'apollo', label: 'Apollo.io', icon: Database, desc: 'Extrae leads con la extensión' },
   { id: 'linkedin_search', label: 'LinkedIn URL', icon: Search, desc: 'URL de búsqueda de personas' },
   { id: 'sales_navigator', label: 'Sales Navigator', icon: Briefcase, desc: 'URL de búsqueda SN' },
   { id: 'manual', label: 'Manual', icon: UserPlus, desc: 'Añadir un lead a mano' },
@@ -507,10 +507,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
         body = { ...body, type: 'sales_navigator', url: snUrl, filters: snParsed, account_id: selectedAccountId, limit: snLimit, li_at: manualLiAt }
 
       } else if (method === 'apollo') {
-        if (!apolloQuery.titles && !apolloQuery.keywords && !apolloQuery.companies) {
-          throw new Error('Introduce al menos un cargo, empresa o palabra clave para buscar.')
-        }
-        body = { ...body, type: 'apollo', apollo_query: apolloQuery, limit: apolloLimit }
+        throw new Error('Para importar desde Apollo.io usa la extensión de Chrome. Haz clic en "Ir a la Guía de Instalación" arriba.')
 
       } else if (method === 'manual') {
         if (!manualLead.first_name && !manualLead.linkedin_url) {
@@ -541,8 +538,6 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
 
       if (method === 'manual') {
         setManualLead({ first_name: '', last_name: '', company: '', job_title: '', email: '', linkedin_url: '' })
-      } else if (method === 'apollo') {
-        // keep apollo form for follow-up searches
       } else {
         // Auto-close after 1.5s showing the success message
         setTimeout(() => onClose(), 1500)
@@ -851,60 +846,33 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
             </div>
           )}
 
-          {/* ── Apollo ── */}
+          {/* ── Apollo.io ── */}
           {method === 'apollo' && (
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-500/8 border border-blue-500/20">
-                <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                <div className="text-sm text-slate-400">
-                  <span className="font-medium text-slate-200">Búsqueda de personas en LinkedIn</span>
-                  <span className="text-slate-500"> — via Apify con tu cuenta LinkedIn conectada. </span>
-                  <span>Filtra por cargo, empresa y ubicación.</span>
+            <div className="space-y-6 py-4">
+              <Card className="border-amber-500/30 bg-amber-500/5 p-6 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
+                  <Database className="w-8 h-8 text-amber-400" />
                 </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-bold text-amber-400">Extracción Automática vía Extensión</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed max-w-sm mx-auto">
+                    La extracción de leads desde Apollo.io se realiza de forma automática, gratuita y 100% segura mediante nuestra extensión de Chrome oficial.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => window.open('/dashboard/settings?tab=extension', '_blank')}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2 px-8 py-6 rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.25)] transition-all hover:scale-[1.02]"
+                >
+                  <Database className="w-5 h-5" />
+                  Ir a la Guía de Instalación
+                </Button>
+              </Card>
+              <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-800 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Una vez instalada la extensión, navega a <strong className="text-slate-400">app.apollo.io</strong>, realiza tu búsqueda de contactos y haz clic en el botón <strong className="text-slate-400">"⚡ Exportar a Campaña"</strong> para añadir los leads directamente a esta campaña.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-sm text-slate-400">Cargos / Títulos</label>
-                  <Input
-                    value={apolloQuery.titles}
-                    onChange={e => setApolloQuery(q => ({ ...q, titles: e.target.value }))}
-                    placeholder="CEO, CTO, Director de Marketing"
-                    className="bg-slate-950 border-slate-700 text-sm"
-                  />
-                  <p className="text-xs text-slate-600">Separa con comas para múltiples</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm text-slate-400">Empresas</label>
-                  <Input
-                    value={apolloQuery.companies}
-                    onChange={e => setApolloQuery(q => ({ ...q, companies: e.target.value }))}
-                    placeholder="Telefónica, BBVA, Inditex"
-                    className="bg-slate-950 border-slate-700 text-sm"
-                  />
-                  <p className="text-xs text-slate-600">Separa con comas para múltiples</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm text-slate-400">Ubicaciones</label>
-                  <Input
-                    value={apolloQuery.locations}
-                    onChange={e => setApolloQuery(q => ({ ...q, locations: e.target.value }))}
-                    placeholder="Spain, Madrid, Barcelona"
-                    className="bg-slate-950 border-slate-700 text-sm"
-                  />
-                  <p className="text-xs text-slate-600">País, ciudad o región</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm text-slate-400">Palabras clave</label>
-                  <Input
-                    value={apolloQuery.keywords}
-                    onChange={e => setApolloQuery(q => ({ ...q, keywords: e.target.value }))}
-                    placeholder="SaaS, startup, fintech"
-                    className="bg-slate-950 border-slate-700 text-sm"
-                  />
-                  <p className="text-xs text-slate-600">Busca en perfil y empresa</p>
-                </div>
-              </div>
-              <LimitSlider value={apolloLimit} onChange={setApolloLimit} />
             </div>
           )}
 
