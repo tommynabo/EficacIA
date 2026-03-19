@@ -26,7 +26,7 @@
       "js": ["src/content.ts"]
     }
   ],
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "alarms", "tabs"],
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://app.apollo.io/*",

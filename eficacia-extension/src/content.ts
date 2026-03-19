@@ -1,4 +1,20 @@
 // EficacIA Content Script — LinkedIn Sales Navigator + Apollo.io Dual-Mode Scraper
+// State is persisted in chrome.storage.local so scraping survives page reloads and
+// background-tab throttling. The background service worker sends a RESUME_IF_STALLED
+// alarm tick every minute to restart a stalled loop even when the tab is backgrounded.
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+// Apollo builds its UI with hashed class names that change on every deploy.
+// We anchor to structural / semantic attributes that are stable.
+const APOLLO_ROW =
+  '[data-cy="contacts-table-row"], ' +
+  '[data-testid="contacts-table-row"], ' +
+  'table tbody tr';
+
+// chrome.storage.local keys
+const TASK_KEY   = 'eficacia_active_task';
+const CONFIG_KEY = 'eficacia_last_config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -12,31 +28,82 @@ interface Lead {
   email?: string;
 }
 
+/** Full task state — persisted to storage after every page so reloads can resume. */
+interface ScrapingTask {
+  active: boolean;
+  platform: 'apollo' | 'sales_navigator';
+  campaign_id: string;
+  limit: number;
+  token: string;
+  backendUrl: string;
+  leads: Lead[];
+}
+
+/** Minimal config kept after a task finishes so the Apollo export button keeps working. */
+interface LastConfig {
+  campaign_id: string;
+  token: string;
+  backendUrl: string;
+}
+
 type Environment = 'sales_navigator' | 'apollo';
+
+// ─── Storage Helpers ─────────────────────────────────────────────────────────
+
+function getTask(): Promise<ScrapingTask | null> {
+  return new Promise(r =>
+    chrome.storage.local.get(TASK_KEY, s => r((s[TASK_KEY] as ScrapingTask) ?? null))
+  );
+}
+
+function saveTask(task: ScrapingTask): Promise<void> {
+  return new Promise(r => chrome.storage.local.set({ [TASK_KEY]: task }, r));
+}
+
+function clearTask(): Promise<void> {
+  return new Promise(r => chrome.storage.local.remove([TASK_KEY], r));
+}
+
+function getLastConfig(): Promise<LastConfig | null> {
+  return new Promise(r =>
+    chrome.storage.local.get(CONFIG_KEY, s => r((s[CONFIG_KEY] as LastConfig) ?? null))
+  );
+}
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
-let isScraping = false;
-let leadsExtracted: Lead[] = [];
-let targetLimit = 0;
-let currentCampaignId = '';
-let authToken = '';
-let apiBaseUrl = '';
+/** Per-page in-process guard — prevents double-start within the same page lifecycle. */
+let _running = false;
 
 // ─── Message Listener ───────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
   if (message.type === 'START_SCRAPING') {
     const { campaign_id, limit, token, backendUrl } = message.payload;
-    currentCampaignId = campaign_id;
-    targetLimit = limit;
-    authToken = token;
-    apiBaseUrl = backendUrl;
-    if (!isScraping) startScrapingProcess();
+    const task: ScrapingTask = {
+      active: true,
+      platform: detectEnvironment(),
+      campaign_id,
+      limit,
+      token,
+      backendUrl,
+      leads: [],
+    };
+    const config: LastConfig = { campaign_id, token, backendUrl };
+    chrome.storage.local.set({ [TASK_KEY]: task, [CONFIG_KEY]: config }, () => {
+      if (!_running) startScrapingProcess();
+    });
+  }
+
+  // Sent by the background watchdog alarm every minute while a task is active.
+  if (message.type === 'RESUME_IF_STALLED') {
+    if (!_running) startScrapingProcess();
   }
 });
 
-// ─── Page Load Init (Apollo button injection) ───────────────────────────────
+// ─── Page Load Init ───────────────────────────────────────────────────────────
+// Runs on every page load. Injects the Apollo export button and checks storage
+// for an in-progress task so full-page-reload pagination resumes automatically.
 
 (function init() {
   if (!window.location.hostname.includes('apollo.io')) return;
@@ -70,6 +137,40 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
   }).observe(document.body, { childList: true, subtree: true });
 })();
 
+// Resume check runs on every page (both Apollo and LinkedIn) — handles page reloads
+// during paginated scraping without any user interaction.
+(function resumeOnLoad() {
+  const env = detectEnvironment();
+
+  chrome.storage.local.get(TASK_KEY, (result) => {
+    const task = result[TASK_KEY] as ScrapingTask | undefined;
+    if (!task?.active) return;
+    if (task.platform !== env) return; // task belongs to a different platform/tab
+
+    console.log(`[EficacIA] Auto-resuming: ${task.leads.length}/${task.limit} leads collected`);
+
+    const waitThenResume = () => {
+      if (_running) return;
+      const ready =
+        env === 'apollo'
+          ? !!document.querySelector(APOLLO_ROW)
+          : !!document.querySelector('li.artdeco-list__item, .search-results__result-item');
+
+      if (ready) {
+        startScrapingProcess();
+      } else {
+        setTimeout(waitThenResume, 1000);
+      }
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => setTimeout(waitThenResume, 1500));
+    } else {
+      setTimeout(waitThenResume, 1500);
+    }
+  });
+})();
+
 // ─── Environment Detection ───────────────────────────────────────────────────
 
 function detectEnvironment(): Environment {
@@ -79,36 +180,45 @@ function detectEnvironment(): Environment {
 // ─── Main Dispatch ───────────────────────────────────────────────────────────
 
 async function startScrapingProcess(): Promise<void> {
-  isScraping = true;
-  leadsExtracted = [];
-  const env = detectEnvironment();
-  console.log(`[EficacIA] Env: ${env} | Target: ${targetLimit}`);
+  if (_running) return;
+  const task = await getTask();
+  if (!task?.active) return;
+
+  _running = true;
+  console.log(`[EficacIA] Env: ${task.platform} | Target: ${task.limit} | Have: ${task.leads.length}`);
 
   try {
-    if (env === 'apollo') {
-      await runApolloScraper();
+    if (task.platform === 'apollo') {
+      await runApolloScraper(task);
     } else {
-      await runLinkedInScraper();
+      await runLinkedInScraper(task);
     }
+
+    // Re-read from storage to get the latest leads (survives page reloads mid-run)
+    const finalTask = await getTask();
+    if (!finalTask) return;
 
     chrome.runtime.sendMessage({
       type: 'SUBMIT_LEADS',
       payload: {
-        campaign_id: currentCampaignId,
-        leads: leadsExtracted,
-        token: authToken,
-        backendUrl: apiBaseUrl,
-        source: env,
+        campaign_id: finalTask.campaign_id,
+        leads: finalTask.leads,
+        token: finalTask.token,
+        backendUrl: finalTask.backendUrl,
+        source: finalTask.platform,
       },
     });
+
+    await clearTask();
   } catch (error: any) {
     console.error('[EficacIA] Scraping error:', error);
     chrome.runtime.sendMessage({
       type: 'SCRAPING_ERROR',
       payload: { error: error.message },
     });
+    await clearTask();
   } finally {
-    isScraping = false;
+    _running = false;
   }
 }
 
@@ -116,26 +226,31 @@ async function startScrapingProcess(): Promise<void> {
 //  LINKEDIN SALES NAVIGATOR
 // ════════════════════════════════════════════════════════════════════════════
 
-async function runLinkedInScraper(): Promise<void> {
-  while (leadsExtracted.length < targetLimit) {
+async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
+  while (task.leads.length < task.limit) {
     await scrollToBottom();
 
-    const newLeads = extractLeadsFromPage();
-    for (const lead of newLeads) {
-      if (leadsExtracted.length >= targetLimit) break;
-      if (!leadsExtracted.find(l => l.linkedin_url === lead.linkedin_url)) {
-        leadsExtracted.push(lead);
+    const seen = new Set(task.leads.map(l => l.linkedin_url));
+    for (const lead of extractLeadsFromPage()) {
+      if (task.leads.length >= task.limit) break;
+      if (!seen.has(lead.linkedin_url)) {
+        seen.add(lead.linkedin_url);
+        task.leads.push(lead);
       }
     }
 
-    sendProgress();
-    if (leadsExtracted.length >= targetLimit) break;
+    // Persist after every page so a page reload can resume from here
+    await saveTask(task);
+    sendProgress(task);
+
+    if (task.leads.length >= task.limit) break;
 
     const movedToNext = await goToNextPage();
     if (!movedToNext) {
       console.log('[EficacIA LI] No more pages.');
       break;
     }
+    // If LinkedIn performs a full page reload here, resumeOnLoad() will auto-resume.
   }
 }
 
@@ -222,73 +337,70 @@ async function goToNextPage(): Promise<boolean> {
   return true;
 }
 
-async function waitForLinkedInPageTransition(
+/**
+ * Uses MutationObserver instead of sleep-polling so the wait completes correctly
+ * even when the tab is throttled in the background.
+ */
+function waitForLinkedInPageTransition(
   previousFirstItem: Element | null,
   timeoutMs = 18000
 ): Promise<void> {
-  const start = Date.now();
+  return new Promise(resolve => {
+    const done = () => {
+      clearTimeout(timer);
+      observer.disconnect();
+      sleep(1500).then(resolve);
+    };
 
-  while (Date.now() - start < timeoutMs) {
-    const currentFirstItem = document.querySelector(
-      'li.artdeco-list__item, .search-results__result-item'
-    );
+    const check = () => {
+      const current = document.querySelector(
+        'li.artdeco-list__item, .search-results__result-item'
+      );
+      if (!current) { done(); return; }                              // list cleared → new page loading
+      if (current !== previousFirstItem) { done(); return; }        // first item replaced → loaded
+      if (previousFirstItem === null && current !== null) done();   // had nothing, now has content
+    };
 
-    const listGone = !currentFirstItem;
-    const itemChanged =
-      currentFirstItem !== null &&
-      previousFirstItem !== null &&
-      currentFirstItem !== previousFirstItem;
-    const hadNoItemsBefore = previousFirstItem === null && currentFirstItem !== null;
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      console.warn('[EficacIA LI] waitForPageTransition timed out.');
+      sleep(4000).then(resolve);
+    }, timeoutMs);
 
-    if (listGone || itemChanged || hadNoItemsBefore) {
-      await sleep(1500);
-      return;
-    }
-
-    await sleep(250);
-  }
-
-  console.warn('[EficacIA LI] waitForPageTransition timed out, proceeding anyway.');
-  await sleep(4000);
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    check(); // immediate check in case transition already happened
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 //  APOLLO.IO
 // ════════════════════════════════════════════════════════════════════════════
 
-// Apollo builds its UI with hashed class names that change on every deploy.
-// We anchor to structural / semantic attributes that are stable:
-//   • a[href*="linkedin.com/in/"]       → LinkedIn profile link (the critical datum)
-//   • a[href*="/people/"], a[href*="/contacts/"] → contact's Apollo page (name)
-//   • a[href*="/companies/"]            → company name link
-//   • table tbody tr                    → each result row
-const APOLLO_ROW =
-  '[data-cy="contacts-table-row"], ' +
-  '[data-testid="contacts-table-row"], ' +
-  'table tbody tr';
-
-async function runApolloScraper(): Promise<void> {
+async function runApolloScraper(task: ScrapingTask): Promise<void> {
   await waitForApolloRows();
 
-  while (leadsExtracted.length < targetLimit) {
+  while (task.leads.length < task.limit) {
     // Scroll container so all rows in this page batch are mounted
     await scrollApolloTable();
     await sleep(700);
 
     // Extract and deduplicate
-    const seen = new Set(leadsExtracted.map(l => l.linkedin_url).filter(Boolean));
+    const seen = new Set(task.leads.map(l => l.linkedin_url).filter(Boolean));
     for (const lead of extractApolloLeads()) {
-      if (leadsExtracted.length >= targetLimit) break;
+      if (task.leads.length >= task.limit) break;
       if (lead.linkedin_url && !seen.has(lead.linkedin_url)) {
         seen.add(lead.linkedin_url);
-        leadsExtracted.push(lead);
+        task.leads.push(lead);
       }
     }
 
-    sendProgress();
-    console.log(`[EficacIA Apollo] ${leadsExtracted.length}/${targetLimit}`);
+    // Persist after every page
+    await saveTask(task);
+    sendProgress(task);
+    console.log(`[EficacIA Apollo] ${task.leads.length}/${task.limit}`);
 
-    if (leadsExtracted.length >= targetLimit) break;
+    if (task.leads.length >= task.limit) break;
 
     const moved = await goToNextApolloPage();
     if (!moved) {
@@ -470,34 +582,48 @@ function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
   return null;
 }
 
-async function waitForApolloPageTransition(
+/**
+ * Uses MutationObserver to detect Apollo page transitions — not throttled in background tabs.
+ */
+function waitForApolloPageTransition(
   previousFirstRow: Element | null,
   previousUrl: string,
   timeoutMs = 20000
 ): Promise<void> {
-  const start = Date.now();
-  await sleep(400); // brief head-start before polling
+  return new Promise(resolve => {
+    let settled = false;
 
-  while (Date.now() - start < timeoutMs) {
-    const urlChanged = window.location.href !== previousUrl;
-    const currentFirst = document.querySelector(APOLLO_ROW);
-    const rowsGone = !currentFirst;
-    const rowReplaced =
-      currentFirst !== null &&
-      previousFirstRow !== null &&
-      currentFirst !== previousFirstRow;
-
-    if (urlChanged || rowsGone || rowReplaced) {
+    const done = async () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      observer.disconnect();
       await waitForApolloRows();
       await sleep(800);
-      return;
-    }
+      resolve();
+    };
 
-    await sleep(300);
-  }
+    const check = () => {
+      if (window.location.href !== previousUrl) { done(); return; }
+      const current = document.querySelector(APOLLO_ROW);
+      if (!current) { done(); return; }
+      if (current !== previousFirstRow) done();
+    };
 
-  console.warn('[EficacIA Apollo] waitForApolloPageTransition timed out.');
-  await sleep(3000);
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        observer.disconnect();
+        console.warn('[EficacIA Apollo] waitForApolloPageTransition timed out.');
+        sleep(3000).then(resolve);
+      }
+    }, timeoutMs);
+
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    // Also poll for URL hash/search changes (not caught by MutationObserver)
+    sleep(400).then(check);
+  });
 }
 
 // ── Injected "Exportar a Campaña" button ─────────────────────────────────────
@@ -529,9 +655,11 @@ function injectApolloExportButton(): void {
   });
 
   btn.addEventListener('click', async () => {
-    if (isScraping) return;
+    if (_running) return;
 
-    if (!currentCampaignId || !authToken || !apiBaseUrl) {
+    // Read campaign config saved when the popup last initiated a session
+    const config = await getLastConfig();
+    if (!config?.campaign_id || !config?.token || !config?.backendUrl) {
       alert('[EficacIA] Abre la extensión y selecciona una campaña antes de exportar.');
       return;
     }
@@ -547,16 +675,19 @@ function injectApolloExportButton(): void {
       const leads = extractApolloLeads();
       if (leads.length === 0) {
         alert('[EficacIA] No se encontraron contactos en la tabla actual. Asegúrate de que la lista de contactos está visible.');
+        btn.textContent = '⚡ Exportar a Campaña';
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
         return;
       }
 
       chrome.runtime.sendMessage({
         type: 'SUBMIT_LEADS',
         payload: {
-          campaign_id: currentCampaignId,
+          campaign_id: config.campaign_id,
           leads,
-          token: authToken,
-          backendUrl: apiBaseUrl,
+          token: config.token,
+          backendUrl: config.backendUrl,
           source: 'apollo',
         },
       });
@@ -583,12 +714,12 @@ function injectApolloExportButton(): void {
 
 // ─── Shared Utilities ────────────────────────────────────────────────────────
 
-function sendProgress(): void {
+function sendProgress(task: ScrapingTask): void {
   chrome.runtime.sendMessage({
     type: 'SCRAPING_PROGRESS',
-    payload: { progress: Math.min((leadsExtracted.length / targetLimit) * 100, 100) },
+    payload: { progress: Math.min((task.leads.length / task.limit) * 100, 100) },
   });
-  console.log(`[EficacIA] ${leadsExtracted.length}/${targetLimit}`);
+  console.log(`[EficacIA] ${task.leads.length}/${task.limit}`);
 }
 
 function sleep(ms: number): Promise<void> {

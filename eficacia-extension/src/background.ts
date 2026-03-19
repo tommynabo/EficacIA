@@ -1,7 +1,40 @@
 // EficacIA Background Service Worker
 
+function ensureWatchdogAlarm(): void {
+  chrome.alarms.get('eficacia_watchdog', (existing) => {
+    if (!existing) {
+      // Fires every minute; nudges the content script to resume if throttled
+      chrome.alarms.create('eficacia_watchdog', { periodInMinutes: 1 });
+    }
+  });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('EficacIA Extension Installed (Bolt Branding)');
+  console.log('EficacIA Extension Installed');
+  ensureWatchdogAlarm();
+});
+
+chrome.runtime.onStartup.addListener(ensureWatchdogAlarm);
+
+// Watchdog: if a scraping task stalled (tab throttled / backgrounded), nudge content script
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== 'eficacia_watchdog') return;
+
+  const result = await chrome.storage.local.get('eficacia_active_task');
+  const task = result['eficacia_active_task'];
+  if (!task?.active) return;
+
+  const urlPattern =
+    task.platform === 'apollo'
+      ? '*://app.apollo.io/*'
+      : '*://*.linkedin.com/sales/*';
+
+  const tabs = await chrome.tabs.query({ url: urlPattern });
+  for (const tab of tabs) {
+    if (tab.id) {
+      chrome.tabs.sendMessage(tab.id, { type: 'RESUME_IF_STALLED' }).catch(() => {});
+    }
+  }
 });
 
 // Listener for messages

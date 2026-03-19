@@ -145,16 +145,34 @@ const Popup = () => {
         throw new Error('Solo puedes extraer leads desde búsquedas de LinkedIn Sales Navigator o listas de Apollo.io.');
       }
 
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'START_SCRAPING',
-          payload: {
-            campaign_id: selectedCampaign,
-            limit: leadCount,
-            token: token.trim(),
-            backendUrl: backendUrl.trim()
-          }
-        });
+      if (!tab?.id) throw new Error('No se encontró la pestaña activa.');
+
+      const payload = {
+        campaign_id: selectedCampaign,
+        limit: leadCount,
+        token: token.trim(),
+        backendUrl: backendUrl.trim(),
+      };
+
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });
+      } catch (connErr: any) {
+        // Content script not alive (post-extension-update, first navigation, etc.) — inject and retry
+        const isConnErr =
+          connErr?.message?.includes('Receiving end does not exist') ||
+          connErr?.message?.includes('Could not establish connection');
+        if (!isConnErr) throw connErr;
+
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['assets/content.ts-BShS41TX.js'],
+          });
+          await new Promise(r => setTimeout(r, 600));
+          await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });
+        } catch (_injectErr) {
+          throw new Error('Por favor, recarga esta página (F5) para iniciar la conexión con la extensión.');
+        }
       }
     } catch (err: any) {
       setIsScraping(false);

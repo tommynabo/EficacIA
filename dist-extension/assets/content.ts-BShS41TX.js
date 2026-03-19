@@ -1,18 +1,44 @@
 // src/content.ts
-var isScraping = false;
-var leadsExtracted = [];
-var targetLimit = 0;
-var currentCampaignId = "";
-var authToken = "";
-var apiBaseUrl = "";
+var APOLLO_ROW = '[data-cy="contacts-table-row"], [data-testid="contacts-table-row"], table tbody tr';
+var TASK_KEY = "eficacia_active_task";
+var CONFIG_KEY = "eficacia_last_config";
+function getTask() {
+  return new Promise(
+    (r) => chrome.storage.local.get(TASK_KEY, (s) => r(s[TASK_KEY] ?? null))
+  );
+}
+function saveTask(task) {
+  return new Promise((r) => chrome.storage.local.set({ [TASK_KEY]: task }, r));
+}
+function clearTask() {
+  return new Promise((r) => chrome.storage.local.remove([TASK_KEY], r));
+}
+function getLastConfig() {
+  return new Promise(
+    (r) => chrome.storage.local.get(CONFIG_KEY, (s) => r(s[CONFIG_KEY] ?? null))
+  );
+}
+var _running = false;
 chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
   if (message.type === "START_SCRAPING") {
     const { campaign_id, limit, token, backendUrl } = message.payload;
-    currentCampaignId = campaign_id;
-    targetLimit = limit;
-    authToken = token;
-    apiBaseUrl = backendUrl;
-    if (!isScraping)
+    const task = {
+      active: true,
+      platform: detectEnvironment(),
+      campaign_id,
+      limit,
+      token,
+      backendUrl,
+      leads: []
+    };
+    const config = { campaign_id, token, backendUrl };
+    chrome.storage.local.set({ [TASK_KEY]: task, [CONFIG_KEY]: config }, () => {
+      if (!_running)
+        startScrapingProcess();
+    });
+  }
+  if (message.type === "RESUME_IF_STALLED") {
+    if (!_running)
       startScrapingProcess();
   }
 });
@@ -44,53 +70,89 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
     }
   }).observe(document.body, { childList: true, subtree: true });
 })();
+(function resumeOnLoad() {
+  const env = detectEnvironment();
+  chrome.storage.local.get(TASK_KEY, (result) => {
+    const task = result[TASK_KEY];
+    if (!task?.active)
+      return;
+    if (task.platform !== env)
+      return;
+    console.log(`[EficacIA] Auto-resuming: ${task.leads.length}/${task.limit} leads collected`);
+    const waitThenResume = () => {
+      if (_running)
+        return;
+      const ready = env === "apollo" ? !!document.querySelector(APOLLO_ROW) : !!document.querySelector("li.artdeco-list__item, .search-results__result-item");
+      if (ready) {
+        startScrapingProcess();
+      } else {
+        setTimeout(waitThenResume, 1e3);
+      }
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => setTimeout(waitThenResume, 1500));
+    } else {
+      setTimeout(waitThenResume, 1500);
+    }
+  });
+})();
 function detectEnvironment() {
   return window.location.hostname.includes("apollo.io") ? "apollo" : "sales_navigator";
 }
 async function startScrapingProcess() {
-  isScraping = true;
-  leadsExtracted = [];
-  const env = detectEnvironment();
-  console.log(`[EficacIA] Env: ${env} | Target: ${targetLimit}`);
+  if (_running)
+    return;
+  const task = await getTask();
+  if (!task?.active)
+    return;
+  _running = true;
+  console.log(`[EficacIA] Env: ${task.platform} | Target: ${task.limit} | Have: ${task.leads.length}`);
   try {
-    if (env === "apollo") {
-      await runApolloScraper();
+    if (task.platform === "apollo") {
+      await runApolloScraper(task);
     } else {
-      await runLinkedInScraper();
+      await runLinkedInScraper(task);
     }
+    const finalTask = await getTask();
+    if (!finalTask)
+      return;
     chrome.runtime.sendMessage({
       type: "SUBMIT_LEADS",
       payload: {
-        campaign_id: currentCampaignId,
-        leads: leadsExtracted,
-        token: authToken,
-        backendUrl: apiBaseUrl,
-        source: env
+        campaign_id: finalTask.campaign_id,
+        leads: finalTask.leads,
+        token: finalTask.token,
+        backendUrl: finalTask.backendUrl,
+        source: finalTask.platform
       }
     });
+    await clearTask();
   } catch (error) {
     console.error("[EficacIA] Scraping error:", error);
     chrome.runtime.sendMessage({
       type: "SCRAPING_ERROR",
       payload: { error: error.message }
     });
+    await clearTask();
   } finally {
-    isScraping = false;
+    _running = false;
   }
 }
-async function runLinkedInScraper() {
-  while (leadsExtracted.length < targetLimit) {
+async function runLinkedInScraper(task) {
+  while (task.leads.length < task.limit) {
     await scrollToBottom();
-    const newLeads = extractLeadsFromPage();
-    for (const lead of newLeads) {
-      if (leadsExtracted.length >= targetLimit)
+    const seen = new Set(task.leads.map((l) => l.linkedin_url));
+    for (const lead of extractLeadsFromPage()) {
+      if (task.leads.length >= task.limit)
         break;
-      if (!leadsExtracted.find((l) => l.linkedin_url === lead.linkedin_url)) {
-        leadsExtracted.push(lead);
+      if (!seen.has(lead.linkedin_url)) {
+        seen.add(lead.linkedin_url);
+        task.leads.push(lead);
       }
     }
-    sendProgress();
-    if (leadsExtracted.length >= targetLimit)
+    await saveTask(task);
+    sendProgress(task);
+    if (task.leads.length >= task.limit)
       break;
     const movedToNext = await goToNextPage();
     if (!movedToNext) {
@@ -161,42 +223,56 @@ async function goToNextPage() {
   await waitForLinkedInPageTransition(previousFirstItem);
   return true;
 }
-async function waitForLinkedInPageTransition(previousFirstItem, timeoutMs = 18e3) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const currentFirstItem = document.querySelector(
-      "li.artdeco-list__item, .search-results__result-item"
-    );
-    const listGone = !currentFirstItem;
-    const itemChanged = currentFirstItem !== null && previousFirstItem !== null && currentFirstItem !== previousFirstItem;
-    const hadNoItemsBefore = previousFirstItem === null && currentFirstItem !== null;
-    if (listGone || itemChanged || hadNoItemsBefore) {
-      await sleep(1500);
-      return;
-    }
-    await sleep(250);
-  }
-  console.warn("[EficacIA LI] waitForPageTransition timed out, proceeding anyway.");
-  await sleep(4e3);
+function waitForLinkedInPageTransition(previousFirstItem, timeoutMs = 18e3) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      observer.disconnect();
+      sleep(1500).then(resolve);
+    };
+    const check = () => {
+      const current = document.querySelector(
+        "li.artdeco-list__item, .search-results__result-item"
+      );
+      if (!current) {
+        done();
+        return;
+      }
+      if (current !== previousFirstItem) {
+        done();
+        return;
+      }
+      if (previousFirstItem === null && current !== null)
+        done();
+    };
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      console.warn("[EficacIA LI] waitForPageTransition timed out.");
+      sleep(4e3).then(resolve);
+    }, timeoutMs);
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    check();
+  });
 }
-var APOLLO_ROW = '[data-cy="contacts-table-row"], [data-testid="contacts-table-row"], table tbody tr';
-async function runApolloScraper() {
+async function runApolloScraper(task) {
   await waitForApolloRows();
-  while (leadsExtracted.length < targetLimit) {
+  while (task.leads.length < task.limit) {
     await scrollApolloTable();
     await sleep(700);
-    const seen = new Set(leadsExtracted.map((l) => l.linkedin_url).filter(Boolean));
+    const seen = new Set(task.leads.map((l) => l.linkedin_url).filter(Boolean));
     for (const lead of extractApolloLeads()) {
-      if (leadsExtracted.length >= targetLimit)
+      if (task.leads.length >= task.limit)
         break;
       if (lead.linkedin_url && !seen.has(lead.linkedin_url)) {
         seen.add(lead.linkedin_url);
-        leadsExtracted.push(lead);
+        task.leads.push(lead);
       }
     }
-    sendProgress();
-    console.log(`[EficacIA Apollo] ${leadsExtracted.length}/${targetLimit}`);
-    if (leadsExtracted.length >= targetLimit)
+    await saveTask(task);
+    sendProgress(task);
+    console.log(`[EficacIA Apollo] ${task.leads.length}/${task.limit}`);
+    if (task.leads.length >= task.limit)
       break;
     const moved = await goToNextApolloPage();
     if (!moved) {
@@ -335,23 +411,44 @@ function findApolloNextButton() {
   }
   return null;
 }
-async function waitForApolloPageTransition(previousFirstRow, previousUrl, timeoutMs = 2e4) {
-  const start = Date.now();
-  await sleep(400);
-  while (Date.now() - start < timeoutMs) {
-    const urlChanged = window.location.href !== previousUrl;
-    const currentFirst = document.querySelector(APOLLO_ROW);
-    const rowsGone = !currentFirst;
-    const rowReplaced = currentFirst !== null && previousFirstRow !== null && currentFirst !== previousFirstRow;
-    if (urlChanged || rowsGone || rowReplaced) {
+function waitForApolloPageTransition(previousFirstRow, previousUrl, timeoutMs = 2e4) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = async () => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      observer.disconnect();
       await waitForApolloRows();
       await sleep(800);
-      return;
-    }
-    await sleep(300);
-  }
-  console.warn("[EficacIA Apollo] waitForApolloPageTransition timed out.");
-  await sleep(3e3);
+      resolve();
+    };
+    const check = () => {
+      if (window.location.href !== previousUrl) {
+        done();
+        return;
+      }
+      const current = document.querySelector(APOLLO_ROW);
+      if (!current) {
+        done();
+        return;
+      }
+      if (current !== previousFirstRow)
+        done();
+    };
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        observer.disconnect();
+        console.warn("[EficacIA Apollo] waitForApolloPageTransition timed out.");
+        sleep(3e3).then(resolve);
+      }
+    }, timeoutMs);
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    sleep(400).then(check);
+  });
 }
 function injectApolloExportButton() {
   if (document.getElementById("eficacia-export-btn"))
@@ -387,9 +484,10 @@ function injectApolloExportButton() {
     btn.style.boxShadow = "0 4px 24px rgba(99,102,241,.45)";
   });
   btn.addEventListener("click", async () => {
-    if (isScraping)
+    if (_running)
       return;
-    if (!currentCampaignId || !authToken || !apiBaseUrl) {
+    const config = await getLastConfig();
+    if (!config?.campaign_id || !config?.token || !config?.backendUrl) {
       alert("[EficacIA] Abre la extensi\xF3n y selecciona una campa\xF1a antes de exportar.");
       return;
     }
@@ -402,15 +500,18 @@ function injectApolloExportButton() {
       const leads = extractApolloLeads();
       if (leads.length === 0) {
         alert("[EficacIA] No se encontraron contactos en la tabla actual. Aseg\xFArate de que la lista de contactos est\xE1 visible.");
+        btn.textContent = "\u26A1 Exportar a Campa\xF1a";
+        btn.style.opacity = "1";
+        btn.style.pointerEvents = "auto";
         return;
       }
       chrome.runtime.sendMessage({
         type: "SUBMIT_LEADS",
         payload: {
-          campaign_id: currentCampaignId,
+          campaign_id: config.campaign_id,
           leads,
-          token: authToken,
-          backendUrl: apiBaseUrl,
+          token: config.token,
+          backendUrl: config.backendUrl,
           source: "apollo"
         }
       });
@@ -431,12 +532,12 @@ function injectApolloExportButton() {
   });
   document.body.appendChild(btn);
 }
-function sendProgress() {
+function sendProgress(task) {
   chrome.runtime.sendMessage({
     type: "SCRAPING_PROGRESS",
-    payload: { progress: Math.min(leadsExtracted.length / targetLimit * 100, 100) }
+    payload: { progress: Math.min(task.leads.length / task.limit * 100, 100) }
   });
-  console.log(`[EficacIA] ${leadsExtracted.length}/${targetLimit}`);
+  console.log(`[EficacIA] ${task.leads.length}/${task.limit}`);
 }
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));

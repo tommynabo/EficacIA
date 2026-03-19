@@ -16517,16 +16517,30 @@ var Popup = () => {
       if (!url.includes("linkedin.com/sales/search/people") && !url.includes("app.apollo.io")) {
         throw new Error("Solo puedes extraer leads desde b\xFAsquedas de LinkedIn Sales Navigator o listas de Apollo.io.");
       }
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "START_SCRAPING",
-          payload: {
-            campaign_id: selectedCampaign,
-            limit: leadCount,
-            token: token.trim(),
-            backendUrl: backendUrl.trim()
-          }
-        });
+      if (!tab?.id)
+        throw new Error("No se encontr\xF3 la pesta\xF1a activa.");
+      const payload = {
+        campaign_id: selectedCampaign,
+        limit: leadCount,
+        token: token.trim(),
+        backendUrl: backendUrl.trim()
+      };
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: "START_SCRAPING", payload });
+      } catch (connErr) {
+        const isConnErr = connErr?.message?.includes("Receiving end does not exist") || connErr?.message?.includes("Could not establish connection");
+        if (!isConnErr)
+          throw connErr;
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ["assets/content.ts-BShS41TX.js"]
+          });
+          await new Promise((r2) => setTimeout(r2, 600));
+          await chrome.tabs.sendMessage(tab.id, { type: "START_SCRAPING", payload });
+        } catch (_injectErr) {
+          throw new Error("Por favor, recarga esta p\xE1gina (F5) para iniciar la conexi\xF3n con la extensi\xF3n.");
+        }
       }
     } catch (err) {
       setIsScraping(false);
