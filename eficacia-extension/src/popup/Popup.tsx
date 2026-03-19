@@ -140,8 +140,9 @@ const Popup = () => {
       setProgress(0);
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url?.includes('linkedin.com/sales')) {
-        throw new Error('Solo puedes extraer leads desde LinkedIn Sales Navigator');
+      const url = tab?.url ?? '';
+      if (!url.includes('linkedin.com/sales/search/people') && !url.includes('app.apollo.io')) {
+        throw new Error('Solo puedes extraer leads desde búsquedas de LinkedIn Sales Navigator o listas de Apollo.io.');
       }
 
       if (tab?.id) {
