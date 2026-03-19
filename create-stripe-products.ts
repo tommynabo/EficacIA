@@ -1,6 +1,20 @@
 /**
- * Create Stripe Products & Prices
- * Run with: npx tsx create-stripe-products.ts
+ * Create EficacIA Stripe Products & Prices
+ *
+ * Creates 3 products (Pro, Growth, Agency), each with a monthly and annual
+ * recurring price. After running, copy the printed Price IDs into your .env:
+ *
+ *   VITE_STRIPE_PRO_MONTHLY=price_xxx      # frontend (Vite)
+ *   VITE_STRIPE_PRO_ANNUAL=price_xxx
+ *   VITE_STRIPE_GROWTH_MONTHLY=price_xxx
+ *   VITE_STRIPE_GROWTH_ANNUAL=price_xxx
+ *   VITE_STRIPE_AGENCY_MONTHLY=price_xxx
+ *   VITE_STRIPE_AGENCY_ANNUAL=price_xxx
+ *
+ *   STRIPE_PRO_MONTHLY=price_xxx           # backend (Vercel env)
+ *   ...
+ *
+ * Run with:  npx tsx create-stripe-products.ts
  */
 
 import Stripe from 'stripe'
@@ -10,6 +24,103 @@ dotenv.config()
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2024-04-10',
+})
+
+// ─── Plan matrix ───────────────────────────────────────────────────────────────
+
+const PLAN_CONFIGS = [
+  {
+    key: 'pro',
+    name: 'EficacIA Pro',
+    description: 'Automatización de LinkedIn para equipos pequeños y freelancers.',
+    monthlyAmount: 4200,   // €42,00
+    annualAmount:  42000,  // €420,00 (2 meses gratis)
+  },
+  {
+    key: 'growth',
+    name: 'EficacIA Growth',
+    description: 'Escala tus campañas de outreach sin límites de leads.',
+    monthlyAmount: 7900,   // €79,00
+    annualAmount:  79000,  // €790,00
+  },
+  {
+    key: 'agency',
+    name: 'EficacIA Agency',
+    description: 'Solución multi-cuenta para agencias y equipos enterprise.',
+    monthlyAmount: 19900,  // €199,00
+    annualAmount:  199000, // €1.990,00
+  },
+] as const
+
+// ─── Script ────────────────────────────────────────────────────────────────────
+
+async function createProductsAndPrices() {
+  console.log('🔄 Creando productos y precios en Stripe…\n')
+
+  const results: Record<string, { monthly: string; annual: string }> = {}
+
+  for (const plan of PLAN_CONFIGS) {
+    console.log(`📦 Creando producto: ${plan.name}`)
+
+    const product = await stripe.products.create({
+      name: plan.name,
+      description: plan.description,
+      metadata: { plan_id: plan.key },
+    })
+
+    const monthlyPrice = await stripe.prices.create({
+      product: product.id,
+      unit_amount: plan.monthlyAmount,
+      currency: 'eur',
+      recurring: { interval: 'month', interval_count: 1 },
+      metadata: { plan_id: plan.key, billing: 'monthly' },
+    })
+
+    const annualPrice = await stripe.prices.create({
+      product: product.id,
+      unit_amount: plan.annualAmount,
+      currency: 'eur',
+      recurring: { interval: 'year', interval_count: 1 },
+      metadata: { plan_id: plan.key, billing: 'annual' },
+    })
+
+    results[plan.key] = { monthly: monthlyPrice.id, annual: annualPrice.id }
+
+    const monthlyCost = (plan.monthlyAmount / 100).toFixed(2)
+    const annualCost  = (plan.annualAmount  / 100).toFixed(2)
+    const savingsPerYear = ((plan.monthlyAmount * 12 - plan.annualAmount) / 100).toFixed(2)
+
+    console.log(`  ✓ Product ID:      ${product.id}`)
+    console.log(`  ✓ Monthly price:   ${monthlyPrice.id}  (€${monthlyCost}/mes)`)
+    console.log(`  ✓ Annual price:    ${annualPrice.id}   (€${annualCost}/año — ahorra €${savingsPerYear})\n`)
+  }
+
+  // ─── Print env config ──────────────────────────────────────────────────────
+  const sep = '='.repeat(64)
+  console.log(sep)
+  console.log('✅  PRODUCTOS CREADOS — copia estos IDs en tus variables de entorno')
+  console.log(sep)
+
+  console.log('\n# .env (frontend — Vite)')
+  for (const [key, ids] of Object.entries(results)) {
+    const K = key.toUpperCase()
+    console.log(`VITE_STRIPE_${K}_MONTHLY=${ids.monthly}`)
+    console.log(`VITE_STRIPE_${K}_ANNUAL=${ids.annual}`)
+  }
+
+  console.log('\n# Vercel Environment Variables (backend — serverless functions)')
+  for (const [key, ids] of Object.entries(results)) {
+    const K = key.toUpperCase()
+    console.log(`STRIPE_${K}_MONTHLY=${ids.monthly}`)
+    console.log(`STRIPE_${K}_ANNUAL=${ids.annual}`)
+  }
+
+  console.log()
+}
+
+createProductsAndPrices().catch((err) => {
+  console.error('❌ Error:', err.message)
+  process.exit(1)
 })
 
 async function createProductsAndPrices() {
