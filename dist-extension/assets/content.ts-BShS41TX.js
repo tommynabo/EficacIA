@@ -1,7 +1,6 @@
 // src/content.ts
 var APOLLO_ROW = '[data-cy="contacts-table-row"], [data-testid="contacts-table-row"], table tbody tr';
 var TASK_KEY = "eficacia_active_task";
-var CONFIG_KEY = "eficacia_last_config";
 function getTask() {
   return new Promise(
     (r) => chrome.storage.local.get(TASK_KEY, (s) => r(s[TASK_KEY] ?? null))
@@ -12,11 +11,6 @@ function saveTask(task) {
 }
 function clearTask() {
   return new Promise((r) => chrome.storage.local.remove([TASK_KEY], r));
-}
-function getLastConfig() {
-  return new Promise(
-    (r) => chrome.storage.local.get(CONFIG_KEY, (s) => r(s[CONFIG_KEY] ?? null))
-  );
 }
 var _running = false;
 chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
@@ -31,8 +25,7 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
       backendUrl,
       leads: []
     };
-    const config = { campaign_id, token, backendUrl };
-    chrome.storage.local.set({ [TASK_KEY]: task, [CONFIG_KEY]: config }, () => {
+    chrome.storage.local.set({ [TASK_KEY]: task }, () => {
       if (!_running)
         startScrapingProcess();
     });
@@ -42,34 +35,6 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
       startScrapingProcess();
   }
 });
-(function init() {
-  if (!window.location.hostname.includes("apollo.io"))
-    return;
-  const tryInject = () => {
-    if (document.querySelector('table, [class*="zp_"]')) {
-      injectApolloExportButton();
-    } else {
-      setTimeout(tryInject, 1200);
-    }
-  };
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", tryInject);
-  } else {
-    tryInject();
-  }
-  let lastHref = window.location.href;
-  new MutationObserver(() => {
-    if (window.location.href !== lastHref) {
-      lastHref = window.location.href;
-      setTimeout(() => {
-        const existing = document.getElementById("eficacia-export-btn");
-        if (existing)
-          existing.remove();
-        injectApolloExportButton();
-      }, 1500);
-    }
-  }).observe(document.body, { childList: true, subtree: true });
-})();
 (function resumeOnLoad() {
   const env = detectEnvironment();
   chrome.storage.local.get(TASK_KEY, (result) => {
@@ -82,7 +47,7 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
     const waitThenResume = () => {
       if (_running)
         return;
-      const ready = env === "apollo" ? !!document.querySelector(APOLLO_ROW) : !!document.querySelector("li.artdeco-list__item, .search-results__result-item");
+      const ready = env === "apollo" ? !!document.querySelector('a[href*="linkedin.com/in/"]') || !!document.querySelector(APOLLO_ROW) : !!document.querySelector("li.artdeco-list__item, .search-results__result-item");
       if (ready) {
         startScrapingProcess();
       } else {
@@ -281,19 +246,20 @@ async function runApolloScraper(task) {
     }
   }
 }
-function waitForApolloRows(timeoutMs = 15e3) {
+function waitForApolloRows(timeoutMs = 2e4) {
+  const isReady = () => !!document.querySelector('a[href*="linkedin.com/in/"]') || !!document.querySelector(APOLLO_ROW);
   return new Promise((resolve) => {
-    if (document.querySelector(APOLLO_ROW)) {
+    if (isReady()) {
       resolve();
       return;
     }
     const timer = setTimeout(() => {
       observer.disconnect();
-      console.warn("[EficacIA Apollo] waitForApolloRows timed out.");
+      console.warn("[EficacIA Apollo] waitForApolloRows timed out \u2014 proceeding anyway.");
       resolve();
     }, timeoutMs);
     const observer = new MutationObserver(() => {
-      if (document.querySelector(APOLLO_ROW)) {
+      if (isReady()) {
         clearTimeout(timer);
         observer.disconnect();
         resolve();
@@ -321,49 +287,57 @@ async function scrollApolloTable() {
   await sleep(500);
 }
 function extractApolloLeads() {
+  const linkedinAnchors = Array.from(
+    document.querySelectorAll('a[href*="linkedin.com/in/"]')
+  ).filter((a) => /linkedin\.com\/in\/[^/?#\s]+/.test(a.href));
+  const seen = /* @__PURE__ */ new Set();
   const leads = [];
-  const rows = document.querySelectorAll(APOLLO_ROW);
-  rows.forEach((row) => {
+  for (const anchor of linkedinAnchors) {
     try {
-      const linkedinAnchor = row.querySelector(
-        'a[href*="linkedin.com/in/"], a[data-cy="linkedin-link"], a[title*="LinkedIn"]'
-      );
-      if (!linkedinAnchor)
-        return;
-      let linkedin_url = linkedinAnchor.href.split("?")[0].split("#")[0];
-      const inMatch = linkedin_url.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#]+)/);
-      if (!inMatch)
-        return;
-      linkedin_url = inMatch[1] + "/";
+      const match = anchor.href.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#\s]+)/);
+      if (!match)
+        continue;
+      const linkedin_url = match[1].replace(/\/$/, "") + "/";
+      if (seen.has(linkedin_url))
+        continue;
+      seen.add(linkedin_url);
+      const row = anchor.closest("tr") ?? anchor.closest('[class*="row"]') ?? anchor.closest("li");
+      if (!row)
+        continue;
       const nameAnchor = row.querySelector(
         'a[href*="/people/"], a[href*="/contacts/"]'
       );
       let fullName = nameAnchor?.textContent?.trim() ?? "";
       if (!fullName) {
         const cells2 = row.querySelectorAll("td");
-        for (let i = 1; i < cells2.length; i++) {
-          const text = cells2[i].textContent?.trim() ?? "";
-          if (text && text.length > 1 && !text.includes("@") && !/^\d+$/.test(text)) {
+        for (const cell of cells2) {
+          const text = (cell.textContent?.trim() ?? "").split("\n")[0].trim();
+          if (text.length > 1 && text.length < 60 && !/[@\d]/.test(text.charAt(0))) {
             fullName = text;
             break;
           }
         }
       }
-      const nameParts = fullName.split(/\s+/);
+      const nameParts = (fullName || "").split(/\s+/).filter(Boolean);
       const first_name = nameParts[0] ?? "";
       const last_name = nameParts.slice(1).join(" ") ?? "";
       if (!first_name)
-        return;
-      const cells = row.querySelectorAll("td");
-      const job_title = cells[2]?.querySelector("span, div")?.textContent?.trim() ?? cells[2]?.textContent?.trim() ?? "";
+        continue;
+      const cells = Array.from(row.querySelectorAll("td"));
+      let nameCellIdx = nameAnchor ? cells.findIndex((c) => c.contains(nameAnchor)) : -1;
+      if (nameCellIdx < 0)
+        nameCellIdx = 1;
+      const titleCell = cells[nameCellIdx + 1];
+      const job_title = titleCell?.textContent?.trim().split("\n")[0].trim() ?? "";
       const companyAnchor = row.querySelector(
         'a[href*="/companies/"], a[data-cy="company-name-link"]'
       );
-      const company = companyAnchor?.textContent?.trim() ?? cells[3]?.textContent?.trim() ?? "";
+      const companyCell = cells[nameCellIdx + 2];
+      const company = companyAnchor?.textContent?.trim() ?? companyCell?.textContent?.trim().split("\n")[0].trim() ?? "";
       let email;
       cells.forEach((cell) => {
         const text = cell.textContent?.trim() ?? "";
-        if (text.includes("@") && text.includes(".") && !text.toLowerCase().includes("unlock") && !text.toLowerCase().includes("reveal") && !email) {
+        if (!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
           email = text;
         }
       });
@@ -371,7 +345,7 @@ function extractApolloLeads() {
     } catch (e) {
       console.warn("[EficacIA Apollo] Parse error", e);
     }
-  });
+  }
   return leads;
 }
 async function goToNextApolloPage() {
@@ -450,92 +424,14 @@ function waitForApolloPageTransition(previousFirstRow, previousUrl, timeoutMs = 
     sleep(400).then(check);
   });
 }
-function injectApolloExportButton() {
-  if (document.getElementById("eficacia-export-btn"))
-    return;
-  const btn = document.createElement("button");
-  btn.id = "eficacia-export-btn";
-  btn.textContent = "\u26A1 Exportar a Campa\xF1a";
-  btn.style.cssText = [
-    "position:fixed",
-    "bottom:24px",
-    "right:24px",
-    "z-index:2147483647",
-    "background:linear-gradient(135deg,#3b82f6,#6366f1)",
-    "color:#fff",
-    "border:none",
-    "border-radius:12px",
-    "padding:12px 20px",
-    "font-size:14px",
-    "font-weight:600",
-    "cursor:pointer",
-    "box-shadow:0 4px 24px rgba(99,102,241,.45)",
-    "letter-spacing:.3px",
-    "transition:transform .15s,box-shadow .15s",
-    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    "line-height:1.4"
-  ].join(";");
-  btn.addEventListener("mouseenter", () => {
-    btn.style.transform = "scale(1.04)";
-    btn.style.boxShadow = "0 6px 30px rgba(99,102,241,.6)";
-  });
-  btn.addEventListener("mouseleave", () => {
-    btn.style.transform = "scale(1)";
-    btn.style.boxShadow = "0 4px 24px rgba(99,102,241,.45)";
-  });
-  btn.addEventListener("click", async () => {
-    if (_running)
-      return;
-    const config = await getLastConfig();
-    if (!config?.campaign_id || !config?.token || !config?.backendUrl) {
-      alert("[EficacIA] Abre la extensi\xF3n y selecciona una campa\xF1a antes de exportar.");
-      return;
-    }
-    btn.textContent = "\u23F3 Exportando...";
-    btn.style.opacity = "0.75";
-    btn.style.pointerEvents = "none";
-    try {
-      await scrollApolloTable();
-      await sleep(700);
-      const leads = extractApolloLeads();
-      if (leads.length === 0) {
-        alert("[EficacIA] No se encontraron contactos en la tabla actual. Aseg\xFArate de que la lista de contactos est\xE1 visible.");
-        btn.textContent = "\u26A1 Exportar a Campa\xF1a";
-        btn.style.opacity = "1";
-        btn.style.pointerEvents = "auto";
-        return;
-      }
-      chrome.runtime.sendMessage({
-        type: "SUBMIT_LEADS",
-        payload: {
-          campaign_id: config.campaign_id,
-          leads,
-          token: config.token,
-          backendUrl: config.backendUrl,
-          source: "apollo"
-        }
-      });
-      btn.textContent = `\u2713 ${leads.length} leads enviados`;
-      btn.style.background = "linear-gradient(135deg,#10b981,#059669)";
-      btn.style.opacity = "1";
-      btn.style.pointerEvents = "auto";
-      setTimeout(() => {
-        btn.textContent = "\u26A1 Exportar a Campa\xF1a";
-        btn.style.background = "linear-gradient(135deg,#3b82f6,#6366f1)";
-      }, 3500);
-    } catch (e) {
-      btn.textContent = "\u26A1 Exportar a Campa\xF1a";
-      btn.style.opacity = "1";
-      btn.style.pointerEvents = "auto";
-      alert(`[EficacIA] Error: ${e.message}`);
-    }
-  });
-  document.body.appendChild(btn);
-}
 function sendProgress(task) {
   chrome.runtime.sendMessage({
     type: "SCRAPING_PROGRESS",
-    payload: { progress: Math.min(task.leads.length / task.limit * 100, 100) }
+    payload: {
+      progress: Math.min(task.leads.length / task.limit * 100, 100),
+      current: task.leads.length,
+      limit: task.limit
+    }
   });
   console.log(`[EficacIA] ${task.leads.length}/${task.limit}`);
 }

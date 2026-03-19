@@ -12,9 +12,8 @@ const APOLLO_ROW =
   '[data-testid="contacts-table-row"], ' +
   'table tbody tr';
 
-// chrome.storage.local keys
-const TASK_KEY   = 'eficacia_active_task';
-const CONFIG_KEY = 'eficacia_last_config';
+// chrome.storage.local key
+const TASK_KEY = 'eficacia_active_task';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,13 +38,6 @@ interface ScrapingTask {
   leads: Lead[];
 }
 
-/** Minimal config kept after a task finishes so the Apollo export button keeps working. */
-interface LastConfig {
-  campaign_id: string;
-  token: string;
-  backendUrl: string;
-}
-
 type Environment = 'sales_navigator' | 'apollo';
 
 // ─── Storage Helpers ─────────────────────────────────────────────────────────
@@ -62,12 +54,6 @@ function saveTask(task: ScrapingTask): Promise<void> {
 
 function clearTask(): Promise<void> {
   return new Promise(r => chrome.storage.local.remove([TASK_KEY], r));
-}
-
-function getLastConfig(): Promise<LastConfig | null> {
-  return new Promise(r =>
-    chrome.storage.local.get(CONFIG_KEY, s => r((s[CONFIG_KEY] as LastConfig) ?? null))
-  );
 }
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -89,8 +75,7 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
       backendUrl,
       leads: [],
     };
-    const config: LastConfig = { campaign_id, token, backendUrl };
-    chrome.storage.local.set({ [TASK_KEY]: task, [CONFIG_KEY]: config }, () => {
+    chrome.storage.local.set({ [TASK_KEY]: task }, () => {
       if (!_running) startScrapingProcess();
     });
   }
@@ -102,43 +87,9 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
 });
 
 // ─── Page Load Init ───────────────────────────────────────────────────────────
-// Runs on every page load. Injects the Apollo export button and checks storage
-// for an in-progress task so full-page-reload pagination resumes automatically.
+// Checks storage for an in-progress task. If found, auto-resumes scraping after
+// each full-page-reload (e.g. paginated LinkedIn or Apollo navigation).
 
-(function init() {
-  if (!window.location.hostname.includes('apollo.io')) return;
-
-  // Wait for Apollo's SPA shell before injecting the button
-  const tryInject = () => {
-    if (document.querySelector('table, [class*="zp_"]')) {
-      injectApolloExportButton();
-    } else {
-      setTimeout(tryInject, 1200);
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', tryInject);
-  } else {
-    tryInject();
-  }
-
-  // Re-inject after SPA navigations (Apollo changes the hash/path without full reload)
-  let lastHref = window.location.href;
-  new MutationObserver(() => {
-    if (window.location.href !== lastHref) {
-      lastHref = window.location.href;
-      setTimeout(() => {
-        const existing = document.getElementById('eficacia-export-btn');
-        if (existing) existing.remove();
-        injectApolloExportButton();
-      }, 1500);
-    }
-  }).observe(document.body, { childList: true, subtree: true });
-})();
-
-// Resume check runs on every page (both Apollo and LinkedIn) — handles page reloads
-// during paginated scraping without any user interaction.
 (function resumeOnLoad() {
   const env = detectEnvironment();
 
@@ -153,7 +104,7 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
       if (_running) return;
       const ready =
         env === 'apollo'
-          ? !!document.querySelector(APOLLO_ROW)
+          ? !!document.querySelector('a[href*="linkedin.com/in/"]') || !!document.querySelector(APOLLO_ROW)
           : !!document.querySelector('li.artdeco-list__item, .search-results__result-item');
 
       if (ready) {
@@ -410,18 +361,23 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
   }
 }
 
-function waitForApolloRows(timeoutMs = 15000): Promise<void> {
+function waitForApolloRows(timeoutMs = 20000): Promise<void> {
+  // LinkedIn anchors are the most reliable signal that the contacts table has loaded.
+  const isReady = () =>
+    !!document.querySelector('a[href*="linkedin.com/in/"]') ||
+    !!document.querySelector(APOLLO_ROW);
+
   return new Promise(resolve => {
-    if (document.querySelector(APOLLO_ROW)) { resolve(); return; }
+    if (isReady()) { resolve(); return; }
 
     const timer = setTimeout(() => {
       observer.disconnect();
-      console.warn('[EficacIA Apollo] waitForApolloRows timed out.');
+      console.warn('[EficacIA Apollo] waitForApolloRows timed out — proceeding anyway.');
       resolve();
     }, timeoutMs);
 
     const observer = new MutationObserver(() => {
-      if (document.querySelector(APOLLO_ROW)) {
+      if (isReady()) {
         clearTimeout(timer);
         observer.disconnect();
         resolve();
@@ -454,74 +410,77 @@ async function scrollApolloTable(): Promise<void> {
 }
 
 function extractApolloLeads(): Lead[] {
+  // Strategy: anchor on every visible LinkedIn /in/ URL, then walk up to the
+  // containing table row to extract name, title, and company from sibling cells.
+  // This is resilient to Apollo's hashed CSS class names changing on every deploy.
+  const linkedinAnchors = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>('a[href*="linkedin.com/in/"]')
+  ).filter(a => /linkedin\.com\/in\/[^/?#\s]+/.test(a.href));
+
+  const seen = new Set<string>();
   const leads: Lead[] = [];
-  const rows = document.querySelectorAll(APOLLO_ROW);
 
-  rows.forEach(row => {
+  for (const anchor of linkedinAnchors) {
     try {
-      // ── LinkedIn URL (critical field) ─────────────────────────────────────
-      // Apollo places a LinkedIn icon-anchor in the "Quick Actions" column.
-      const linkedinAnchor = row.querySelector<HTMLAnchorElement>(
-        'a[href*="linkedin.com/in/"], a[data-cy="linkedin-link"], a[title*="LinkedIn"]'
-      );
-      if (!linkedinAnchor) return;
+      // ── LinkedIn URL ───────────────────────────────────────────────────────
+      const match = anchor.href.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#\s]+)/);
+      if (!match) continue;
+      const linkedin_url = match[1].replace(/\/$/, '') + '/';
+      if (seen.has(linkedin_url)) continue;
+      seen.add(linkedin_url);
 
-      let linkedin_url = linkedinAnchor.href.split('?')[0].split('#')[0];
-      const inMatch = linkedin_url.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#]+)/);
-      if (!inMatch) return;
-      linkedin_url = inMatch[1] + '/';
+      // Walk up to the nearest row container
+      const row = anchor.closest('tr') ?? anchor.closest('[class*="row"]') ?? anchor.closest('li');
+      if (!row) continue;
 
       // ── Name ──────────────────────────────────────────────────────────────
+      // Apollo wraps the contact name in an anchor pointing to /people/ or /contacts/
       const nameAnchor = row.querySelector<HTMLAnchorElement>(
         'a[href*="/people/"], a[href*="/contacts/"]'
       );
       let fullName = nameAnchor?.textContent?.trim() ?? '';
 
-      // Fallback: first meaningful text in a non-first cell
       if (!fullName) {
+        // Fallback: first cell whose text looks like a name (short, no @ or leading digit)
         const cells = row.querySelectorAll('td');
-        for (let i = 1; i < cells.length; i++) {
-          const text = cells[i].textContent?.trim() ?? '';
-          if (text && text.length > 1 && !text.includes('@') && !/^\d+$/.test(text)) {
+        for (const cell of cells) {
+          const text = (cell.textContent?.trim() ?? '').split('\n')[0].trim();
+          if (text.length > 1 && text.length < 60 && !/[@\d]/.test(text.charAt(0))) {
             fullName = text;
             break;
           }
         }
       }
 
-      const nameParts = fullName.split(/\s+/);
+      const nameParts = (fullName || '').split(/\s+/).filter(Boolean);
       const first_name = nameParts[0] ?? '';
       const last_name = nameParts.slice(1).join(' ') ?? '';
-      if (!first_name) return;
+      if (!first_name) continue;
 
-      // ── Job Title ─────────────────────────────────────────────────────────
-      // Typically the 3rd cell (index 2), after checkbox and name
-      const cells = row.querySelectorAll('td');
-      const job_title =
-        cells[2]?.querySelector('span, div')?.textContent?.trim() ??
-        cells[2]?.textContent?.trim() ??
-        '';
+      // ── Job Title & Company ───────────────────────────────────────────────
+      const cells = Array.from(row.querySelectorAll('td'));
 
-      // ── Company ───────────────────────────────────────────────────────────
+      // Find which cell holds the name anchor to offset title/company correctly
+      let nameCellIdx = nameAnchor ? cells.findIndex(c => c.contains(nameAnchor)) : -1;
+      if (nameCellIdx < 0) nameCellIdx = 1; // default: name in cell 1, after checkbox
+
+      const titleCell = cells[nameCellIdx + 1];
+      const job_title = titleCell?.textContent?.trim().split('\n')[0].trim() ?? '';
+
       const companyAnchor = row.querySelector<HTMLAnchorElement>(
         'a[href*="/companies/"], a[data-cy="company-name-link"]'
       );
+      const companyCell = cells[nameCellIdx + 2];
       const company =
         companyAnchor?.textContent?.trim() ??
-        cells[3]?.textContent?.trim() ??
+        companyCell?.textContent?.trim().split('\n')[0].trim() ??
         '';
 
       // ── Email (if unlocked) ───────────────────────────────────────────────
       let email: string | undefined;
       cells.forEach(cell => {
         const text = cell.textContent?.trim() ?? '';
-        if (
-          text.includes('@') &&
-          text.includes('.') &&
-          !text.toLowerCase().includes('unlock') &&
-          !text.toLowerCase().includes('reveal') &&
-          !email
-        ) {
+        if (!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
           email = text;
         }
       });
@@ -530,7 +489,7 @@ function extractApolloLeads(): Lead[] {
     } catch (e) {
       console.warn('[EficacIA Apollo] Parse error', e);
     }
-  });
+  }
 
   return leads;
 }
@@ -626,98 +585,16 @@ function waitForApolloPageTransition(
   });
 }
 
-// ── Injected "Exportar a Campaña" button ─────────────────────────────────────
-
-function injectApolloExportButton(): void {
-  if (document.getElementById('eficacia-export-btn')) return;
-
-  const btn = document.createElement('button');
-  btn.id = 'eficacia-export-btn';
-  btn.textContent = '⚡ Exportar a Campaña';
-  btn.style.cssText = [
-    'position:fixed', 'bottom:24px', 'right:24px', 'z-index:2147483647',
-    'background:linear-gradient(135deg,#3b82f6,#6366f1)',
-    'color:#fff', 'border:none', 'border-radius:12px',
-    'padding:12px 20px', 'font-size:14px', 'font-weight:600',
-    'cursor:pointer', 'box-shadow:0 4px 24px rgba(99,102,241,.45)',
-    'letter-spacing:.3px', 'transition:transform .15s,box-shadow .15s',
-    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    'line-height:1.4',
-  ].join(';');
-
-  btn.addEventListener('mouseenter', () => {
-    btn.style.transform = 'scale(1.04)';
-    btn.style.boxShadow = '0 6px 30px rgba(99,102,241,.6)';
-  });
-  btn.addEventListener('mouseleave', () => {
-    btn.style.transform = 'scale(1)';
-    btn.style.boxShadow = '0 4px 24px rgba(99,102,241,.45)';
-  });
-
-  btn.addEventListener('click', async () => {
-    if (_running) return;
-
-    // Read campaign config saved when the popup last initiated a session
-    const config = await getLastConfig();
-    if (!config?.campaign_id || !config?.token || !config?.backendUrl) {
-      alert('[EficacIA] Abre la extensión y selecciona una campaña antes de exportar.');
-      return;
-    }
-
-    btn.textContent = '⏳ Exportando...';
-    btn.style.opacity = '0.75';
-    btn.style.pointerEvents = 'none';
-
-    try {
-      await scrollApolloTable();
-      await sleep(700);
-
-      const leads = extractApolloLeads();
-      if (leads.length === 0) {
-        alert('[EficacIA] No se encontraron contactos en la tabla actual. Asegúrate de que la lista de contactos está visible.');
-        btn.textContent = '⚡ Exportar a Campaña';
-        btn.style.opacity = '1';
-        btn.style.pointerEvents = 'auto';
-        return;
-      }
-
-      chrome.runtime.sendMessage({
-        type: 'SUBMIT_LEADS',
-        payload: {
-          campaign_id: config.campaign_id,
-          leads,
-          token: config.token,
-          backendUrl: config.backendUrl,
-          source: 'apollo',
-        },
-      });
-
-      btn.textContent = `✓ ${leads.length} leads enviados`;
-      btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-
-      setTimeout(() => {
-        btn.textContent = '⚡ Exportar a Campaña';
-        btn.style.background = 'linear-gradient(135deg,#3b82f6,#6366f1)';
-      }, 3500);
-    } catch (e: any) {
-      btn.textContent = '⚡ Exportar a Campaña';
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-      alert(`[EficacIA] Error: ${e.message}`);
-    }
-  });
-
-  document.body.appendChild(btn);
-}
-
 // ─── Shared Utilities ────────────────────────────────────────────────────────
 
 function sendProgress(task: ScrapingTask): void {
   chrome.runtime.sendMessage({
     type: 'SCRAPING_PROGRESS',
-    payload: { progress: Math.min((task.leads.length / task.limit) * 100, 100) },
+    payload: {
+      progress: Math.min((task.leads.length / task.limit) * 100, 100),
+      current: task.leads.length,
+      limit: task.limit,
+    },
   });
   console.log(`[EficacIA] ${task.leads.length}/${task.limit}`);
 }

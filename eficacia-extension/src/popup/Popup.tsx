@@ -21,38 +21,57 @@ const Popup = () => {
   const [leadCount, setLeadCount] = useState(50);
   const [isScraping, setIsScraping] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    // Load config from chrome storage
+    // Load config and restore any in-progress scraping state
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['token', 'backendUrl'], (result) => {
+      chrome.storage.local.get(['token', 'backendUrl', 'eficacia_active_task'], (result) => {
         if (result.token) setToken(result.token as string);
         if (result.backendUrl) setBackendUrl(result.backendUrl as string);
-        
+
         if (!result.token) {
           setView('settings');
+          return;
+        }
+
+        // Restore in-progress scraping if popup was closed mid-run
+        const activeTask = result['eficacia_active_task'];
+        if (activeTask?.active) {
+          setIsScraping(true);
+          setStatus('loading');
+          const pct = activeTask.limit > 0
+            ? Math.min(100, (activeTask.leads.length / activeTask.limit) * 100)
+            : 0;
+          setProgress(pct);
+          setProgressLabel(`Extrayendo ${activeTask.leads.length}/${activeTask.limit}`);
         }
       });
     }
 
-    // Listen for progress updates
+    // Listen for progress updates from content script
     const handleMessage = (message: any) => {
       if (message.type === 'SCRAPING_PROGRESS') {
         setProgress(message.payload.progress);
+        if (message.payload.current !== undefined) {
+          setProgressLabel(`Extrayendo ${message.payload.current}/${message.payload.limit}`);
+        }
       } else if (message.type === 'SCRAPING_FINISHED') {
         setIsScraping(false);
         setStatus('success');
         setProgress(100);
+        setProgressLabel('');
         setTimeout(() => setStatus('idle'), 3000);
       } else if (message.type === 'SCRAPING_ERROR') {
         setIsScraping(false);
         setStatus('error');
+        setProgressLabel('');
         setErrorMessage(message.payload.error);
       }
     };
-    
+
     chrome.runtime.onMessage.addListener(handleMessage);
     return () => chrome.runtime.onMessage.removeListener(handleMessage);
   }, []);
@@ -138,6 +157,7 @@ const Popup = () => {
       setIsScraping(true);
       setStatus('loading');
       setProgress(0);
+      setProgressLabel(`Extrayendo 0/${leadCount}`);
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const url = tab?.url ?? '';
@@ -314,7 +334,7 @@ const Popup = () => {
                   {(isScraping || progress > 0) && (
                     <div className="space-y-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
                       <div className="flex justify-between items-center text-[11px] font-bold uppercase tracking-widest">
-                        <span className="text-blue-400">Estado de extracción</span>
+                        <span className="text-blue-400">{progressLabel || 'Estado de extracción'}</span>
                         <span className="text-zinc-400">{Math.round(progress)}%</span>
                       </div>
                       <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
@@ -323,7 +343,7 @@ const Popup = () => {
                           style={{ width: `${progress}%` }}
                         ></div>
                       </div>
-                      <p className="text-[10px] text-zinc-500 text-center italic">No cierres esta ventana mientras el proceso esté activo</p>
+                      <p className="text-[10px] text-zinc-500 text-center italic">La extracción continúa aunque cierres este popup</p>
                     </div>
                   )}
                 </div>

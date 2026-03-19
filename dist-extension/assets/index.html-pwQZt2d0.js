@@ -16408,31 +16408,46 @@ var Popup = () => {
   const [leadCount, setLeadCount] = (0, import_react3.useState)(50);
   const [isScraping, setIsScraping] = (0, import_react3.useState)(false);
   const [progress, setProgress] = (0, import_react3.useState)(0);
+  const [progressLabel, setProgressLabel] = (0, import_react3.useState)("");
   const [status, setStatus] = (0, import_react3.useState)("idle");
   const [errorMessage, setErrorMessage] = (0, import_react3.useState)("");
   (0, import_react3.useEffect)(() => {
     if (typeof chrome !== "undefined" && chrome.storage) {
-      chrome.storage.local.get(["token", "backendUrl"], (result) => {
+      chrome.storage.local.get(["token", "backendUrl", "eficacia_active_task"], (result) => {
         if (result.token)
           setToken(result.token);
         if (result.backendUrl)
           setBackendUrl(result.backendUrl);
         if (!result.token) {
           setView("settings");
+          return;
+        }
+        const activeTask = result["eficacia_active_task"];
+        if (activeTask?.active) {
+          setIsScraping(true);
+          setStatus("loading");
+          const pct = activeTask.limit > 0 ? Math.min(100, activeTask.leads.length / activeTask.limit * 100) : 0;
+          setProgress(pct);
+          setProgressLabel(`Extrayendo ${activeTask.leads.length}/${activeTask.limit}`);
         }
       });
     }
     const handleMessage = (message) => {
       if (message.type === "SCRAPING_PROGRESS") {
         setProgress(message.payload.progress);
+        if (message.payload.current !== void 0) {
+          setProgressLabel(`Extrayendo ${message.payload.current}/${message.payload.limit}`);
+        }
       } else if (message.type === "SCRAPING_FINISHED") {
         setIsScraping(false);
         setStatus("success");
         setProgress(100);
+        setProgressLabel("");
         setTimeout(() => setStatus("idle"), 3e3);
       } else if (message.type === "SCRAPING_ERROR") {
         setIsScraping(false);
         setStatus("error");
+        setProgressLabel("");
         setErrorMessage(message.payload.error);
       }
     };
@@ -16512,6 +16527,7 @@ var Popup = () => {
       setIsScraping(true);
       setStatus("loading");
       setProgress(0);
+      setProgressLabel(`Extrayendo 0/${leadCount}`);
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const url = tab?.url ?? "";
       if (!url.includes("linkedin.com/sales/search/people") && !url.includes("app.apollo.io")) {
@@ -16679,7 +16695,7 @@ var Popup = () => {
         ),
         (isScraping || progress > 0) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 animate-in fade-in zoom-in-95 duration-200", children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex justify-between items-center text-[11px] font-bold uppercase tracking-widest", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-blue-400", children: "Estado de extracci\xF3n" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-blue-400", children: progressLabel || "Estado de extracci\xF3n" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "text-zinc-400", children: [
               Math.round(progress),
               "%"
@@ -16692,7 +16708,7 @@ var Popup = () => {
               style: { width: `${progress}%` }
             }
           ) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-zinc-500 text-center italic", children: "No cierres esta ventana mientras el proceso est\xE9 activo" })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-zinc-500 text-center italic", children: "La extracci\xF3n contin\xFAa aunque cierres este popup" })
         ] })
       ] }),
       status === "success" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-3 text-emerald-400 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20 animate-in slide-in-from-bottom-2 duration-300", children: [
