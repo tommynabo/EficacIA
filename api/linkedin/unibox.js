@@ -326,12 +326,13 @@ export default async function handler(req, res) {
     // ── Step 1: Actually block on LinkedIn via Unipile ──────────────────
     if (unipile_id && accountId) {
       try {
-        const blockUrl = `${unipileBase()}/api/v1/users/block`;
-        console.log(`[UNIBOX][block] Calling Unipile block: POST ${blockUrl} provider_id=${unipile_id} account_id=${accountId}`);
+        // Correct Unipile endpoint: POST /api/v1/users/{provider_id}/block
+        const blockUrl = `${unipileBase()}/api/v1/users/${unipile_id}/block`;
+        console.log(`[UNIBOX][block] Calling Unipile block: POST ${blockUrl} account_id=${accountId}`);
         const bResp = await fetch(blockUrl, {
           method: 'POST',
           headers: unipileHeaders(),
-          body: JSON.stringify({ account_id: accountId, provider_id: unipile_id }),
+          body: JSON.stringify({ account_id: accountId }),
         });
         const bData = await bResp.text();
         if (bResp.ok) {
@@ -407,7 +408,18 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, message: 'Blocked on LinkedIn; no matching lead in DB' });
   }
+  // ─── GET blocked_leads — returns all leads with status='blocked' for this team ───
+  if (req.method === 'GET' && action === 'blocked_leads') {
+    const { data: blockedLeads, error } = await supabaseAdmin
+      .from('leads')
+      .select('id, first_name, last_name, linkedin_url, company, status, tags')
+      .eq('team_id', teamId)
+      .eq('status', 'blocked')
+      .order('first_name', { ascending: true });
 
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ leads: blockedLeads || [] });
+  }
   // ─── GET lead data by provider_id (attendee) ─────────────────────
   if (req.method === 'GET' && action === 'get_lead') {
     const { providerId } = req.query;

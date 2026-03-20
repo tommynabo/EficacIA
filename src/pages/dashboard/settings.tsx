@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Trash2, PencilLine } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Trash2, PencilLine, Ban, UserCheck } from "lucide-react"
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
@@ -39,6 +39,13 @@ export default function SettingsPage() {
   const [promptContent, setPromptContent] = React.useState("")
   const [editingPromptId, setEditingPromptId] = React.useState<string | null>(null)
 
+  // Blocked leads state
+  interface BlockedLead { id: string; first_name: string | null; last_name: string | null; linkedin_url: string | null; company: string | null; tags: string[] }
+  const [blockedLeads, setBlockedLeads] = React.useState<BlockedLead[]>([])
+  const [blockedLoading, setBlockedLoading] = React.useState(false)
+  const [unblockingId, setUnblockingId] = React.useState<string | null>(null)
+  const [blockedMsg, setBlockedMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
+
   const token = () => localStorage.getItem("auth_token")
   const envUrl = import.meta.env.VITE_API_URL || ""
 
@@ -48,6 +55,9 @@ export default function SettingsPage() {
     }
     if (activeTab === "auto-withdraw") {
       loadAWAccounts()
+    }
+    if (activeTab === "blocked") {
+      loadBlockedLeads()
     }
   }, [activeTab])
 
@@ -112,6 +122,41 @@ export default function SettingsPage() {
     }
   }
 
+  const loadBlockedLeads = async () => {
+    setBlockedLoading(true)
+    try {
+      const res = await fetch(`${envUrl}/api/linkedin/unibox?action=blocked_leads`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setBlockedLeads(data.leads || [])
+      }
+    } catch { /* silent */ }
+    finally { setBlockedLoading(false) }
+  }
+
+  const unblockLead = async (leadId: string) => {
+    setUnblockingId(leadId)
+    try {
+      const res = await fetch(`${envUrl}/api/linkedin/unibox?action=update_lead`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, status: "pending" }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setBlockedLeads(prev => prev.filter(l => l.id !== leadId))
+      setBlockedMsg({ type: "success", text: "Lead desbloqueado correctamente" })
+      setTimeout(() => setBlockedMsg(null), 3000)
+    } catch (e: any) {
+      setBlockedMsg({ type: "error", text: e.message || "Error al desbloquear" })
+      setTimeout(() => setBlockedMsg(null), 3000)
+    } finally {
+      setUnblockingId(null)
+    }
+  }
+
   const fetchApiKey = async () => {
     try {
       setIsLoadingKey(true)
@@ -160,10 +205,11 @@ export default function SettingsPage() {
 
       <div className="flex items-center gap-2 border-b border-slate-800 pb-4 flex-wrap">
         {[
-          { key: "profile", label: "Perfil" }, 
+                { key: "profile", label: "Perfil" }, 
           { key: "extension", label: "Extensión Eficacia", badge: "Nueva" }, 
           { key: "billing", label: "Facturación" },
           { key: "auto-withdraw", label: "Auto-Withdraw" },
+          { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
         ].map(({ key, label, badge }) => (
           <button
@@ -496,6 +542,86 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── BLOCKED LEADS TAB ────────────────────────────────── */}
+      {activeTab === "blocked" && (
+        <div className="space-y-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <Ban className="w-5 h-5 text-red-400" />
+              <h3 className="text-lg font-semibold text-slate-100">Leads Bloqueados</h3>
+            </div>
+            <p className="text-sm text-slate-400 mt-1">
+              Contactos bloqueados desde la Unibox. Puedes desbloquearlos en cualquier momento.
+            </p>
+          </div>
+
+          {blockedMsg && (
+            <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+              blockedMsg.type === "success"
+                ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                : "text-red-400 bg-red-500/10 border-red-500/20"
+            }`}>
+              {blockedMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              {blockedMsg.text}
+            </div>
+          )}
+
+          {blockedLoading ? (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Cargando bloqueados...</span>
+            </div>
+          ) : blockedLeads.length === 0 ? (
+            <Card className="p-10 flex flex-col items-center gap-3 border-dashed border-slate-700 text-center">
+              <Ban className="w-10 h-10 text-slate-600" />
+              <p className="text-slate-400 text-sm">No tienes ningún contacto bloqueado.</p>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {blockedLeads.map(lead => {
+                const name = [lead.first_name, lead.last_name].filter(Boolean).join(" ") || "Desconocido"
+                return (
+                  <Card key={lead.id} className="border-slate-800 bg-slate-900/40">
+                    <CardContent className="py-4 flex items-center gap-4">
+                      <div className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
+                        <Ban className="w-4 h-4 text-red-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-100 text-sm truncate">{name}</p>
+                        {lead.company && <p className="text-xs text-slate-500 truncate">{lead.company}</p>}
+                        {lead.linkedin_url && (
+                          <a
+                            href={lead.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:underline truncate block"
+                          >
+                            {lead.linkedin_url}
+                          </a>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={unblockingId === lead.id}
+                        onClick={() => unblockLead(lead.id)}
+                        className="shrink-0 gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                      >
+                        {unblockingId === lead.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <UserCheck className="w-3.5 h-3.5" />
+                        }
+                        Desbloquear
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </div>

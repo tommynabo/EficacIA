@@ -18,6 +18,45 @@ function unipileBase() {
   return `https://${(process.env.UNIPILE_DSN || '').trim()}`;
 }
 
+/**
+ * Parse Unipile's human-readable "date" field (e.g. "Sent today", "Sent 3 days ago", "Sent a week ago")
+ * into an approximate Date object. Unipile generates parsed_datetime dynamically as "now", so this
+ * is the only reliable way to determine when the invitation was actually sent.
+ */
+function parseSentDate(dateStr) {
+  if (!dateStr) return null;
+  const s = dateStr.toLowerCase().trim();
+  const now = new Date();
+
+  if (s.includes('today') || s.includes('hoy')) {
+    const d = new Date(now); d.setHours(0, 0, 0, 0); return d;
+  }
+  if (s.includes('yesterday') || s.includes('ayer')) {
+    const d = new Date(now); d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); return d;
+  }
+  const daysMatch = s.match(/(\d+)\s+day/);
+  if (daysMatch) {
+    const d = new Date(now); d.setDate(d.getDate() - parseInt(daysMatch[1])); d.setHours(0, 0, 0, 0); return d;
+  }
+  if (s.includes('a week') || s.match(/^sent\s+1\s+week/)) {
+    const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0); return d;
+  }
+  const weeksMatch = s.match(/(\d+)\s+week/);
+  if (weeksMatch) {
+    const d = new Date(now); d.setDate(d.getDate() - parseInt(weeksMatch[1]) * 7); d.setHours(0, 0, 0, 0); return d;
+  }
+  if (s.includes('a month') || s.match(/^sent\s+1\s+month/)) {
+    const d = new Date(now); d.setDate(d.getDate() - 30); d.setHours(0, 0, 0, 0); return d;
+  }
+  const monthsMatch = s.match(/(\d+)\s+month/);
+  if (monthsMatch) {
+    const d = new Date(now); d.setDate(d.getDate() - parseInt(monthsMatch[1]) * 30); d.setHours(0, 0, 0, 0); return d;
+  }
+  // Try ISO / JS date parse as last resort
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function getUserId(req) {
   const auth = req.headers.authorization || '';
   const token = auth.replace('Bearer ', '');
@@ -277,10 +316,13 @@ export default async function handler(req, res) {
           console.log(`[WITHDRAW] Found ${rawInvitations.length} total, ${invitations.length} outbound invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
 
           for (const inv of invitations) {
-            const sentAt = inv.parsed_datetime || inv.created_at || inv.sent_at || inv.timestamp;
+            const sentAt = parseSentDate(inv.date);
             const invId = inv.id || inv.provider_id;
-            console.log(`[WITHDRAW] Invitation ${invId} | parsed_datetime=${inv.parsed_datetime} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
-            if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
+            console.log(`[WITHDRAW] Invitation ${invId} | date="${inv.date}" | parsed=${sentAt ? sentAt.toISOString() : 'null'} | cutoff=${cutoffDate.toISOString()}`);
+            if (!sentAt || sentAt >= cutoffDate) {
+              console.log(`[WITHDRAW] Skipping ${invId}: sent ${sentAt ? sentAt.toISOString() : '(no date)'} — not old enough`);
+              continue;
+            }
             try {
               const delUrl = `${unipileBase()}/api/v1/users/invite/${invId}?account_id=${account.unipile_account_id}`;
               console.log(`[WITHDRAW] Deleting invitation ${invId} (sent ${sentAt}): DELETE ${delUrl}`);
