@@ -29,7 +29,8 @@ interface LeadData {
   tags: string[]
   sequence_paused: boolean
   name?: string
-  linkedin_profile_url?: string
+  linkedin_url?: string
+  status?: string
 }
 
 interface Chat {
@@ -718,7 +719,7 @@ export default function UniboxPage() {
       {selectedChat ? (
         <div className="flex-1 flex flex-col min-w-0">
           {/* Header */}
-          <div className="h-14 border-b border-slate-800 flex items-center justify-between px-5 bg-slate-950/50 shrink-0">
+          <div className="h-14 border-b border-slate-800 flex items-center justify-between px-5 bg-slate-950/50 shrink-0 relative z-10">
             <div className="flex items-center gap-3">
               {(() => {
                 const avatar = chatAvatar(selectedChat, globalMyProviderId);
@@ -788,7 +789,7 @@ export default function UniboxPage() {
                   {labelsSaving && <Loader2 className="w-3 h-3 animate-spin" />}
                 </button>
                 {labelsOpen && (
-                  <div className="absolute top-full right-0 mt-1 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-30 overflow-hidden">
+                  <div className="absolute top-full right-0 mt-1 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
                     <div className="px-3 py-2 border-b border-slate-800">
                       <p className="text-xs text-slate-400 font-medium">Etiquetas del lead</p>
                       {!selectedLead && <p className="text-[10px] text-slate-600 mt-0.5">Lead no encontrado en DB</p>}
@@ -820,8 +821,8 @@ export default function UniboxPage() {
               {/* Block / Archive button */}
               <button
                 onClick={handleBlock}
-                disabled={blockLoading || !selectedLead}
-                title="Archivar/Ignorar este contacto en EficacIA"
+                disabled={blockLoading}
+                title={selectedLead ? "Archivar/Ignorar este contacto en EficacIA" : "Selecciona un chat para archivar"}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-colors disabled:opacity-50"
               >
                 {blockLoading

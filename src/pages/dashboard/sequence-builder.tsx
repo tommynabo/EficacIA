@@ -67,16 +67,18 @@ export default function SequenceBuilderPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => setAssistantOpen(o => !o)}
-            title="EficacIA Assistant"
-            className={`gap-2 text-sm ${
-              assistantOpen ? "bg-violet-500/20 text-violet-300 border border-violet-500/30" : "text-slate-400 hover:text-slate-200"
+            title="EficacIA Assistant — redacta y mejora tus mensajes"
+            className={`gap-2 font-medium ${
+              assistantOpen
+                ? "bg-violet-500 text-white border-violet-600 hover:bg-violet-600"
+                : "text-violet-400 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20"
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span className="hidden sm:inline">Asistente IA</span>
+            <Bot className="w-4 h-4" />
+            <span>EficacIA Assistant</span>
           </Button>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2 min-w-[120px]">
             <Save className={`w-4 h-4 ${isSaving ? "animate-spin" : ""}`} />

@@ -267,8 +267,8 @@ export default async function handler(req, res) {
     if (profileUrl) {
       const { data } = await supabaseAdmin
         .from('leads')
-        .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
-        .ilike('linkedin_profile_url', `%${publicIdentifier}%`)
+        .select('id, tags, sequence_paused, name, linkedin_url, status')
+        .ilike('linkedin_url', `%${publicIdentifier}%`)
         .eq('team_id', teamId)
         .limit(1);
       existingLead = data?.[0] || null;
@@ -276,8 +276,8 @@ export default async function handler(req, res) {
     if (!existingLead) {
       const { data } = await supabaseAdmin
         .from('leads')
-        .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
-        .ilike('linkedin_profile_url', `%${providerId}%`)
+        .select('id, tags, sequence_paused, name, linkedin_url, status')
+        .ilike('linkedin_url', `%${providerId}%`)
         .eq('team_id', teamId)
         .limit(1);
       existingLead = data?.[0] || null;
@@ -294,12 +294,12 @@ export default async function handler(req, res) {
         team_id: teamId,
         campaign_id: null,
         name: name || 'Desconocido',
-        linkedin_profile_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
-        status: 'sent',
+        linkedin_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
+        status: 'pending',
         tags: [],
         sequence_paused: false,
       })
-      .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
+      .select('id, tags, sequence_paused, name, linkedin_url, status')
       .single();
 
     if (error) {
@@ -335,8 +335,8 @@ export default async function handler(req, res) {
     // Look up lead by linkedin_profile_url containing the provider_id
     const { data: leads } = await supabaseAdmin
       .from('leads')
-      .select('id, tags, sequence_paused, name, linkedin_profile_url')
-      .ilike('linkedin_profile_url', `%${providerId}%`)
+      .select('id, tags, sequence_paused, name, linkedin_url')
+      .ilike('linkedin_url', `%${providerId}%`)
       .limit(1);
 
     if (!leads || leads.length === 0) {

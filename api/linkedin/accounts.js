@@ -251,7 +251,7 @@ export default async function handler(req, res) {
         let withdrawn = 0, errors = 0;
 
         try {
-          const invUrl = `${unipileBase()}/api/v1/users/relations/invitations/sent?account_id=${account.unipile_account_id}&limit=100`;
+          const invUrl = `${unipileBase()}/api/v1/users/invitations?account_id=${account.unipile_account_id}&limit=100`;
           console.log(`[WITHDRAW] Fetching invitations for account ${account.unipile_account_id}: ${invUrl}`);
           const invResp = await fetch(invUrl, { headers: unipileHeaders() });
           console.log(`[WITHDRAW] Invitations response status: ${invResp.status}`);
@@ -267,21 +267,21 @@ export default async function handler(req, res) {
 
           for (const inv of invitations) {
             const sentAt = inv.created_at || inv.sent_at;
-            console.log(`[WITHDRAW] Invitation ${inv.id} | provider_id=${inv.provider_id} | sent_at=${sentAt}`);
+            const invId = inv.id || inv.provider_id;
+            console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt}`);
             if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
             try {
-              const delUrl = `${unipileBase()}/api/v1/users/relations/invitations/${inv.id}`;
-              console.log(`[WITHDRAW] Deleting invitation ${inv.id} (sent ${sentAt}): DELETE ${delUrl}`);
+              const delUrl = `${unipileBase()}/api/v1/users/invitations/${invId}?account_id=${account.unipile_account_id}`;
+              console.log(`[WITHDRAW] Deleting invitation ${invId} (sent ${sentAt}): DELETE ${delUrl}`);
               const wResp = await fetch(delUrl, {
                 method: 'DELETE',
                 headers: unipileHeaders(),
-                body: JSON.stringify({ account_id: account.unipile_account_id }),
               });
-              console.log(`[WITHDRAW] DELETE ${inv.id} → ${wResp.status}`);
+              console.log(`[WITHDRAW] DELETE ${invId} → ${wResp.status}`);
               if (wResp.ok) withdrawn++;
               else {
                 const wErr = await wResp.text();
-                console.error(`[WITHDRAW] DELETE failed for ${inv.id}: ${wErr}`);
+                console.error(`[WITHDRAW] DELETE failed for ${invId}: ${wErr}`);
                 errors++;
               }
             } catch (delErr) { console.error(`[WITHDRAW] Exception deleting ${inv.id}:`, delErr.message); errors++; }
