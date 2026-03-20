@@ -367,25 +367,25 @@ export default function UniboxPage() {
     }
   }
 
-  // ── Block contact (DB only, no Unipile call) ─────────────────
+  // ── Block contact (DB + real LinkedIn block via Unipile) ───────
   const handleBlock = async () => {
     if (!selectedLead) {
       setActionMsg({ type: "error", text: "No se pudo identificar el contacto. Selecciona el chat de nuevo." })
       setTimeout(() => setActionMsg(null), 4000)
       return
     }
-    if (!confirm("¿Bloquear este contacto en EficacIA? El chat se ocultará de la Unibox.")) return
+    if (!confirm("¿Bloquear este contacto en LinkedIn? Esta acción bloqueará a la persona en LinkedIn y la ocultará de la Unibox.")) return
 
     setBlockLoading(true)
     try {
-      // Send both leadId and unipile_id (chat attendee provider_id) for robust matching
+      // Send leadId + unipile_id (provider_id) + accountId for Unipile LinkedIn block
       const enr = (selectedChat as any)?.attendees_enriched || []
       const other = enr.find((a: any) => a.is_self !== true) || enr[0]
       const unipileId = other?.provider_id || selectedChat?.id || null
 
       const r = await api("/api/linkedin/unibox?action=block", {
         method: "POST",
-        body: JSON.stringify({ leadId: selectedLead.id, unipile_id: unipileId }),
+        body: JSON.stringify({ leadId: selectedLead.id, unipile_id: unipileId, accountId: selectedAccountId }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error)

@@ -277,9 +277,9 @@ export default async function handler(req, res) {
           console.log(`[WITHDRAW] Found ${rawInvitations.length} total, ${invitations.length} outbound invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
 
           for (const inv of invitations) {
-            const sentAt = inv.created_at || inv.sent_at || inv.timestamp;
+            const sentAt = inv.parsed_datetime || inv.created_at || inv.sent_at || inv.timestamp;
             const invId = inv.id || inv.provider_id;
-            console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
+            console.log(`[WITHDRAW] Invitation ${invId} | parsed_datetime=${inv.parsed_datetime} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
             if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
             try {
               const delUrl = `${unipileBase()}/api/v1/users/invite/${invId}?account_id=${account.unipile_account_id}`;

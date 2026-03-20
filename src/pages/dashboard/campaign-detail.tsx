@@ -11,7 +11,7 @@ import {
   ArrowLeft, Plus, Trash2, Bot, Save, Clock, Search, AlertCircle,
   Play, Pause, CheckCircle2, Users, Mail, MessageSquare, TrendingUp, Eye,
   MoreHorizontal, X, ChevronDown, Settings, BarChart2, Linkedin, Send,
-  Zap, Loader2, RefreshCw, Calendar
+  Zap, Loader2, RefreshCw, Calendar, Sparkles
 } from "lucide-react"
 
 // --- Tipos --------------------------------------------------------------------
@@ -120,12 +120,43 @@ export default function CampaignDetailPage() {
   const [engineHeartbeat, setEngineHeartbeat] = React.useState<string | null>(null)
   const messageTextareaRef = React.useRef<HTMLTextAreaElement>(null)
 
+  // AI Assistant inline dialog state
+  const [aiDialogOpen, setAiDialogOpen] = React.useState(false)
+  const [aiObjective, setAiObjective] = React.useState("")
+  const [aiGenerating, setAiGenerating] = React.useState(false)
+
   // Compute custom variable names from all loaded leads
   const customVarKeys = React.useMemo(() => {
     const keys = new Set<string>()
     leads.forEach(l => l.custom_vars && Object.keys(l.custom_vars).forEach(k => keys.add(k)))
     return Array.from(keys)
   }, [leads])
+
+  const generateForActiveStep = async () => {
+    if (!activeStep || !aiObjective.trim()) return
+    setAiGenerating(true)
+    try {
+      const r = await fetch("/api/ai/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `Genera un mensaje de LinkedIn de tipo "${activeStep.type === "invitation" ? "invitación de conexión" : "mensaje de seguimiento"}". Objetivo: ${aiObjective.trim()}. Devuelve SOLO el texto del mensaje, sin explicaciones ni comillas.${activeStep.type === "invitation" ? " Máximo 200 caracteres." : ""}`,
+          }],
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || "Error")
+      updateStep(activeStep.id, { content: d.content })
+      setAiDialogOpen(false)
+      setAiObjective("")
+    } catch (e: any) {
+      alert("Error generando mensaje: " + e.message)
+    } finally {
+      setAiGenerating(false)
+    }
+  }
 
   const insertVariable = (varName: string) => {
     if (!activeStep) return
@@ -873,13 +904,50 @@ export default function CampaignDetailPage() {
                       <Trash2 className="w-3 h-3" /> Limpiar contenido
                     </button>
                   </div>
-                  <textarea
-                    ref={messageTextareaRef}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none h-44 shadow-inner"
-                    placeholder="Escribe tu mensaje aquí... Usa las variables de abajo para personalizarlo."
-                    value={activeStep.content}
-                    onChange={e => updateStep(activeStep.id, { content: e.target.value })}
-                  />
+                  <div className="relative">
+                    <textarea
+                      ref={messageTextareaRef}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 pb-10 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none h-44 shadow-inner"
+                      placeholder="Escribe tu mensaje aquí... Usa las variables de abajo para personalizarlo."
+                      value={activeStep.content}
+                      onChange={e => updateStep(activeStep.id, { content: e.target.value })}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); setAiDialogOpen(o => !o); setAiObjective("") }}
+                      className="absolute bottom-2 right-2 text-blue-600 bg-white/80 hover:bg-blue-50"
+                    >
+                      <Sparkles className="w-4 h-4 mr-1" /> IA
+                    </Button>
+                    {aiDialogOpen && (
+                      <div className="absolute bottom-11 right-0 w-72 bg-white dark:bg-slate-900 border border-violet-400/40 rounded-xl shadow-2xl z-30 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Sparkles className="w-4 h-4 text-violet-500" />
+                          <span className="text-sm font-medium text-slate-800 dark:text-slate-200">EficacIA Assistant</span>
+                          <button onClick={() => setAiDialogOpen(false)} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-2">¿Cuál es el objetivo de este mensaje?</p>
+                        <textarea
+                          value={aiObjective}
+                          onChange={e => setAiObjective(e.target.value)}
+                          placeholder="Ej: Agendar una demo de nuestro SaaS…"
+                          rows={2}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-violet-500 resize-none mb-3"
+                        />
+                        <Button
+                          size="sm"
+                          disabled={!aiObjective.trim() || aiGenerating}
+                          onClick={generateForActiveStep}
+                          className="w-full gap-2 bg-violet-500 hover:bg-violet-600 text-white"
+                        >
+                          {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          {aiGenerating ? "Generando…" : "Generar mensaje"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   {activeStep.type === "invitation" && (
                     <div className={`text-[11px] mt-2 text-right font-medium ${activeStep.content.length > 200 ? 'text-red-500 transition-colors' : 'text-slate-500'}`}>
                       {activeStep.content.length} / 200 caracteres
