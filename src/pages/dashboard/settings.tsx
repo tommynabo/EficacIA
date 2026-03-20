@@ -97,9 +97,9 @@ export default function SettingsPage() {
                   <ShieldAlert className="w-5 h-5 text-violet-500" />
                 </div>
                 <div>
-                  <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator</CardTitle>
+                  <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator y Apollo</CardTitle>
                   <CardDescription className="text-violet-300/70">
-                    Esta extensión está diseñada EXCLUSIVAMENTE para funcionar en la página de resultados de LinkedIn Sales Navigator.
+                    Esta extensión está diseñada para funcionar en LinkedIn Sales Navigator y Apollo.io — extrae automáticamente leads de ambas plataformas.
                   </CardDescription>
                 </div>
               </div>
