@@ -378,9 +378,14 @@ export default function UniboxPage() {
 
     setBlockLoading(true)
     try {
+      // Send both leadId and unipile_id (chat attendee provider_id) for robust matching
+      const enr = (selectedChat as any)?.attendees_enriched || []
+      const other = enr.find((a: any) => a.is_self !== true) || enr[0]
+      const unipileId = other?.provider_id || selectedChat?.id || null
+
       const r = await api("/api/linkedin/unibox?action=block", {
         method: "POST",
-        body: JSON.stringify({ leadId: selectedLead.id }),
+        body: JSON.stringify({ leadId: selectedLead.id, unipile_id: unipileId }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error)

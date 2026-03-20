@@ -317,19 +317,56 @@ export default async function handler(req, res) {
 
   // ─── POST block — mark lead as blocked in DB (no Unipile call) ─────
   if (req.method === 'POST' && action === 'block') {
-    const { leadId } = req.body;
-    if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
+    const { leadId, unipile_id } = req.body;
 
-    const { data: lead, error } = await supabaseAdmin
-      .from('leads')
-      .update({ status: 'blocked' })
-      .eq('id', leadId)
-      .eq('team_id', teamId)
-      .select('id, status')
-      .single();
+    // Strategy 1: block by internal leadId
+    if (leadId) {
+      const { data: lead, error } = await supabaseAdmin
+        .from('leads')
+        .update({ status: 'blocked' })
+        .eq('id', leadId)
+        .eq('team_id', teamId)
+        .select('id, status')
+        .single();
 
-    if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json({ success: true, lead });
+      if (error) {
+        console.error('[UNIBOX][block] by leadId failed:', error.message);
+      } else {
+        return res.status(200).json({ success: true, lead });
+      }
+    }
+
+    // Strategy 2: block by unipile_id (provider_id / chat attendee id) — search linkedin_url
+    if (unipile_id) {
+      const { data: leads } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('team_id', teamId)
+        .ilike('linkedin_url', `%${unipile_id}%`)
+        .limit(1);
+
+      if (leads && leads.length > 0) {
+        const { data: lead, error } = await supabaseAdmin
+          .from('leads')
+          .update({ status: 'blocked' })
+          .eq('id', leads[0].id)
+          .eq('team_id', teamId)
+          .select('id, status')
+          .single();
+
+        if (!error) {
+          return res.status(200).json({ success: true, lead });
+        }
+        console.error('[UNIBOX][block] by unipile_id update failed:', error.message);
+      } else {
+        console.warn('[UNIBOX][block] No lead found for unipile_id:', unipile_id);
+      }
+    }
+
+    if (!leadId && !unipile_id) {
+      return res.status(400).json({ error: 'Falta leadId o unipile_id' });
+    }
+    return res.status(200).json({ success: true, message: 'No matching lead found but acknowledged' });
   }
 
   // ─── GET lead data by provider_id (attendee) ─────────────────────

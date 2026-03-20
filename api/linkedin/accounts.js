@@ -251,7 +251,7 @@ export default async function handler(req, res) {
         let withdrawn = 0, errors = 0;
 
         try {
-          const invUrl = `${unipileBase()}/api/v1/users/invitations?account_id=${account.unipile_account_id}&limit=100`;
+          const invUrl = `${unipileBase()}/api/v1/users/${account.unipile_account_id}/invitations?limit=100`;
           console.log(`[WITHDRAW] Fetching invitations for account ${account.unipile_account_id}: ${invUrl}`);
           const invResp = await fetch(invUrl, { headers: unipileHeaders() });
           console.log(`[WITHDRAW] Invitations response status: ${invResp.status}`);
@@ -282,7 +282,7 @@ export default async function handler(req, res) {
             console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
             if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
             try {
-              const delUrl = `${unipileBase()}/api/v1/users/invitations/${invId}?account_id=${account.unipile_account_id}`;
+              const delUrl = `${unipileBase()}/api/v1/users/${account.unipile_account_id}/invitations/${invId}`;
               console.log(`[WITHDRAW] Deleting invitation ${invId} (sent ${sentAt}): DELETE ${delUrl}`);
               const wResp = await fetch(delUrl, {
                 method: 'DELETE',

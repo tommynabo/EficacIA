@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
 import { Switch } from "@/src/components/ui/switch"
 import { Badge } from "@/src/components/ui/badge"
-import { Plus, Trash2, Bot, ArrowLeft, Save, Clock, Sparkles, X, Loader2, Send, Zap } from "lucide-react"
+import { Plus, Trash2, Bot, ArrowLeft, Save, Clock, Sparkles, X, Loader2, Send } from "lucide-react"
 
 type StepType = "invitation" | "message"
 
@@ -155,25 +155,27 @@ export default function SequenceBuilderPage() {
                     <div className="space-y-4">
                       <div className="relative">
                         <textarea
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pr-10 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pb-10 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-28"
                           placeholder="Escribe tu mensaje aquí..."
                           value={step.content}
                           onChange={(e) => updateStep(step.id, { content: e.target.value })}
                         />
-                        <button
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           type="button"
                           onClick={() => { setAiDialogStepId(step.id); setAiObjective("") }}
-                          title="Generar con IA"
-                          className="absolute top-2 right-2 w-7 h-7 rounded-md bg-violet-500/15 hover:bg-violet-500/25 text-violet-400 flex items-center justify-center transition-colors"
+                          className="absolute bottom-2 right-2 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 h-7 px-2 gap-1.5 text-xs"
                         >
-                          <Zap className="w-3.5 h-3.5" />
-                        </button>
-                        {/* Inline AI dialog */}
+                          <Sparkles className="w-4 h-4" />
+                          EficacIA Assistant
+                        </Button>
+                        {/* AI generation dialog */}
                         {aiDialogStepId === step.id && (
-                          <div className="absolute top-0 right-0 mt-9 mr-0 w-72 bg-slate-900 border border-violet-500/30 rounded-xl shadow-2xl z-30 p-4">
+                          <div className="absolute bottom-10 right-0 w-72 bg-slate-900 border border-violet-500/30 rounded-xl shadow-2xl z-30 p-4">
                             <div className="flex items-center gap-2 mb-3">
-                              <Zap className="w-4 h-4 text-violet-400" />
-                              <span className="text-sm font-medium text-slate-200">Generar con IA</span>
+                              <Sparkles className="w-4 h-4 text-violet-400" />
+                              <span className="text-sm font-medium text-slate-200">EficacIA Assistant</span>
                               <button onClick={() => setAiDialogStepId(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
                             </div>
                             <p className="text-xs text-slate-400 mb-2">¿Cuál es el objetivo de este mensaje?</p>
