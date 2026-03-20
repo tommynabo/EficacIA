@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Play, CheckCircle, AlertCircle, Loader2, Database, ExternalLink, Download } from 'lucide-react';
+import { Settings, Play, CheckCircle, AlertCircle, Loader2, Database, ExternalLink, Download, Square } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -177,6 +177,7 @@ const Popup = () => {
       try {
         await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });
       } catch (connErr: any) {
+        // Content script not alive — inject and retry
         // Content script not alive (post-extension-update, first navigation, etc.) — inject and retry
         const isConnErr =
           connErr?.message?.includes('Receiving end does not exist') ||
@@ -198,6 +199,28 @@ const Popup = () => {
       setIsScraping(false);
       setStatus('error');
       setErrorMessage(err.message);
+    }
+  };
+
+  const stopScraping = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, { type: 'STOP_SCRAPING' });
+        } catch {
+          // Tab may not have content script alive — clear state anyway
+        }
+      }
+    } catch {
+      // ignore
+    }
+    setIsScraping(false);
+    setStatus('idle');
+    setProgress(0);
+    setProgressLabel('');
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.remove(['eficacia_active_task']);
     }
   };
 
@@ -330,6 +353,16 @@ const Popup = () => {
                     {isScraping ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5 shrink-0" />}
                     {isScraping ? 'EXTRAYENDO...' : 'AÑADIR LEADS'}
                   </button>
+
+                  {isScraping && (
+                    <button
+                      onClick={stopScraping}
+                      className="w-full flex items-center justify-center gap-2 font-bold py-2.5 rounded-xl text-sm transition-all border border-rose-800/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/40 hover:border-rose-700"
+                    >
+                      <Square className="w-4 h-4" />
+                      Detener Extracción
+                    </button>
+                  )}
 
                   {(isScraping || progress > 0) && (
                     <div className="space-y-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">

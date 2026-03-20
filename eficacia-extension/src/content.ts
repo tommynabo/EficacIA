@@ -53,6 +53,7 @@ function clearTask(): Promise<void> {
 // ─── State ──────────────────────────────────────────────────────────────────
 
 let _running = false;
+let _stopped = false;
 
 // ─── Message Listener ───────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
     const platform = detectEnvironment();
     console.log(`[EficacIA MegaFix] START_SCRAPING — platform: ${platform} | limit: ${limit} | campaign: ${campaign_id}`);
 
+    _stopped = false; // reset stop flag whenever a new scrape starts
     const task: ScrapingTask = {
       active: true,
       platform,
@@ -81,6 +83,13 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
   if (message.type === 'RESUME_IF_STALLED') {
     console.log('[EficacIA MegaFix] RESUME_IF_STALLED received, _running:', _running);
     if (!_running) startScrapingProcess();
+  }
+
+  if (message.type === 'STOP_SCRAPING') {
+    console.log('[EficacIA MegaFix] STOP_SCRAPING received — halting scraper');
+    _stopped = true;
+    _running = false;
+    chrome.storage.local.remove([TASK_KEY]);
   }
 });
 
@@ -190,6 +199,8 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
   console.log('[EficacIA MegaFix] runLinkedInScraper started');
 
   while (task.leads.length < task.limit) {
+    if (_stopped) { console.log('[EficacIA MegaFix] LinkedIn: stop requested, exiting loop'); break; }
+
     await scrollToBottom();
 
     const pageLeads = extractLinkedInLeadsFromPage();
@@ -341,6 +352,8 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
   console.log('[EficacIA MegaFix] Apollo rows detected, beginning extraction loop');
 
   while (task.leads.length < task.limit) {
+    if (_stopped) { console.log('[EficacIA MegaFix] Apollo: stop requested, exiting loop'); break; }
+
     await scrollApolloTable();
     await sleep(700);
 
