@@ -164,11 +164,10 @@ export default function SequenceBuilderPage() {
                           size="sm"
                           variant="ghost"
                           type="button"
-                          onClick={() => { setAiDialogStepId(step.id); setAiObjective("") }}
-                          className="absolute bottom-2 right-2 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 h-7 px-2 gap-1.5 text-xs"
+                          onClick={(e) => { e.preventDefault(); setAiDialogStepId(step.id); setAiObjective("") }}
+                          className="absolute bottom-2 right-2 text-blue-600 bg-white/80 hover:bg-blue-50"
                         >
-                          <Sparkles className="w-4 h-4" />
-                          EficacIA Assistant
+                          <Sparkles className="w-4 h-4 mr-1" /> IA
                         </Button>
                         {/* AI generation dialog */}
                         {aiDialogStepId === step.id && (

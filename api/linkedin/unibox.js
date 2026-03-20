@@ -319,6 +319,10 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && action === 'block') {
     const { leadId, unipile_id } = req.body;
 
+    if (!leadId && !unipile_id) {
+      return res.status(400).json({ error: 'Falta leadId o unipile_id' });
+    }
+
     // Strategy 1: block by internal leadId
     if (leadId) {
       const { data: lead, error } = await supabaseAdmin
@@ -329,15 +333,30 @@ export default async function handler(req, res) {
         .select('id, status')
         .single();
 
-      if (error) {
-        console.error('[UNIBOX][block] by leadId failed:', error.message);
-      } else {
+      if (!error && lead) {
+        console.log(`[UNIBOX][block] Lead ${leadId} blocked successfully`);
         return res.status(200).json({ success: true, lead });
       }
+      if (error) console.error('[UNIBOX][block] by leadId failed:', error.message);
     }
 
-    // Strategy 2: block by unipile_id (provider_id / chat attendee id) — search linkedin_url
+    // Strategy 2: block by unipile_id directly on the unipile_id column
     if (unipile_id) {
+      const { data: lead, error } = await supabaseAdmin
+        .from('leads')
+        .update({ status: 'blocked' })
+        .eq('unipile_id', unipile_id)
+        .eq('team_id', teamId)
+        .select('id, status')
+        .single();
+
+      if (!error && lead) {
+        console.log(`[UNIBOX][block] Lead blocked by unipile_id=${unipile_id}`);
+        return res.status(200).json({ success: true, lead });
+      }
+      if (error) console.warn('[UNIBOX][block] by unipile_id column failed:', error.message);
+
+      // Strategy 3: fallback — search by linkedin_url containing the unipile_id
       const { data: leads } = await supabaseAdmin
         .from('leads')
         .select('id')
@@ -346,7 +365,7 @@ export default async function handler(req, res) {
         .limit(1);
 
       if (leads && leads.length > 0) {
-        const { data: lead, error } = await supabaseAdmin
+        const { data: updatedLead, error: updateErr } = await supabaseAdmin
           .from('leads')
           .update({ status: 'blocked' })
           .eq('id', leads[0].id)
@@ -354,18 +373,16 @@ export default async function handler(req, res) {
           .select('id, status')
           .single();
 
-        if (!error) {
-          return res.status(200).json({ success: true, lead });
+        if (!updateErr && updatedLead) {
+          console.log(`[UNIBOX][block] Lead ${updatedLead.id} blocked by linkedin_url match`);
+          return res.status(200).json({ success: true, lead: updatedLead });
         }
-        console.error('[UNIBOX][block] by unipile_id update failed:', error.message);
+        if (updateErr) console.error('[UNIBOX][block] fallback update failed:', updateErr.message);
       } else {
         console.warn('[UNIBOX][block] No lead found for unipile_id:', unipile_id);
       }
     }
 
-    if (!leadId && !unipile_id) {
-      return res.status(400).json({ error: 'Falta leadId o unipile_id' });
-    }
     return res.status(200).json({ success: true, message: 'No matching lead found but acknowledged' });
   }
 

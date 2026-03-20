@@ -251,8 +251,8 @@ export default async function handler(req, res) {
         let withdrawn = 0, errors = 0;
 
         try {
-          const invUrl = `${unipileBase()}/api/v1/users/${account.unipile_account_id}/invitations?limit=100`;
-          console.log(`[WITHDRAW] Fetching invitations for account ${account.unipile_account_id}: ${invUrl}`);
+          const invUrl = `${unipileBase()}/api/v1/users/invite/sent?account_id=${account.unipile_account_id}&limit=100`;
+          console.log(`[WITHDRAW] Fetching sent invitations for account ${account.unipile_account_id}: ${invUrl}`);
           const invResp = await fetch(invUrl, { headers: unipileHeaders() });
           console.log(`[WITHDRAW] Invitations response status: ${invResp.status}`);
           if (!invResp.ok) {
@@ -282,15 +282,17 @@ export default async function handler(req, res) {
             console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
             if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
             try {
-              const delUrl = `${unipileBase()}/api/v1/users/${account.unipile_account_id}/invitations/${invId}`;
+              const delUrl = `${unipileBase()}/api/v1/users/invite/${invId}?account_id=${account.unipile_account_id}`;
               console.log(`[WITHDRAW] Deleting invitation ${invId} (sent ${sentAt}): DELETE ${delUrl}`);
               const wResp = await fetch(delUrl, {
                 method: 'DELETE',
                 headers: unipileHeaders(),
               });
               console.log(`[WITHDRAW] DELETE ${invId} → ${wResp.status}`);
-              if (wResp.ok) withdrawn++;
-              else {
+              if (wResp.ok) {
+                withdrawn++;
+                console.log(`[WITHDRAW] ✅ Invitación ${invId} eliminada exitosamente para cuenta ${account.unipile_account_id}`);
+              } else {
                 const wErr = await wResp.text();
                 console.error(`[WITHDRAW] DELETE failed for ${invId}: ${wErr}`);
                 errors++;
