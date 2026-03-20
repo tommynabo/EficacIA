@@ -24,6 +24,7 @@
     { "source": "/api/auth/me", "destination": "/api/auth?action=me" },
     { "source": "/callback", "destination": "/api/unipile" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/eficacia-extension.zip", "destination": "/eficacia-extension.zip" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
