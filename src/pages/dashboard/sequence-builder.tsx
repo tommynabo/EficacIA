@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
 import { Switch } from "@/src/components/ui/switch"
 import { Badge } from "@/src/components/ui/badge"
-import { Plus, Trash2, Bot, ArrowLeft, Save, Clock, Sparkles, X, Loader2, Send } from "lucide-react"
+import { Plus, Trash2, Bot, ArrowLeft, Save, Clock, Sparkles, X, Loader2, Send, Zap } from "lucide-react"
 
 type StepType = "invitation" | "message"
 
@@ -20,6 +20,10 @@ export default function SequenceBuilderPage() {
   const { id } = useParams()
   const [isSaving, setIsSaving] = React.useState(false)
   const [assistantOpen, setAssistantOpen] = React.useState(false)
+  // Inline AI dialog state per step
+  const [aiDialogStepId, setAiDialogStepId] = React.useState<string | null>(null)
+  const [aiObjective, setAiObjective] = React.useState("")
+  const [aiGenerating, setAiGenerating] = React.useState(false)
   const [steps, setSteps] = React.useState<SequenceStep[]>([
     { id: "1", type: "invitation", content: "Hola {{firstName}}, me encantaría conectar contigo.", useAI: true, delayDays: 0 },
     { id: "2", type: "message", content: "Gracias por aceptar la invitación. ¿Cómo va todo en {{companyName}}?", useAI: false, delayDays: 2 }
@@ -49,6 +53,36 @@ export default function SequenceBuilderPage() {
 
   const updateStep = (id: string, updates: Partial<SequenceStep>) => {
     setSteps(steps.map(s => s.id === id ? { ...s, ...updates } : s))
+  }
+
+  const generateForStep = async (stepId: string) => {
+    const step = steps.find(s => s.id === stepId)
+    if (!step || !aiObjective.trim()) return
+    setAiGenerating(true)
+    try {
+      const r = await fetch("/api/ai/assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `Genera un mensaje de LinkedIn de tipo "${step.type === "invitation" ? "invitación de conexión" : "mensaje de seguimiento"}". Objetivo: ${aiObjective.trim()}. Devuelve SOLO el texto del mensaje, sin explicaciones ni comillas.${step.type === "invitation" ? " Máximo 200 caracteres." : ""}`,
+          }],
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || "Error")
+      updateStep(stepId, { content: d.content })
+      setAiDialogStepId(null)
+      setAiObjective("")
+    } catch (e: any) {
+      alert("Error generando mensaje: " + e.message)
+    } finally {
+      setAiGenerating(false)
+    }
   }
 
   return (
@@ -119,12 +153,49 @@ export default function SequenceBuilderPage() {
                     </div>
                     
                     <div className="space-y-4">
-                      <textarea
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24"
-                        placeholder="Escribe tu mensaje aquí..."
-                        value={step.content}
-                        onChange={(e) => updateStep(step.id, { content: e.target.value })}
-                      />
+                      <div className="relative">
+                        <textarea
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pr-10 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24"
+                          placeholder="Escribe tu mensaje aquí..."
+                          value={step.content}
+                          onChange={(e) => updateStep(step.id, { content: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { setAiDialogStepId(step.id); setAiObjective("") }}
+                          title="Generar con IA"
+                          className="absolute top-2 right-2 w-7 h-7 rounded-md bg-violet-500/15 hover:bg-violet-500/25 text-violet-400 flex items-center justify-center transition-colors"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                        </button>
+                        {/* Inline AI dialog */}
+                        {aiDialogStepId === step.id && (
+                          <div className="absolute top-0 right-0 mt-9 mr-0 w-72 bg-slate-900 border border-violet-500/30 rounded-xl shadow-2xl z-30 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Zap className="w-4 h-4 text-violet-400" />
+                              <span className="text-sm font-medium text-slate-200">Generar con IA</span>
+                              <button onClick={() => setAiDialogStepId(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+                            </div>
+                            <p className="text-xs text-slate-400 mb-2">¿Cuál es el objetivo de este mensaje?</p>
+                            <textarea
+                              value={aiObjective}
+                              onChange={e => setAiObjective(e.target.value)}
+                              placeholder="Ej: Agendar una demo de nuestro producto SaaS…"
+                              rows={2}
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500 resize-none mb-3"
+                            />
+                            <Button
+                              size="sm"
+                              disabled={!aiObjective.trim() || aiGenerating}
+                              onClick={() => generateForStep(step.id)}
+                              className="w-full gap-2 bg-violet-500 hover:bg-violet-600 text-white"
+                            >
+                              {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                              {aiGenerating ? "Generando…" : "Generar mensaje"}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                       
                       <div className="flex items-center justify-between bg-slate-950/50 p-3 rounded-lg border border-slate-800/50">
                         <div className="flex items-center gap-2">

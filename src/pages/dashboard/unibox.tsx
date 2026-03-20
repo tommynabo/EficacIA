@@ -207,6 +207,9 @@ export default function UniboxPage() {
   // AI Assistant panel
   const [assistantOpen, setAssistantOpen] = React.useState(false)
 
+  // Map chatId → lead tags (for tag-based filtering)
+  const [chatLeadTags, setChatLeadTags] = React.useState<Record<string, string[]>>({})
+
   const [search, setSearch] = React.useState("")
   const [filterUnread, setFilterUnread] = React.useState(false)
 
@@ -300,7 +303,13 @@ export default function UniboxPage() {
             }),
           })
             .then(r2 => r2.json())
-            .then(d2 => { if (d2.lead) setSelectedLead(d2.lead) })
+            .then(d2 => {
+              if (d2.lead) {
+                setSelectedLead(d2.lead)
+                // Track lead tags for this chat so the tag filter works
+                setChatLeadTags(prev => ({ ...prev, [chat.id]: d2.lead.tags || [] }))
+              }
+            })
             .catch(() => {})
         }
       })
@@ -429,6 +438,11 @@ export default function UniboxPage() {
     if (filterCampaignId) {
       const camp = campaigns.find(cp => cp.id === filterCampaignId)
       if (camp && c.account_id && c.account_id !== camp.linkedin_account_id) return false
+    }
+    // Tag filter: only show chats whose lead has the selected tag
+    if (filterTag) {
+      const tags = chatLeadTags[c.id]
+      if (!tags || !tags.includes(filterTag)) return false
     }
     return true
   })
@@ -567,13 +581,13 @@ export default function UniboxPage() {
           {/* Filters row: Todos/No leídos + Campaign filter + Tag filter */}
           <div className="flex items-center gap-1.5 mt-3 flex-wrap">
             <button
-              onClick={() => setFilterUnread(false)}
-              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${!filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              onClick={() => { setFilterUnread(false); setFilterTag(""); setFilterCampaignId("") }}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${!filterUnread && !filterTag && !filterCampaignId ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               Todos
             </button>
             <button
-              onClick={() => setFilterUnread(true)}
+              onClick={() => setFilterUnread(u => !u)}
               className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               No leídos

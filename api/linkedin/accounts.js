@@ -262,17 +262,24 @@ export default async function handler(req, res) {
             continue;
           }
           const invData = await invResp.json();
-          const rawInvitations = invData.items || invData.invitations || invData || [];
-          // Filter: only process "sent" invitations (outbound), skip received ones
-          const invitations = rawInvitations.filter(inv =>
-            !inv.direction || inv.direction === 'sent' || inv.type === 'sent' || inv.status === 'sent' || inv.status === 'pending'
-          );
-          console.log(`[WITHDRAW] Found ${rawInvitations.length} total, ${invitations.length} sent invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
+          // Log the raw Unipile payload structure for debugging
+          console.log(`[WITHDRAW] Raw payload keys: ${JSON.stringify(Object.keys(invData))}`);
+          console.log(`[WITHDRAW] Sample invitation:`, JSON.stringify((invData.items || invData.data || invData.invitations || [])[0] || 'none').slice(0, 500));
+          const rawInvitations = invData.items || invData.data || invData.invitations || [];
+          // Filter: only process "sent" / outbound invitations, skip received ones
+          const invitations = rawInvitations.filter(inv => {
+            // Unipile may use is_received, direction, or type to indicate direction
+            if (inv.is_received === true) return false;
+            if (inv.direction === 'received' || inv.direction === 'incoming') return false;
+            // Accept: explicitly sent, pending, or no direction marker (default outbound)
+            return true;
+          });
+          console.log(`[WITHDRAW] Found ${rawInvitations.length} total, ${invitations.length} outbound invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
 
           for (const inv of invitations) {
-            const sentAt = inv.created_at || inv.sent_at;
+            const sentAt = inv.created_at || inv.sent_at || inv.timestamp;
             const invId = inv.id || inv.provider_id;
-            console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt}`);
+            console.log(`[WITHDRAW] Invitation ${invId} | provider_id=${inv.provider_id} | sent_at=${sentAt} | direction=${inv.direction} | is_received=${inv.is_received}`);
             if (!sentAt || new Date(sentAt) >= cutoffDate) continue;
             try {
               const delUrl = `${unipileBase()}/api/v1/users/invitations/${invId}?account_id=${account.unipile_account_id}`;
