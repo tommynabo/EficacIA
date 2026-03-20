@@ -161,8 +161,8 @@ const Popup = () => {
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const url = tab?.url ?? '';
-      if (!url.includes('linkedin.com/sales/search/people') && !url.includes('app.apollo.io')) {
-        throw new Error('Solo puedes extraer leads desde búsquedas de LinkedIn Sales Navigator o listas de Apollo.io.');
+      if (!url.includes('linkedin.com/sales') && !url.includes('app.apollo.io')) {
+        throw new Error('Solo puedes extraer leads desde LinkedIn Sales Navigator o listas de Apollo.io.');
       }
 
       if (!tab?.id) throw new Error('No se encontró la pestaña activa.');
@@ -186,7 +186,7 @@ const Popup = () => {
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ['assets/content.ts-BShS41TX.js'],
+            files: ['assets/content.js'],
           });
           await new Promise(r => setTimeout(r, 600));
           await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });

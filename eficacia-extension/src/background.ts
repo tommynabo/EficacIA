@@ -1,5 +1,7 @@
 // EficacIA Background Service Worker
 
+const API_BASE = 'https://eficac-ia.vercel.app';
+
 function ensureWatchdogAlarm(): void {
   chrome.alarms.get('eficacia_watchdog', (existing) => {
     if (!existing) {
@@ -67,7 +69,9 @@ async function submitLeads(
 ) {
   console.log(`[EficacIA Background] Submitting ${leads.length} leads (source: ${source ?? 'extension'}) to ${backendUrl}...`);
   
-  const response = await fetch(`${backendUrl}/api/linkedin/bulk-import`, {
+  const baseUrl = backendUrl && backendUrl.startsWith('http') ? backendUrl : API_BASE;
+
+  const response = await fetch(`${baseUrl}/api/linkedin/bulk-import`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

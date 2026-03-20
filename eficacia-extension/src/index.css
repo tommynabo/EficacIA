@@ -46,3 +46,20 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-zinc-700;
 }
+
+/* ── Shadcn-style entry animations ── */
+@keyframes animate-in-keyframes {
+  from { opacity: var(--tw-enter-opacity, 0); transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), 1); }
+}
+
+.animate-in {
+  animation-name: animate-in-keyframes;
+  animation-fill-mode: both;
+}
+.fade-in        { --tw-enter-opacity: 0; }
+.slide-in-from-right-4  { --tw-enter-translate-x: 1rem; }
+.slide-in-from-left-4   { --tw-enter-translate-x: -1rem; }
+.slide-in-from-bottom-2 { --tw-enter-translate-y: 0.5rem; }
+.zoom-in-95     { --tw-enter-scale: 0.95; }
+.duration-200   { animation-duration: 200ms; }
+.duration-300   { animation-duration: 300ms; }

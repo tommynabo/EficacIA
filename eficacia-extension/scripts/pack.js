@@ -3,12 +3,12 @@
 /**
  * scripts/pack.js — EficacIA Extension: build + package
  * ──────────────────────────────────────────────────────
- * 1. Cleans dist-extension/ (removes stale generated files & stale root icons)
- * 2. Compiles TypeScript with esbuild  →  dist-extension/assets/
- * 3. Compiles CSS with Tailwind CLI    →  dist-extension/assets/popup.css
+ * 1. Cleans dist/ (removes stale generated files & stale root icons)
+ * 2. Compiles TypeScript with esbuild  →  dist/assets/
+ * 3. Compiles CSS with Tailwind CLI    →  dist/assets/popup.css
  * 4. Copies icons/  from eficacia-extension/public/icons/
  * 5. Copies manifest.json, index.html, service-worker-loader.js to dist root
- * 6. Zips dist-extension/ contents (manifest.json at zip root, no parent dir)
+ * 6. Zips dist/ contents (manifest.json at zip root, no parent dir)
  * 7. Writes  ../public/eficacia-extension.zip   (overwrite)
  *
  * Usage:
@@ -23,7 +23,7 @@ const archiver       = require('archiver');
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const ROOT     = path.resolve(__dirname, '..');               // eficacia-extension/
-const DIST     = path.resolve(ROOT, '..', 'dist-extension'); // dist-extension/
+const DIST     = path.join(ROOT, 'dist');                    // eficacia-extension/dist/
 const ZIP_OUT  = path.resolve(ROOT, '..', 'public', 'eficacia-extension.zip');
 const BIN      = path.join(ROOT, 'node_modules', '.bin');
 const ASSETS   = path.join(DIST, 'assets');
