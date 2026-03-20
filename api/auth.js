@@ -15,6 +15,7 @@ export default async function handler(req, res) {
   if (action === 'register') return handleRegister(req, res);
   if (action === 'me') return handleMe(req, res);
   if (action === 'reset-password') return handleResetPassword(req, res);
+  if (action === 'change-password') return handleChangePassword(req, res);
   if (action === 'api-key') return handleApiKey(req, res);
 
   return res.status(400).json({ error: 'Acción no válida' });
@@ -180,6 +181,43 @@ async function handleResetPassword(req, res) {
   } catch (error) {
     console.error('Reset password error:', error);
     return res.status(500).json({ error: 'Error al procesar la solicitud' });
+  }
+}
+
+// ─── CHANGE PASSWORD ────────────────────────────────────────
+
+async function handleChangePassword(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'No autenticado' });
+
+  let userId;
+  try {
+    const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET || 'dev-secret');
+    userId = decoded.userId;
+  } catch {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+
+  const { newPassword } = req.body || {};
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: newPassword,
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ success: true, message: 'Contraseña actualizada correctamente' });
+  } catch (err) {
+    console.error('[CHANGE-PASSWORD]', err);
+    return res.status(500).json({ error: 'Error actualizando contraseña' });
   }
 }
 

@@ -285,12 +285,19 @@ export default function UniboxPage() {
         const msgs: Message[] = (d.items || d.messages || []).reverse()
         setMessages(msgs)
 
-        // Load lead CRM data from the other attendee's provider_id
+        // Load lead CRM data — upsert so orphan contacts are created automatically
         const enr = (chat as any).attendees_enriched || []
         const other = enr.find((a: any) => a.is_self !== true) || enr[0]
         const pId = other?.provider_id
         if (pId) {
-          api(`/api/linkedin/unibox?action=get_lead&providerId=${encodeURIComponent(pId)}`)
+          api("/api/linkedin/unibox?action=upsert_lead", {
+            method: "POST",
+            body: JSON.stringify({
+              providerId: pId,
+              name: other?.name || null,
+              publicIdentifier: other?.public_identifier || null,
+            }),
+          })
             .then(r2 => r2.json())
             .then(d2 => { if (d2.lead) setSelectedLead(d2.lead) })
             .catch(() => {})
@@ -350,32 +357,28 @@ export default function UniboxPage() {
     }
   }
 
-  // ── Block LinkedIn profile ─────────────────────────────────────────
+  // ── Archive/Ignore contact (DB only, no Unipile call) ─────────────
   const handleBlock = async () => {
-    if (!selectedChat || !selectedAccountId) return
-    if (!confirm("¿Bloquear a este perfil en LinkedIn? Esta acción se realizará a través de tu cuenta conectada.")) return
-
-    const enr = (selectedChat as any).attendees_enriched || []
-    const other = enr.find((a: any) => a.is_self !== true) || enr[0]
-    const profileId = other?.provider_id
-    if (!profileId) {
-      setActionMsg({ type: "error", text: "No se pudo identificar el perfil" })
-      setTimeout(() => setActionMsg(null), 3000)
+    if (!selectedLead) {
+      setActionMsg({ type: "error", text: "No se pudo identificar el contacto. Selecciona el chat de nuevo." })
+      setTimeout(() => setActionMsg(null), 4000)
       return
     }
+    if (!confirm("¿Archivar este contacto en EficacIA? El chat seguirá visible en LinkedIn.")) return
 
     setBlockLoading(true)
     try {
-      const r = await api("/api/linkedin/unibox?action=block", {
-        method: "POST",
-        body: JSON.stringify({ profileId, accountId: selectedAccountId }),
+      const r = await api("/api/linkedin/unibox?action=update_lead", {
+        method: "PATCH",
+        body: JSON.stringify({ leadId: selectedLead.id, status: "ignored" }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error)
-      setActionMsg({ type: "success", text: "Perfil bloqueado en LinkedIn" })
+      setSelectedLead(prev => prev ? { ...prev, status: "ignored" } : prev)
+      setActionMsg({ type: "success", text: "Contacto archivado en EficacIA" })
       setTimeout(() => setActionMsg(null), 4000)
     } catch (e: any) {
-      setActionMsg({ type: "error", text: e.message || "Error al bloquear" })
+      setActionMsg({ type: "error", text: e.message || "Error al archivar" })
       setTimeout(() => setActionMsg(null), 4000)
     } finally {
       setBlockLoading(false)
@@ -814,42 +817,18 @@ export default function UniboxPage() {
                 )}
               </div>
 
-              {/* Pause / Resume sequence toggle */}
-              {selectedLead && (
-                <button
-                  onClick={toggleSequence}
-                  disabled={sequenceSaving}
-                  title={selectedLead.sequence_paused ? "Reanudar secuencia" : "Pausar secuencia"}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                    selectedLead.sequence_paused
-                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25"
-                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20"
-                  } disabled:opacity-50`}
-                >
-                  {sequenceSaving
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : selectedLead.sequence_paused
-                    ? <PlayCircle className="w-3.5 h-3.5" />
-                    : <PauseCircle className="w-3.5 h-3.5" />
-                  }
-                  <span className="hidden lg:inline">
-                    {selectedLead.sequence_paused ? "Reanudar" : "Pausar"}
-                  </span>
-                </button>
-              )}
-
-              {/* Block button */}
+              {/* Block / Archive button */}
               <button
                 onClick={handleBlock}
-                disabled={blockLoading}
-                title="Bloquear perfil en LinkedIn"
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/40 transition-colors disabled:opacity-50"
+                disabled={blockLoading || !selectedLead}
+                title="Archivar/Ignorar este contacto en EficacIA"
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-colors disabled:opacity-50"
               >
                 {blockLoading
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <ShieldBan className="w-3.5 h-3.5" />
                 }
-                <span className="hidden lg:inline">Bloquear</span>
+                <span className="hidden lg:inline">Archivar</span>
               </button>
             </div>
           </div>

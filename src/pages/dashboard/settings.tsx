@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2 } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Trash2, PencilLine } from "lucide-react"
 import { useTheme } from "@/src/contexts/ThemeContext"
 
 export default function SettingsPage() {
@@ -15,11 +15,102 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = React.useState<string | null>(null)
   const [isLoadingKey, setIsLoadingKey] = React.useState(false)
 
+  // Change password state
+  const [newPassword, setNewPassword] = React.useState("")
+  const [confirmPassword, setConfirmPassword] = React.useState("")
+  const [pwdLoading, setPwdLoading] = React.useState(false)
+  const [pwdError, setPwdError] = React.useState<string | null>(null)
+  const [pwdSuccess, setPwdSuccess] = React.useState(false)
+
+  // Auto-withdraw state
+  interface AWAccount { id: string; profile_name: string; username: string; unipile_account_id?: string; auto_withdraw_invites: boolean; withdraw_after_days: number }
+  const [awAccounts, setAwAccounts] = React.useState<AWAccount[]>([])
+  const [awLoading, setAwLoading] = React.useState(false)
+  const [awSaving, setAwSaving] = React.useState<Record<string, boolean>>({})
+  const [awRunning, setAwRunning] = React.useState<Record<string, boolean>>({})
+  const [awMsg, setAwMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
+
+  // AI assistant prompts state (localStorage)
+  interface AIPrompt { id: string; name: string; content: string }
+  const [prompts, setPrompts] = React.useState<AIPrompt[]>(() => {
+    try { return JSON.parse(localStorage.getItem("eficacia_ai_prompts") || "[]") } catch { return [] }
+  })
+  const [promptName, setPromptName] = React.useState("")
+  const [promptContent, setPromptContent] = React.useState("")
+  const [editingPromptId, setEditingPromptId] = React.useState<string | null>(null)
+
+  const token = () => localStorage.getItem("auth_token")
+  const envUrl = import.meta.env.VITE_API_URL || ""
+
   React.useEffect(() => {
     if (activeTab === "extension") {
       fetchApiKey()
     }
+    if (activeTab === "auto-withdraw") {
+      loadAWAccounts()
+    }
   }, [activeTab])
+
+  const loadAWAccounts = async () => {
+    try {
+      setAwLoading(true)
+      const res = await fetch(`${envUrl}/api/linkedin/accounts`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAwAccounts((data.accounts || []).map((a: any) => ({
+          id: a.id,
+          profile_name: a.profile_name,
+          username: a.username,
+          unipile_account_id: a.unipile_account_id,
+          auto_withdraw_invites: a.auto_withdraw_invites ?? false,
+          withdraw_after_days: a.withdraw_after_days ?? 15,
+        })))
+      }
+    } catch { /* silent */ }
+    finally { setAwLoading(false) }
+  }
+
+  const saveAWSettings = async (acc: AWAccount) => {
+    try {
+      setAwSaving(prev => ({ ...prev, [acc.id]: true }))
+      const res = await fetch(`${envUrl}/api/linkedin/accounts?id=${acc.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_withdraw_invites: acc.auto_withdraw_invites, withdraw_after_days: acc.withdraw_after_days }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setAwMsg({ type: "success", text: `✓ ${acc.profile_name}: auto-withdraw ${acc.auto_withdraw_invites ? "activado" : "desactivado"}` })
+      setTimeout(() => setAwMsg(null), 4000)
+    } catch (e: any) {
+      setAwMsg({ type: "error", text: e.message })
+      setTimeout(() => setAwMsg(null), 4000)
+    } finally {
+      setAwSaving(prev => ({ ...prev, [acc.id]: false }))
+    }
+  }
+
+  const runWithdrawNow = async (acc: AWAccount) => {
+    try {
+      setAwRunning(prev => ({ ...prev, [acc.id]: true }))
+      const query = acc.unipile_account_id ? `?accountId=${acc.unipile_account_id}` : ""
+      const res = await fetch(`${envUrl}/api/linkedin/accounts?action=withdraw${query ? "&accountId=" + acc.unipile_account_id : ""}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setAwMsg({ type: "success", text: data.message || `${data.totalWithdrawn || 0} invitaciones retiradas` })
+      setTimeout(() => setAwMsg(null), 5000)
+    } catch (e: any) {
+      setAwMsg({ type: "error", text: e.message })
+      setTimeout(() => setAwMsg(null), 4000)
+    } finally {
+      setAwRunning(prev => ({ ...prev, [acc.id]: false }))
+    }
+  }
 
   const fetchApiKey = async () => {
     try {
@@ -71,7 +162,9 @@ export default function SettingsPage() {
         {[
           { key: "profile", label: "Perfil" }, 
           { key: "extension", label: "Extensión Eficacia", badge: "Nueva" }, 
-          { key: "billing", label: "Facturación" }
+          { key: "billing", label: "Facturación" },
+          { key: "auto-withdraw", label: "Auto-Withdraw" },
+          { key: "ai-assistant", label: "IA Assistant" },
         ].map(({ key, label, badge }) => (
           <button
             key={key}
@@ -178,35 +271,344 @@ export default function SettingsPage() {
       )}
 
       {activeTab === "profile" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Información Personal</CardTitle>
-            <CardDescription>Actualiza tus datos de contacto.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Nombre</label>
-                <Input defaultValue="Tomás" />
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Información Personal</CardTitle>
+              <CardDescription>Actualiza tus datos de contacto.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Nombre</label>
+                  <Input defaultValue="Tomás" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Apellidos</label>
+                  <Input defaultValue="Navarro Sarda" />
+                </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Apellidos</label>
-                <Input defaultValue="Navarro Sarda" />
+                <label className="text-sm font-medium text-slate-300">Email</label>
+                <Input defaultValue="tomasnivraone@gmail.com" disabled className="bg-slate-900/50 text-slate-500" />
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300">Email</label>
-              <Input defaultValue="tomasnivraone@gmail.com" disabled className="bg-slate-900/50 text-slate-500" />
-            </div>
-            <Button className="mt-4">Guardar Cambios</Button>
-          </CardContent>
-        </Card>
+              <Button className="mt-4">Guardar Cambios</Button>
+            </CardContent>
+          </Card>
+
+          {/* Change Password */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-slate-400" />
+                <CardTitle>Cambiar Contraseña</CardTitle>
+              </div>
+              <CardDescription>Actualiza tu contraseña de acceso a la plataforma.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pwdError && (
+                <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {pwdError}
+                </div>
+              )}
+              {pwdSuccess && (
+                <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" /> Contraseña actualizada correctamente.
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Nueva contraseña</label>
+                <Input
+                  type="password"
+                  placeholder="Mínimo 8 caracteres"
+                  value={newPassword}
+                  onChange={e => { setNewPassword(e.target.value); setPwdError(null); setPwdSuccess(false) }}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Confirmar contraseña</label>
+                <Input
+                  type="password"
+                  placeholder="Repite la contraseña"
+                  value={confirmPassword}
+                  onChange={e => { setConfirmPassword(e.target.value); setPwdError(null) }}
+                />
+              </div>
+              <Button
+                disabled={pwdLoading || !newPassword || !confirmPassword}
+                onClick={async () => {
+                  if (newPassword !== confirmPassword) { setPwdError("Las contraseñas no coinciden"); return }
+                  if (newPassword.length < 8) { setPwdError("Mínimo 8 caracteres"); return }
+                  setPwdLoading(true); setPwdError(null)
+                  try {
+                    const res = await fetch(`${envUrl}/api/auth/change-password`, {
+                      method: "POST",
+                      headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+                      body: JSON.stringify({ newPassword }),
+                    })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error)
+                    setPwdSuccess(true); setNewPassword(""); setConfirmPassword("")
+                  } catch (e: any) { setPwdError(e.message) }
+                  finally { setPwdLoading(false) }
+                }}
+                className="gap-2"
+              >
+                {pwdLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Lock className="w-4 h-4" /> Cambiar Contraseña</>}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {activeTab === "billing" && (
         <Card className="p-8 flex flex-col items-center justify-center gap-4 border-dashed border-slate-700 bg-slate-900/20">
           <p className="text-slate-400">Gestión de facturación próximamente.</p>
         </Card>
+      )}
+
+      {/* ─── AUTO-WITHDRAW TAB ────────────────────────────────────── */}
+      {activeTab === "auto-withdraw" && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-100">Auto-Withdraw de Invitaciones</h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Retira automáticamente las invitaciones de conexión enviadas que no han sido aceptadas.
+              Mantiene tu índice de aceptación saludable en LinkedIn.
+            </p>
+          </div>
+
+          {awMsg && (
+            <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+              awMsg.type === "success"
+                ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                : "text-red-400 bg-red-500/10 border-red-500/20"
+            }`}>
+              {awMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              {awMsg.text}
+            </div>
+          )}
+
+          {awLoading ? (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Cargando cuentas...</span>
+            </div>
+          ) : awAccounts.length === 0 ? (
+            <Card className="p-8 flex flex-col items-center justify-center gap-3 border-dashed border-slate-700 text-center">
+              <Timer className="w-10 h-10 text-slate-600" />
+              <p className="text-slate-400">No hay cuentas de LinkedIn conectadas.</p>
+              <Button variant="outline" size="sm" asChild>
+                <a href="/dashboard/accounts">Conectar cuenta</a>
+              </Button>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {awAccounts.map(acc => (
+                <Card key={acc.id} className="border-slate-800 bg-slate-900/40">
+                  <CardContent className="pt-6 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-100">{acc.profile_name || acc.username}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">@{acc.username}</p>
+                      </div>
+                      {/* Toggle */}
+                      <button
+                        onClick={() => setAwAccounts(prev => prev.map(a =>
+                          a.id === acc.id ? { ...a, auto_withdraw_invites: !a.auto_withdraw_invites } : a
+                        ))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          acc.auto_withdraw_invites ? "bg-emerald-500" : "bg-slate-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform shadow-sm ${
+                          acc.auto_withdraw_invites ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+
+                    <div className={`space-y-4 transition-opacity ${
+                      !acc.auto_withdraw_invites ? "opacity-40 pointer-events-none" : ""
+                    }`}>
+                      <div className="bg-slate-800/60 rounded-lg p-3 text-xs text-slate-400 border border-slate-700/50">
+                        Retira invitaciones enviadas hace más de <strong className="text-slate-200">{acc.withdraw_after_days} días</strong> sin respuesta.
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm text-slate-300 font-medium">Retirar después de</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number" min={3} max={90}
+                              value={acc.withdraw_after_days}
+                              onChange={e => setAwAccounts(prev => prev.map(a =>
+                                a.id === acc.id
+                                  ? { ...a, withdraw_after_days: Math.min(90, Math.max(3, parseInt(e.target.value) || 15)) }
+                                  : a
+                              ))}
+                              className="w-16 text-center bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                            <span className="text-xs text-slate-500">días sin aceptar</span>
+                          </div>
+                        </div>
+                        <input
+                          type="range" min={3} max={90} step={1}
+                          value={acc.withdraw_after_days}
+                          onChange={e => setAwAccounts(prev => prev.map(a =>
+                            a.id === acc.id ? { ...a, withdraw_after_days: parseInt(e.target.value) } : a
+                          ))}
+                          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                          style={{ background: `linear-gradient(to right, #10b981 0%, #10b981 ${((acc.withdraw_after_days - 3) / 87) * 100}%, #374151 ${((acc.withdraw_after_days - 3) / 87) * 100}%, #374151 100%)` }}
+                        />
+                        <div className="flex justify-between text-xs text-slate-600">
+                          <span>3 días</span>
+                          <span className="text-emerald-500/70">15 — Recomendado</span>
+                          <span>90 días</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2 border-t border-slate-800">
+                      <Button
+                        size="sm" variant="ghost"
+                        disabled={awRunning[acc.id] || !acc.auto_withdraw_invites || !acc.unipile_account_id}
+                        onClick={() => runWithdrawNow(acc)}
+                        className="text-slate-400 text-xs gap-1.5"
+                        title={!acc.unipile_account_id ? "Requiere cuenta Unipile conectada" : ""}
+                      >
+                        {awRunning[acc.id]
+                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ejecutando...</>
+                          : <><Timer className="w-3.5 h-3.5" /> Ejecutar ahora</>
+                        }
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={awSaving[acc.id]}
+                        onClick={() => saveAWSettings(acc)}
+                        className="ml-auto gap-1.5"
+                      >
+                        {awSaving[acc.id]
+                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Guardando...</>
+                          : "Guardar"
+                        }
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── AI ASSISTANT TAB ─────────────────────────────────────── */}
+      {activeTab === "ai-assistant" && (
+        <div className="space-y-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-400" />
+              <h3 className="text-lg font-semibold text-slate-100">Prompts Personalizados</h3>
+            </div>
+            <p className="text-sm text-slate-400 mt-1">
+              Define el contexto y tono que el EficacIA Assistant usará como base en todas tus conversaciones.
+              Se guardan localmente en tu navegador.
+            </p>
+          </div>
+
+          {/* Create / Edit form */}
+          <Card className="border-violet-500/20 bg-violet-500/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-violet-300 text-sm">
+                {editingPromptId ? "Editar Prompt" : "Nuevo Prompt"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-400">Nombre del prompt</label>
+                <Input
+                  placeholder="Ej: Tono directo y profesional"
+                  value={promptName}
+                  onChange={e => setPromptName(e.target.value)}
+                  className="bg-slate-900 border-slate-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-400">Contenido / Instrucciones</label>
+                <textarea
+                  rows={4}
+                  placeholder="Ej: Responde siempre de forma directa y concisa. Evita los saludos genéricos. El tono debe ser profesional pero cercano..."
+                  value={promptContent}
+                  onChange={e => setPromptContent(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                {editingPromptId && (
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    setEditingPromptId(null); setPromptName(""); setPromptContent("")
+                  }}>Cancelar</Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={!promptName.trim() || !promptContent.trim()}
+                  className="gap-2 bg-violet-600 hover:bg-violet-700"
+                  onClick={() => {
+                    const updated: AIPrompt[] = editingPromptId
+                      ? prompts.map(p => p.id === editingPromptId ? { id: p.id, name: promptName.trim(), content: promptContent.trim() } : p)
+                      : [...prompts, { id: Date.now().toString(), name: promptName.trim(), content: promptContent.trim() }]
+                    setPrompts(updated)
+                    localStorage.setItem("eficacia_ai_prompts", JSON.stringify(updated))
+                    setPromptName(""); setPromptContent(""); setEditingPromptId(null)
+                  }}
+                >
+                  <PencilLine className="w-3.5 h-3.5" />
+                  {editingPromptId ? "Guardar Cambios" : "Añadir Prompt"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Prompts list */}
+          {prompts.length === 0 ? (
+            <Card className="p-8 flex flex-col items-center gap-3 border-dashed border-slate-700 text-center">
+              <Sparkles className="w-10 h-10 text-slate-600" />
+              <p className="text-slate-400 text-sm">No hay prompts guardados. Crea el primero arriba.</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {prompts.map(p => (
+                <Card key={p.id} className="border-slate-800 bg-slate-900/40">
+                  <CardContent className="pt-5 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-100 text-sm">{p.name}</p>
+                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">{p.content}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => { setEditingPromptId(p.id); setPromptName(p.name); setPromptContent(p.content) }}
+                          className="text-slate-500 hover:text-violet-400 p-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
+                        >
+                          <PencilLine className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const updated = prompts.filter(x => x.id !== p.id)
+                            setPrompts(updated)
+                            localStorage.setItem("eficacia_ai_prompts", JSON.stringify(updated))
+                          }}
+                          className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

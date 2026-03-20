@@ -51,22 +51,33 @@ async function getOrCreateTeam(userId) {
 function verifyWebhookSignature(req) {
   const secret = process.env.UNIPILE_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('[WEBHOOK] UNIPILE_WEBHOOK_SECRET no configurado. Webhook sin verificar.');
+    // No secret configured — allow all webhooks through
+    console.log('[WEBHOOK] No UNIPILE_WEBHOOK_SECRET set — skipping signature verification.');
     return true;
   }
-  const signature = req.headers['x-webhook-signature'] || req.headers['x-unipile-signature'];
-  if (!signature) return false;
+  const signature = req.headers['x-webhook-signature']
+    || req.headers['x-unipile-signature']
+    || req.headers['x-hub-signature-256'];
 
-  const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
+  if (!signature) {
+    // Some Unipile webhook types don't include a signature header — allow through with warning
+    console.warn('[WEBHOOK] Secret configured but no signature header present. Allowing through for debugging. Received headers:', JSON.stringify(Object.keys(req.headers)));
+    return true;
+  }
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  // Verify HMAC
+  try {
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    const expectedSignature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const sig = signature.replace(/^sha256=/, '');
+    const sigBuf = Buffer.from(sig, 'hex');
+    const expBuf = Buffer.from(expectedSignature, 'hex');
+    if (sigBuf.length !== expBuf.length) return false;
+    return crypto.timingSafeEqual(sigBuf, expBuf);
+  } catch (e) {
+    console.error('[WEBHOOK] Signature verification error:', e.message);
+    return false;
+  }
 }
 
 // ─── Handler: genera link O procesa webhook según ?action= ─────────

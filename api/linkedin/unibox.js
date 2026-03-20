@@ -113,6 +113,7 @@ export default async function handler(req, res) {
               chat.attendees_enriched = attendeeList.map(a => ({
                 id: a.id,
                 provider_id: a.provider_id,
+                public_identifier: a.public_identifier || a.username || null,
                 name: a.name || a.display_name || null,
                 picture_url: a.picture_url || a.avatar_url || null,
                 is_self: a.is_self || false,
@@ -251,36 +252,79 @@ export default async function handler(req, res) {
     }
   }
 
-  // ─── POST block a LinkedIn profile ───────────────────────────────
-  if (req.method === 'POST' && action === 'block') {
-    const { profileId, accountId } = req.body;
-    if (!profileId || !accountId) return res.status(400).json({ error: 'Faltan profileId o accountId' });
+  // ─── POST upsert_lead — find or create a lead from Unibox ─────────
+  if (req.method === 'POST' && action === 'upsert_lead') {
+    const { providerId, name, publicIdentifier } = req.body;
+    if (!providerId) return res.status(400).json({ error: 'Falta providerId' });
 
-    // Verify account belongs to team
-    const { data: acc } = await supabaseAdmin
-      .from('linkedin_accounts')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('unipile_account_id', accountId)
-      .single();
-    if (!acc) return res.status(403).json({ error: 'Cuenta no autorizada' });
+    // Build profile URL if we have the public identifier
+    const profileUrl = publicIdentifier
+      ? `https://www.linkedin.com/in/${publicIdentifier}/`
+      : null;
 
-    try {
-      const r = await fetch(`${unipileBase()}/api/v1/users/${profileId}/block`, {
-        method: 'POST',
-        headers: unipileHeaders(),
-        body: JSON.stringify({ account_id: accountId }),
-      });
-      if (!r.ok) {
-        const err = await r.text();
-        console.error('[UNIBOX][block]', r.status, err);
-        return res.status(r.status).json({ error: 'Error bloqueando perfil en Unipile' });
-      }
-      return res.status(200).json({ success: true });
-    } catch (e) {
-      console.error('[UNIBOX][block] excepción:', e);
-      return res.status(500).json({ error: 'Error de red con Unipile' });
+    // Search by URL first (most reliable), then by provider_id as fallback
+    let existingLead = null;
+    if (profileUrl) {
+      const { data } = await supabaseAdmin
+        .from('leads')
+        .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
+        .ilike('linkedin_profile_url', `%${publicIdentifier}%`)
+        .eq('team_id', teamId)
+        .limit(1);
+      existingLead = data?.[0] || null;
     }
+    if (!existingLead) {
+      const { data } = await supabaseAdmin
+        .from('leads')
+        .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
+        .ilike('linkedin_profile_url', `%${providerId}%`)
+        .eq('team_id', teamId)
+        .limit(1);
+      existingLead = data?.[0] || null;
+    }
+
+    if (existingLead) {
+      return res.status(200).json({ lead: existingLead, created: false });
+    }
+
+    // Create a minimal orphan lead (campaign_id is nullable after migration)
+    const { data: newLead, error } = await supabaseAdmin
+      .from('leads')
+      .insert({
+        team_id: teamId,
+        campaign_id: null,
+        name: name || 'Desconocido',
+        linkedin_profile_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
+        status: 'sent',
+        tags: [],
+        sequence_paused: false,
+      })
+      .select('id, tags, sequence_paused, name, linkedin_profile_url, status')
+      .single();
+
+    if (error) {
+      console.error('[UNIBOX][upsert_lead]', error.message);
+      return res.status(200).json({ lead: null, created: false, error: error.message });
+    }
+    return res.status(200).json({ lead: newLead, created: true });
+  }
+
+  // ─── POST ignore/archive — update lead status to ignored ─────────
+  if (req.method === 'POST' && action === 'block') {
+    // Renamed behaviour: no longer calls Unipile block; just marks lead as ignored in DB
+    const { leadId } = req.body;
+    if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
+
+    const { data: lead, error } = await supabaseAdmin
+      .from('leads')
+      .update({ status: 'ignored' })
+      .eq('id', leadId)
+      .eq('team_id', teamId)
+      .select('id, status')
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ success: true, lead });
   }
 
   // ─── GET lead data by provider_id (attendee) ─────────────────────
@@ -301,14 +345,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ lead: leads[0] });
   }
 
-  // ─── PATCH update lead (tags / sequence_paused) ───────────────────
+  // ─── PATCH update lead (tags / sequence_paused / status) ─────────
   if (req.method === 'PATCH' && action === 'update_lead') {
-    const { leadId, tags, sequence_paused } = req.body;
+    const { leadId, tags, sequence_paused, status } = req.body;
     if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
 
     const updates = {};
     if (tags !== undefined) updates.tags = tags;
     if (sequence_paused !== undefined) updates.sequence_paused = sequence_paused;
+    if (status !== undefined) updates.status = status;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No hay campos para actualizar' });
@@ -318,7 +363,8 @@ export default async function handler(req, res) {
       .from('leads')
       .update(updates)
       .eq('id', leadId)
-      .select('id, tags, sequence_paused')
+      .eq('team_id', teamId)
+      .select('id, tags, sequence_paused, status')
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
