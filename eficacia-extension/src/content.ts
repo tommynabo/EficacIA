@@ -374,7 +374,8 @@ function waitForApolloRows(timeoutMs = 20000): Promise<void> {
   const isReady = () =>
     !!document.querySelector('a[href*="linkedin.com"]') ||
     !!document.querySelector('table tbody tr') ||
-    !!document.querySelector('[role="row"]');
+    !!document.querySelector('[role="row"]') ||
+    !!document.querySelector('.zp_accordion_row, .zp_baseRow, [class*="Row"]');
 
   return new Promise(resolve => {
     if (isReady()) {
@@ -443,10 +444,13 @@ function extractApolloLeads(): Lead[] {
       if (seen.has(linkedin_url)) continue;
       seen.add(linkedin_url);
 
-      // STEP 2: Climb to the row container using .closest()
+      // STEP 2: Climb to the row container — Apollo uses divs (.zp_baseRow, etc.)
       const row =
+        anchor.closest('.zp_accordion_row') ||
+        anchor.closest('.zp_baseRow') ||
         anchor.closest('tr') ||
         anchor.closest('[role="row"]') ||
+        anchor.closest('div[class*="Row"]') ||
         climbToRowContainer(anchor);
 
       if (!row) {
@@ -517,9 +521,10 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
     }
   }
 
-  // Fallback: first <td> with uppercase-starting content
+  // Fallback: first cell-like element (td OR direct child div) with uppercase content
   if (!fullName) {
-    for (const cell of row.querySelectorAll('td')) {
+    const cellLike = row.querySelectorAll('td, > div');
+    for (const cell of cellLike) {
       const text = (cell.textContent?.trim() ?? '').split('\n')[0].trim();
       if (text.length > 2 && text.length < 60 && /^[A-Z\u00C0-\u00DC]/.test(text) && !/[@\d]/.test(text.charAt(0))) {
         fullName = text;
@@ -534,7 +539,11 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
   if (!first_name) return null;
 
   // ── Job Title & Company ──
-  const cells = Array.from(row.querySelectorAll('td'));
+  // Apollo uses divs as cells — try <td> first, fall back to direct child <div>s
+  let cells = Array.from(row.querySelectorAll('td'));
+  if (cells.length < 2) {
+    cells = Array.from(row.querySelectorAll(':scope > div'));
+  }
   let job_title = '';
   let company = '';
 
@@ -556,7 +565,8 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
 
   // ── Email (if unlocked/visible) ──
   let email: string | undefined;
-  for (const cell of cells) {
+  const allCells = cells.length > 0 ? cells : Array.from(row.querySelectorAll('td, > div'));
+  for (const cell of allCells) {
     const text = cell.textContent?.trim() ?? '';
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
       email = text;
@@ -570,6 +580,10 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
 // ─── Apollo Pagination ──────────────────────────────────────────────────────
 
 async function goToNextApolloPage(): Promise<boolean> {
+  // Scroll to bottom first — forces lazy-loading of pagination controls
+  window.scrollTo(0, document.body.scrollHeight);
+  await sleep(1000);
+
   const nextBtn = findApolloNextButton();
   if (!nextBtn) {
     console.log('[EficacIA MegaFix] Apollo: next button not found');
@@ -578,7 +592,7 @@ async function goToNextApolloPage(): Promise<boolean> {
 
   console.log('[EficacIA MegaFix] Apollo: clicking Next page...');
   const previousUrl = window.location.href;
-  const previousFirstRow = document.querySelector('table tbody tr, [role="row"]');
+  const previousFirstRow = document.querySelector('table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow');
 
   nextBtn.click();
   await waitForApolloPageTransition(previousFirstRow, previousUrl);
@@ -587,32 +601,73 @@ async function goToNextApolloPage(): Promise<boolean> {
 }
 
 function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
-  const byAttr = document.querySelector<HTMLButtonElement | HTMLAnchorElement>(
-    'button[data-cy="next-page-button"], ' +
-    'button[aria-label="next page"], ' +
-    'button[aria-label="Next page"], ' +
-    'a[aria-label="next page"], ' +
-    'button[title="Next page"]'
-  );
-  if (byAttr && !byAttr.hasAttribute('disabled') && byAttr.getAttribute('aria-disabled') !== 'true') {
-    return byAttr;
+  // 1. Direct aria-label / data-cy match
+  const directSelectors = [
+    'button[data-cy="next-page-button"]',
+    'button[aria-label="next page"]',
+    'button[aria-label="Next page"]',
+    'button[aria-label="Next Page"]',
+    'a[aria-label="next page"]',
+    'button[title="Next page"]',
+    'button[title="Next Page"]',
+  ];
+  for (const sel of directSelectors) {
+    const btn = document.querySelector<HTMLButtonElement | HTMLAnchorElement>(sel);
+    if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
+      console.log('[EficacIA MegaFix] Apollo: next btn found via', sel);
+      return btn;
+    }
   }
 
-  const containers = document.querySelectorAll('[class*="pagination"], [class*="Pagination"], [role="navigation"]');
+  // 2. Apollo-specific: icon button with chevron-right / right-arrow
+  const iconBtns = document.querySelectorAll<HTMLButtonElement>(
+    'button:has(i[class*="chevron-right"]), ' +
+    'button:has(i[class*="arrow-right"]), ' +
+    'button:has(svg[class*="right"]), ' +
+    '.zp-button:has(.zp-icon-chevron-right)'
+  );
+  for (const btn of iconBtns) {
+    if (!btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+      console.log('[EficacIA MegaFix] Apollo: next btn found via icon chevron-right');
+      return btn;
+    }
+  }
+
+  // 3. Pagination containers — look for next-like buttons
+  const containers = document.querySelectorAll('[class*="pagination"], [class*="Pagination"], [role="navigation"], [class*="pager"]');
   for (const container of containers) {
-    const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('button, a')];
     const nextLike = buttons.find(b => {
-      if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+      if ((b as HTMLButtonElement).disabled || b.getAttribute('aria-disabled') === 'true') return false;
       const text = b.textContent?.trim() ?? '';
       const label = (b.getAttribute('aria-label') ?? '').toLowerCase();
-      return text === '>' || text === '\u203A' || text === '\u00BB' || label.includes('next');
+      const cls = (b.className ?? '').toLowerCase();
+      return text === '>' || text === '\u203A' || text === '\u00BB' || label.includes('next') || cls.includes('next');
     });
-    if (nextLike) return nextLike;
+    if (nextLike) {
+      console.log('[EficacIA MegaFix] Apollo: next btn found in pagination container');
+      return nextLike as HTMLButtonElement;
+    }
 
+    // Last enabled button in pagination is usually "next"
     const last = [...buttons].reverse().find(
-      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true'
+      b => !(b as HTMLButtonElement).disabled && b.getAttribute('aria-disabled') !== 'true'
     );
-    if (last) return last;
+    if (last) {
+      console.log('[EficacIA MegaFix] Apollo: next btn — using last enabled in pagination');
+      return last as HTMLButtonElement;
+    }
+  }
+
+  // 4. Brute-force: any button whose inner <i> has "right" in class or whose parent is near page numbers
+  const allButtons = document.querySelectorAll<HTMLButtonElement>('button');
+  for (const btn of allButtons) {
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+    const icon = btn.querySelector('i, svg');
+    if (icon && /(right|forward|next)/i.test(icon.className)) {
+      console.log('[EficacIA MegaFix] Apollo: next btn found via brute-force icon scan');
+      return btn;
+    }
   }
 
   return null;
@@ -638,7 +693,7 @@ function waitForApolloPageTransition(
 
     const check = () => {
       if (window.location.href !== previousUrl) { done(); return; }
-      const current = document.querySelector('table tbody tr, [role="row"]');
+      const current = document.querySelector('table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow');
       if (!current) { done(); return; }
       if (current !== previousFirstRow) done();
     };

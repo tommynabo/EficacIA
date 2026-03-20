@@ -575,25 +575,34 @@ export default async function handler(req, res) {
     const { type, leads, campaign_id, url, account_id, lead, limit = 25, filters, apollo_query, li_at: bodyLiAt } = req.body || {};
     const importType = type || (Array.isArray(leads) ? 'csv' : 'unknown');
 
-    console.log('[BULK-IMPORT] POST type:', importType, '| has account_id:', !!account_id);
+    console.log('[BULK-IMPORT] POST type:', importType, '| campaign_id:', campaign_id || '(none)', '| account_id:', account_id || '(none)');
 
     if (!importType || importType === 'unknown') {
       return res.status(400).json({ error: 'Tipo de importación no especificado' });
     }
 
-    // ── Resolve accountId from campaign if not provided ─────────────────────
+    // ── Resolve accountId: account_id is OPTIONAL when campaign_id is present ──
     let resolvedAccountId = account_id || null;
     if (!resolvedAccountId && campaign_id) {
-      const { data: camp } = await supabaseAdmin
-        .from('campaigns')
-        .select('account_id')
-        .eq('id', campaign_id)
-        .single();
-      if (camp?.account_id) {
-        resolvedAccountId = camp.account_id;
-        console.log('[BULK-IMPORT] Auto-resolved account_id from campaign:', resolvedAccountId);
+      try {
+        const { data: camp, error: campError } = await supabaseAdmin
+          .from('campaigns')
+          .select('account_id')
+          .eq('id', campaign_id)
+          .single();
+        if (campError) {
+          console.warn('[BULK-IMPORT] Campaign lookup warning:', campError.message);
+        }
+        if (camp?.account_id) {
+          resolvedAccountId = camp.account_id;
+          console.log('[BULK-IMPORT] Auto-resolved account_id from campaign:', resolvedAccountId);
+        }
+      } catch (e) {
+        console.warn('[BULK-IMPORT] Campaign lookup exception:', e.message);
       }
     }
+    // account_id can stay null for csv/extension imports — only sales_navigator needs it
+    console.log('[BULK-IMPORT] resolvedAccountId:', resolvedAccountId || '(none — OK for csv/extension)');
 
     // ── Get or create team ──────────────────────────────────────────────────
     let teamId;
