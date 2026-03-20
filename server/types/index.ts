@@ -18,6 +18,8 @@ export interface LinkedInAccount {
   last_validated_at?: string;
   created_at: string;
   updated_at: string;
+  auto_withdraw_invites: boolean;
+  withdraw_after_days: number;
 }
 
 export interface Campaign {
@@ -55,6 +57,8 @@ export interface Lead {
   created_at: string;
   sent_at?: string;
   updated_at: string;
+  tags: string[];
+  sequence_paused: boolean;
 }
 
 export interface ActionLog {

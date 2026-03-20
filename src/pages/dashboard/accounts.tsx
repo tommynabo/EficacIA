@@ -4,7 +4,7 @@ import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key, Linkedin, Zap, ShieldAlert } from "lucide-react"
+import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key, Linkedin, Zap, ShieldAlert, Timer } from "lucide-react"
 import ConnectLinkedInButton from "@/src/components/connect-linkedin-button"
 
 const RISK_THRESHOLD = 15 // acciones/hora — por encima de esto se muestra la advertencia
@@ -18,6 +18,8 @@ interface LinkedInAccount {
   is_valid: boolean
   created_at: string
   max_actions_per_hour: number
+  auto_withdraw_invites: boolean
+  withdraw_after_days: number
 }
 
 type SessionStatus = "idle" | "starting" | "open" | "connected" | "error"
@@ -48,6 +50,13 @@ export default function AccountsPage() {
   const [throttleValue, setThrottleValue] = React.useState(5)
   const [throttleSaving, setThrottleSaving] = React.useState(false)
   const [showRiskModal, setShowRiskModal] = React.useState(false)
+
+  // Auto-withdraw state
+  const [withdrawAccount, setWithdrawAccount] = React.useState<LinkedInAccount | null>(null)
+  const [withdrawEnabled, setWithdrawEnabled] = React.useState(false)
+  const [withdrawDays, setWithdrawDays] = React.useState(15)
+  const [withdrawSaving, setWithdrawSaving] = React.useState(false)
+  const [withdrawRunning, setWithdrawRunning] = React.useState(false)
 
   const fetchAccounts = async () => {
     try {
@@ -315,6 +324,59 @@ export default function AccountsPage() {
     }
   }
 
+  const openWithdrawModal = (account: LinkedInAccount) => {
+    setWithdrawAccount(account)
+    setWithdrawEnabled(account.auto_withdraw_invites ?? false)
+    setWithdrawDays(account.withdraw_after_days ?? 15)
+  }
+
+  const saveWithdrawSettings = async () => {
+    if (!withdrawAccount) return
+    try {
+      setWithdrawSaving(true)
+      setError(null)
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch(`/api/linkedin/accounts?id=${withdrawAccount.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_withdraw_invites: withdrawEnabled, withdraw_after_days: withdrawDays }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error guardando configuración")
+      setAccounts(prev => prev.map(a =>
+        a.id === withdrawAccount.id
+          ? { ...a, auto_withdraw_invites: withdrawEnabled, withdraw_after_days: withdrawDays }
+          : a
+      ))
+      setSuccess(`✓ Auto-withdraw ${withdrawEnabled ? "activado" : "desactivado"} para ${withdrawAccount.profile_name || withdrawAccount.username}`)
+      setWithdrawAccount(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido")
+    } finally {
+      setWithdrawSaving(false)
+    }
+  }
+
+  const runWithdrawNow = async () => {
+    if (!withdrawAccount) return
+    try {
+      setWithdrawRunning(true)
+      setError(null)
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch(`/api/linkedin/invitations/withdraw?accountId=${withdrawAccount.unipile_account_id ?? ""}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error en auto-withdraw")
+      setSuccess(`✓ ${data.message || `${data.totalWithdrawn} invitaciones retiradas`}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error en auto-withdraw")
+    } finally {
+      setWithdrawRunning(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -374,6 +436,7 @@ export default function AccountsPage() {
               <TableHead>PERFIL</TableHead>
               <TableHead>ESTADO</TableHead>
               <TableHead>VELOCIDAD</TableHead>
+              <TableHead>AUTO-WITHDRAW</TableHead>
               <TableHead>CONECTADA</TableHead>
               <TableHead className="text-right">ACCIONES</TableHead>
             </TableRow>
@@ -385,13 +448,14 @@ export default function AccountsPage() {
                   <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-28 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
             ) : accounts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-16 text-slate-400">
+                <TableCell colSpan={6} className="text-center py-16 text-slate-400">
                   <Linkedin className="w-12 h-12 mx-auto mb-4 text-slate-600" />
                   <p className="mb-2 font-medium">No hay cuentas conectadas</p>
                   <p className="text-sm mb-4">Conecta tu LinkedIn de forma segura con Unipile</p>
@@ -435,6 +499,22 @@ export default function AccountsPage() {
                           </Badge>
                         )
                       })()}
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      onClick={() => openWithdrawModal(account)}
+                      className="flex items-center gap-1.5 group"
+                      title="Configurar auto-withdraw de invitaciones"
+                    >
+                      <Badge className={`gap-1 cursor-pointer transition-opacity group-hover:opacity-80 ${
+                        account.auto_withdraw_invites
+                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                          : "bg-slate-700/50 border-slate-600/50 text-slate-500"
+                      }`}>
+                        <Timer className="w-3 h-3" />
+                        {account.auto_withdraw_invites ? `${account.withdraw_after_days ?? 15}d` : "Off"}
+                      </Badge>
                     </button>
                   </TableCell>
                   <TableCell className="text-slate-300">
@@ -704,6 +784,112 @@ export default function AccountsPage() {
                 alt="LinkedIn browser"
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Auto-Withdraw de invitaciones */}
+      {withdrawAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <Timer className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-slate-100 text-sm">Auto-Withdraw de Invitaciones</h3>
+              </div>
+              <button onClick={() => setWithdrawAccount(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-5">
+              <p className="text-xs text-slate-400">
+                Cuenta: <span className="text-slate-300 font-medium">{withdrawAccount.profile_name || withdrawAccount.username}</span>
+              </p>
+
+              <div className="bg-slate-800/60 rounded-lg p-3 text-xs text-slate-400 border border-slate-700/50">
+                Retira automáticamente las invitaciones de conexión enviadas que no han sido aceptadas después del número de días configurado. Esto ayuda a mantener un índice de aceptación saludable en LinkedIn.
+              </div>
+
+              {/* Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-200 font-medium">Activar Auto-Withdraw</p>
+                  <p className="text-xs text-slate-500">Retira invitaciones antiguas automáticamente</p>
+                </div>
+                <button
+                  onClick={() => setWithdrawEnabled(e => !e)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    withdrawEnabled ? "bg-emerald-500" : "bg-slate-600"
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform shadow-sm ${
+                    withdrawEnabled ? "translate-x-6" : "translate-x-1"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Days selector */}
+              <div className={`space-y-3 transition-opacity ${!withdrawEnabled ? "opacity-40 pointer-events-none" : ""}`}>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-slate-400">Retirar después de</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={3}
+                      max={90}
+                      value={withdrawDays}
+                      onChange={e => setWithdrawDays(Math.min(90, Math.max(3, parseInt(e.target.value) || 15)))}
+                      className="w-16 text-center bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-xs text-slate-500">días sin aceptar</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={3}
+                  max={90}
+                  step={1}
+                  value={withdrawDays}
+                  onChange={e => setWithdrawDays(parseInt(e.target.value))}
+                  className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, #10b981 0%, #10b981 ${(withdrawDays / 90) * 100}%, #374151 ${(withdrawDays / 90) * 100}%, #374151 100%)`
+                  }}
+                />
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span>3 días</span>
+                  <span className="text-emerald-500/70">15 — Recomendado</span>
+                  <span>90 días</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-between pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={withdrawRunning || !withdrawEnabled}
+                  onClick={runWithdrawNow}
+                  className="gap-1.5 text-slate-400 text-xs"
+                >
+                  {withdrawRunning ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Ejecutando...</> : "▶ Ejecutar ahora"}
+                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setWithdrawAccount(null)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={withdrawSaving}
+                    onClick={saveWithdrawSettings}
+                    className="gap-1.5"
+                  >
+                    {withdrawSaving ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Guardando...</> : "Guardar"}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

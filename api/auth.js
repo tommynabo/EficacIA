@@ -13,6 +13,7 @@ export default async function handler(req, res) {
   if (action === 'login') return handleLogin(req, res);
   if (action === 'register') return handleRegister(req, res);
   if (action === 'me') return handleMe(req, res);
+  if (action === 'reset-password') return handleResetPassword(req, res);
 
   return res.status(400).json({ error: 'Acción no válida' });
 }
@@ -142,5 +143,40 @@ async function handleMe(req, res) {
   } catch (error) {
     console.error('Me error:', error);
     return res.status(500).json({ error: 'Error obteniendo usuario' });
+  }
+}
+
+// ─── RESET PASSWORD ───────────────────────────────────────────────
+
+async function handleResetPassword(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'Email inválido' });
+  }
+
+  try {
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host;
+    const redirectTo = `${protocol}://${host}/reset-password`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo,
+    });
+
+    // Always return success to avoid email enumeration attacks
+    if (error) {
+      console.error('[RESET-PASSWORD]', error.message);
+    }
+
+    return res.status(200).json({
+      message: 'Si existe una cuenta con ese email, recibirás un correo con instrucciones.',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({ error: 'Error al procesar la solicitud' });
   }
 }

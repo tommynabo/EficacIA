@@ -251,5 +251,79 @@ export default async function handler(req, res) {
     }
   }
 
+  // ─── POST block a LinkedIn profile ───────────────────────────────
+  if (req.method === 'POST' && action === 'block') {
+    const { profileId, accountId } = req.body;
+    if (!profileId || !accountId) return res.status(400).json({ error: 'Faltan profileId o accountId' });
+
+    // Verify account belongs to team
+    const { data: acc } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('unipile_account_id', accountId)
+      .single();
+    if (!acc) return res.status(403).json({ error: 'Cuenta no autorizada' });
+
+    try {
+      const r = await fetch(`${unipileBase()}/api/v1/users/${profileId}/block`, {
+        method: 'POST',
+        headers: unipileHeaders(),
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      if (!r.ok) {
+        const err = await r.text();
+        console.error('[UNIBOX][block]', r.status, err);
+        return res.status(r.status).json({ error: 'Error bloqueando perfil en Unipile' });
+      }
+      return res.status(200).json({ success: true });
+    } catch (e) {
+      console.error('[UNIBOX][block] excepción:', e);
+      return res.status(500).json({ error: 'Error de red con Unipile' });
+    }
+  }
+
+  // ─── GET lead data by provider_id (attendee) ─────────────────────
+  if (req.method === 'GET' && action === 'get_lead') {
+    const { providerId } = req.query;
+    if (!providerId) return res.status(400).json({ error: 'Falta providerId' });
+
+    // Look up lead by linkedin_profile_url containing the provider_id
+    const { data: leads } = await supabaseAdmin
+      .from('leads')
+      .select('id, tags, sequence_paused, name, linkedin_profile_url')
+      .ilike('linkedin_profile_url', `%${providerId}%`)
+      .limit(1);
+
+    if (!leads || leads.length === 0) {
+      return res.status(200).json({ lead: null });
+    }
+    return res.status(200).json({ lead: leads[0] });
+  }
+
+  // ─── PATCH update lead (tags / sequence_paused) ───────────────────
+  if (req.method === 'PATCH' && action === 'update_lead') {
+    const { leadId, tags, sequence_paused } = req.body;
+    if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
+
+    const updates = {};
+    if (tags !== undefined) updates.tags = tags;
+    if (sequence_paused !== undefined) updates.sequence_paused = sequence_paused;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    const { data: lead, error } = await supabaseAdmin
+      .from('leads')
+      .update(updates)
+      .eq('id', leadId)
+      .select('id, tags, sequence_paused')
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json({ lead });
+  }
+
   return res.status(405).json({ error: 'Método no permitido' });
 }

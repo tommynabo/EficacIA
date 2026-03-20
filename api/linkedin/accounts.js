@@ -362,19 +362,40 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, message: 'Cuenta desconectada' });
   }
 
-  // PATCH /api/linkedin/accounts?id=<uuid> — actualizar max_actions_per_hour
+  // PATCH /api/linkedin/accounts?id=<uuid> — actualizar campos de configuración
   if (req.method === 'PATCH') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'ID de cuenta requerido' });
 
-    const { max_actions_per_hour } = req.body || {};
-    if (
-      max_actions_per_hour === undefined ||
-      !Number.isInteger(max_actions_per_hour) ||
-      max_actions_per_hour < 1 ||
-      max_actions_per_hour > 200
-    ) {
-      return res.status(400).json({ error: 'max_actions_per_hour debe ser un entero entre 1 y 200' });
+    const { max_actions_per_hour, auto_withdraw_invites, withdraw_after_days } = req.body || {};
+
+    const updates = { updated_at: new Date().toISOString() };
+
+    if (max_actions_per_hour !== undefined) {
+      if (
+        !Number.isInteger(max_actions_per_hour) ||
+        max_actions_per_hour < 1 ||
+        max_actions_per_hour > 200
+      ) {
+        return res.status(400).json({ error: 'max_actions_per_hour debe ser un entero entre 1 y 200' });
+      }
+      updates.max_actions_per_hour = max_actions_per_hour;
+    }
+
+    if (auto_withdraw_invites !== undefined) {
+      updates.auto_withdraw_invites = Boolean(auto_withdraw_invites);
+    }
+
+    if (withdraw_after_days !== undefined) {
+      const days = parseInt(withdraw_after_days);
+      if (isNaN(days) || days < 1 || days > 365) {
+        return res.status(400).json({ error: 'withdraw_after_days debe ser un entero entre 1 y 365' });
+      }
+      updates.withdraw_after_days = days;
+    }
+
+    if (Object.keys(updates).length === 1) {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
     }
 
     // Verificar que la cuenta pertenece al equipo del usuario
@@ -389,12 +410,12 @@ export default async function handler(req, res) {
 
     const { error: patchError } = await supabaseAdmin
       .from('linkedin_accounts')
-      .update({ max_actions_per_hour, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', id)
       .eq('team_id', teamId);
 
     if (patchError) return res.status(500).json({ error: patchError.message });
-    return res.status(200).json({ success: true, max_actions_per_hour });
+    return res.status(200).json({ success: true, ...updates });
   }
 
   return res.status(405).json({ error: 'Método no permitido' });

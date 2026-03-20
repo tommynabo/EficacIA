@@ -5,6 +5,8 @@ import { Button } from "@/src/components/ui/button"
 import {
   Search, Send, RefreshCw, ChevronDown, Inbox,
   MessageSquare, User, Clock, Loader2, AlertCircle,
+  Tag, PauseCircle, PlayCircle, ShieldBan, X, Check, Sparkles,
+  Filter,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -14,6 +16,20 @@ interface Account {
   profile_name: string
   unipile_account_id: string
   is_valid: boolean
+}
+
+interface Campaign {
+  id: string
+  name: string
+  linkedin_account_id: string
+}
+
+interface LeadData {
+  id: string
+  tags: string[]
+  sequence_paused: boolean
+  name?: string
+  linkedin_profile_url?: string
 }
 
 interface Chat {
@@ -37,6 +53,8 @@ interface Message {
   is_sender?: boolean | number | string
   attachments?: unknown[]
 }
+
+const PRESET_TAGS = ["Caliente", "Seguimiento", "No interesado", "Cliente potencial", "Cerrado", "Demo agendada"]
 
 const TOKEN = () => localStorage.getItem("auth_token")
 const api = (path: string, opts?: RequestInit) =>
@@ -159,6 +177,13 @@ export default function UniboxPage() {
   const [selectedAccountId, setSelectedAccountId] = React.useState<string>("")
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false)
 
+  // Campaigns for filter
+  const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
+  const [filterCampaignId, setFilterCampaignId] = React.useState<string>("")
+  const [filterTag, setFilterTag] = React.useState<string>("")
+  const [campaignMenuOpen, setCampaignMenuOpen] = React.useState(false)
+  const [tagMenuOpen, setTagMenuOpen] = React.useState(false)
+
   const [chats, setChats] = React.useState<Chat[]>([])
   const [chatsLoading, setChatsLoading] = React.useState(false)
   const [chatsError, setChatsError] = React.useState<string | null>(null)
@@ -170,6 +195,17 @@ export default function UniboxPage() {
   const [messages, setMessages] = React.useState<Message[]>([])
   const [messagesLoading, setMessagesLoading] = React.useState(false)
 
+  // Lead CRM data for selected chat
+  const [selectedLead, setSelectedLead] = React.useState<LeadData | null>(null)
+  const [labelsOpen, setLabelsOpen] = React.useState(false)
+  const [labelsSaving, setLabelsSaving] = React.useState(false)
+  const [sequenceSaving, setSequenceSaving] = React.useState(false)
+  const [blockLoading, setBlockLoading] = React.useState(false)
+  const [actionMsg, setActionMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
+
+  // AI Assistant panel
+  const [assistantOpen, setAssistantOpen] = React.useState(false)
+
   const [search, setSearch] = React.useState("")
   const [filterUnread, setFilterUnread] = React.useState(false)
 
@@ -179,6 +215,7 @@ export default function UniboxPage() {
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const labelsRef = React.useRef<HTMLDivElement>(null)
 
   // ── Load accounts ──────────────────────────────────────────────────
   React.useEffect(() => {
@@ -189,6 +226,12 @@ export default function UniboxPage() {
         setAccounts(accs)
         if (accs.length > 0) setSelectedAccountId(accs[0].unipile_account_id)
       })
+      .catch(() => {})
+
+    // Load campaigns for filter
+    api("/api/linkedin/campaigns")
+      .then(r => r.json())
+      .then(d => setCampaigns(d.campaigns || d || []))
       .catch(() => {})
   }, [])
 
@@ -221,6 +264,9 @@ export default function UniboxPage() {
     setMessages([])
     setMessagesLoading(true)
     setSendError(null)
+    setSelectedLead(null)
+    setLabelsOpen(false)
+    setActionMsg(null)
 
     // Mask as read locally using timestamp
     setReadChats(prev => ({ ...prev, [chat.id]: new Date().toISOString() }))
@@ -238,9 +284,102 @@ export default function UniboxPage() {
       .then(d => {
         const msgs: Message[] = (d.items || d.messages || []).reverse()
         setMessages(msgs)
+
+        // Load lead CRM data from the other attendee's provider_id
+        const enr = (chat as any).attendees_enriched || []
+        const other = enr.find((a: any) => a.is_self !== true) || enr[0]
+        const pId = other?.provider_id
+        if (pId) {
+          api(`/api/linkedin/unibox?action=get_lead&providerId=${encodeURIComponent(pId)}`)
+            .then(r2 => r2.json())
+            .then(d2 => { if (d2.lead) setSelectedLead(d2.lead) })
+            .catch(() => {})
+        }
       })
       .catch(() => {})
       .finally(() => setMessagesLoading(false))
+  }
+
+  // ── CRM: Toggle tag on selected lead ──────────────────────────────
+  const toggleTag = async (tag: string) => {
+    if (!selectedLead) return
+    const currentTags: string[] = selectedLead.tags || []
+    const newTags = currentTags.includes(tag)
+      ? currentTags.filter(t => t !== tag)
+      : [...currentTags, tag]
+
+    setSelectedLead(prev => prev ? { ...prev, tags: newTags } : prev)
+    setLabelsSaving(true)
+    try {
+      const r = await api("/api/linkedin/unibox?action=update_lead", {
+        method: "PATCH",
+        body: JSON.stringify({ leadId: selectedLead.id, tags: newTags }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      if (d.lead) setSelectedLead(prev => prev ? { ...prev, ...d.lead } : prev)
+    } catch {
+      // revert on error
+      setSelectedLead(prev => prev ? { ...prev, tags: currentTags } : prev)
+    } finally {
+      setLabelsSaving(false)
+    }
+  }
+
+  // ── CRM: Toggle sequence_paused ────────────────────────────────────
+  const toggleSequence = async () => {
+    if (!selectedLead) return
+    const newPaused = !selectedLead.sequence_paused
+    setSelectedLead(prev => prev ? { ...prev, sequence_paused: newPaused } : prev)
+    setSequenceSaving(true)
+    try {
+      const r = await api("/api/linkedin/unibox?action=update_lead", {
+        method: "PATCH",
+        body: JSON.stringify({ leadId: selectedLead.id, sequence_paused: newPaused }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      setActionMsg({ type: "success", text: newPaused ? "Secuencia pausada" : "Secuencia reanudada" })
+      setTimeout(() => setActionMsg(null), 3000)
+    } catch {
+      setSelectedLead(prev => prev ? { ...prev, sequence_paused: !newPaused } : prev)
+      setActionMsg({ type: "error", text: "Error actualizando secuencia" })
+      setTimeout(() => setActionMsg(null), 3000)
+    } finally {
+      setSequenceSaving(false)
+    }
+  }
+
+  // ── Block LinkedIn profile ─────────────────────────────────────────
+  const handleBlock = async () => {
+    if (!selectedChat || !selectedAccountId) return
+    if (!confirm("¿Bloquear a este perfil en LinkedIn? Esta acción se realizará a través de tu cuenta conectada.")) return
+
+    const enr = (selectedChat as any).attendees_enriched || []
+    const other = enr.find((a: any) => a.is_self !== true) || enr[0]
+    const profileId = other?.provider_id
+    if (!profileId) {
+      setActionMsg({ type: "error", text: "No se pudo identificar el perfil" })
+      setTimeout(() => setActionMsg(null), 3000)
+      return
+    }
+
+    setBlockLoading(true)
+    try {
+      const r = await api("/api/linkedin/unibox?action=block", {
+        method: "POST",
+        body: JSON.stringify({ profileId, accountId: selectedAccountId }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      setActionMsg({ type: "success", text: "Perfil bloqueado en LinkedIn" })
+      setTimeout(() => setActionMsg(null), 4000)
+    } catch (e: any) {
+      setActionMsg({ type: "error", text: e.message || "Error al bloquear" })
+      setTimeout(() => setActionMsg(null), 4000)
+    } finally {
+      setBlockLoading(false)
+    }
   }
 
   const handleSend = async () => {
@@ -275,7 +414,13 @@ export default function UniboxPage() {
     if (filterUnread && !c.unread_count) return false
     if (search) {
       const q = search.toLowerCase()
-      return chatTitle(c).toLowerCase().includes(q) || c.last_message?.text?.toLowerCase().includes(q)
+      if (!chatTitle(c).toLowerCase().includes(q) && !c.last_message?.text?.toLowerCase().includes(q)) return false
+    }
+    // Campaign filter: Unipile doesn't embed campaign data in chat,
+    // so this filters by account (each campaign runs on one account)
+    if (filterCampaignId) {
+      const camp = campaigns.find(cp => cp.id === filterCampaignId)
+      if (camp && c.account_id && c.account_id !== camp.linkedin_account_id) return false
     }
     return true
   })
@@ -411,20 +556,83 @@ export default function UniboxPage() {
             />
           </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2 mt-3">
+          {/* Filters row: Todos/No leídos + Campaign filter + Tag filter */}
+          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
             <button
               onClick={() => setFilterUnread(false)}
-              className={`text-xs px-3 py-1.5 rounded-md transition-colors ${!filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${!filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               Todos
             </button>
             <button
               onClick={() => setFilterUnread(true)}
-              className={`text-xs px-3 py-1.5 rounded-md transition-colors ${filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               No leídos
             </button>
+
+            {/* Campaign filter */}
+            {campaigns.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => { setCampaignMenuOpen(o => !o); setTagMenuOpen(false) }}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterCampaignId ? "bg-violet-500/15 text-violet-400 border border-violet-500/25" : "text-slate-400 hover:text-slate-200 border border-slate-700"}`}
+                >
+                  <Filter className="w-3 h-3" />
+                  {filterCampaignId ? (campaigns.find(c => c.id === filterCampaignId)?.name || "Campaña").slice(0, 10) : "Campaña"}
+                </button>
+                {campaignMenuOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                    <button
+                      onClick={() => { setFilterCampaignId(""); setCampaignMenuOpen(false) }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 ${!filterCampaignId ? "text-blue-400" : "text-slate-300"}`}
+                    >
+                      Todas las campañas
+                    </button>
+                    {campaigns.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setFilterCampaignId(c.id); setCampaignMenuOpen(false) }}
+                        className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 truncate ${filterCampaignId === c.id ? "text-blue-400" : "text-slate-300"}`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tag filter */}
+            <div className="relative">
+              <button
+                onClick={() => { setTagMenuOpen(o => !o); setCampaignMenuOpen(false) }}
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterTag ? "bg-amber-500/15 text-amber-400 border border-amber-500/25" : "text-slate-400 hover:text-slate-200 border border-slate-700"}`}
+              >
+                <Tag className="w-3 h-3" />
+                {filterTag || "Etiqueta"}
+              </button>
+              {tagMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 w-44 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                  <button
+                    onClick={() => { setFilterTag(""); setTagMenuOpen(false) }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 ${!filterTag ? "text-blue-400" : "text-slate-300"}`}
+                  >
+                    Todas las etiquetas
+                  </button>
+                  {PRESET_TAGS.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => { setFilterTag(t); setTagMenuOpen(false) }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 ${filterTag === t ? "text-amber-400" : "text-slate-300"}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => selectedAccountId && setSelectedAccountId(selectedAccountId + "")}
               className="ml-auto text-slate-500 hover:text-slate-300 transition-colors"
@@ -522,11 +730,127 @@ export default function UniboxPage() {
               <div>
                 <p className="text-sm font-semibold text-slate-100">{chatTitle(selectedChat, globalMyProviderId)}</p>
                 {getOtherAttendee(selectedChat, globalMyProviderId)?.headline && (
-                  <p className="text-[11px] text-slate-500 truncate max-w-[300px]">
+                  <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
                     {getOtherAttendee(selectedChat, globalMyProviderId)?.headline}
                   </p>
                 )}
               </div>
+              {/* Lead tags inline display */}
+              {selectedLead && selectedLead.tags.length > 0 && (
+                <div className="hidden sm:flex items-center gap-1 ml-2">
+                  {selectedLead.tags.slice(0, 2).map(t => (
+                    <span key={t} className="text-[10px] px-2 py-0.5 bg-amber-500/15 text-amber-300 rounded-full border border-amber-500/25">{t}</span>
+                  ))}
+                  {selectedLead.tags.length > 2 && (
+                    <span className="text-[10px] text-slate-400">+{selectedLead.tags.length - 2}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1" ref={labelsRef}>
+              {/* Action feedback toast */}
+              {actionMsg && (
+                <span className={`text-xs px-3 py-1 rounded-full mr-2 ${
+                  actionMsg.type === "success" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+                }`}>
+                  {actionMsg.text}
+                </span>
+              )}
+
+              {/* AI Assistant button */}
+              <button
+                onClick={() => setAssistantOpen(o => !o)}
+                title="EficacIA Assistant"
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                  assistantOpen ? "bg-violet-500/20 text-violet-300 border border-violet-500/30" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">IA</span>
+              </button>
+
+              {/* Labels dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setLabelsOpen(o => !o)}
+                  title="Etiquetas"
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                    labelsOpen ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  }`}
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Etiquetas</span>
+                  {labelsSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                </button>
+                {labelsOpen && (
+                  <div className="absolute top-full right-0 mt-1 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-30 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-slate-800">
+                      <p className="text-xs text-slate-400 font-medium">Etiquetas del lead</p>
+                      {!selectedLead && <p className="text-[10px] text-slate-600 mt-0.5">Lead no encontrado en DB</p>}
+                    </div>
+                    <div className="p-2 space-y-0.5">
+                      {PRESET_TAGS.map(t => {
+                        const active = selectedLead?.tags?.includes(t) ?? false
+                        return (
+                          <button
+                            key={t}
+                            onClick={() => toggleTag(t)}
+                            disabled={!selectedLead || labelsSaving}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors ${
+                              active
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "text-slate-300 hover:bg-slate-800"
+                            } disabled:opacity-40`}
+                          >
+                            <span>{t}</span>
+                            {active && <Check className="w-3 h-3" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Pause / Resume sequence toggle */}
+              {selectedLead && (
+                <button
+                  onClick={toggleSequence}
+                  disabled={sequenceSaving}
+                  title={selectedLead.sequence_paused ? "Reanudar secuencia" : "Pausar secuencia"}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                    selectedLead.sequence_paused
+                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25"
+                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20"
+                  } disabled:opacity-50`}
+                >
+                  {sequenceSaving
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : selectedLead.sequence_paused
+                    ? <PlayCircle className="w-3.5 h-3.5" />
+                    : <PauseCircle className="w-3.5 h-3.5" />
+                  }
+                  <span className="hidden lg:inline">
+                    {selectedLead.sequence_paused ? "Reanudar" : "Pausar"}
+                  </span>
+                </button>
+              )}
+
+              {/* Block button */}
+              <button
+                onClick={handleBlock}
+                disabled={blockLoading}
+                title="Bloquear perfil en LinkedIn"
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/40 transition-colors disabled:opacity-50"
+              >
+                {blockLoading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <ShieldBan className="w-3.5 h-3.5" />
+                }
+                <span className="hidden lg:inline">Bloquear</span>
+              </button>
             </div>
           </div>
 
@@ -630,6 +954,134 @@ export default function UniboxPage() {
           )}
         </div>
       )}
+
+      {/* ── EficacIA Assistant Slide-over ──────────────────────── */}
+      {assistantOpen && (
+        <EficacIAAssistantPanel
+          leadName={selectedChat ? chatTitle(selectedChat, globalMyProviderId) : undefined}
+          onClose={() => setAssistantOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── EficacIA Assistant Panel ─────────────────────────────────────────────────
+
+interface AssistantMessage {
+  role: "user" | "assistant"
+  content: string
+}
+
+function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onClose: () => void }) {
+  const [messages, setMessages] = React.useState<AssistantMessage[]>([
+    {
+      role: "assistant",
+      content: `¡Hola! Soy tu EficacIA Assistant. ${leadName ? `Estás hablando con **${leadName}**. ` : ""}¿En qué puedo ayudarte? Puedo redactar respuestas, sugerir estrategias o reescribir mensajes.`,
+    },
+  ])
+  const [input, setInput] = React.useState("")
+  const [loading, setLoading] = React.useState(false)
+  const endRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
+
+  const send = async () => {
+    const text = input.trim()
+    if (!text || loading) return
+    setInput("")
+    const newMessages: AssistantMessage[] = [...messages, { role: "user", content: text }]
+    setMessages(newMessages)
+    setLoading(true)
+
+    try {
+      const r = await fetch("/api/ai/assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        },
+        body: JSON.stringify({
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          leadName,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || "Error")
+      setMessages(prev => [...prev, { role: "assistant", content: d.content }])
+    } catch (e: any) {
+      setMessages(prev => [...prev, { role: "assistant", content: `Error: ${e.message}` }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send() }
+  }
+
+  return (
+    <div className="w-80 border-l border-slate-800 flex flex-col bg-slate-950/80 shrink-0">
+      {/* Header */}
+      <div className="h-14 flex items-center justify-between px-4 border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-violet-400" />
+          </div>
+          <span className="text-sm font-semibold text-slate-100">EficacIA Assistant</span>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[90%] rounded-xl px-3 py-2.5 text-sm ${
+              m.role === "user"
+                ? "bg-violet-500 text-white rounded-br-sm"
+                : "bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-sm"
+            }`}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl rounded-bl-sm px-4 py-3 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+              <span className="text-xs text-slate-400">Pensando…</span>
+            </div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      {/* Compose */}
+      <div className="border-t border-slate-800 p-3 shrink-0">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={onKey}
+            rows={2}
+            placeholder="Pregunta algo… (Cmd+Enter para enviar)"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
+          />
+          <Button
+            onClick={send}
+            disabled={!input.trim() || loading}
+            className="h-10 w-10 p-0 rounded-xl bg-violet-500 hover:bg-violet-600 text-white border-0 shrink-0"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </Button>
+        </div>
+        <p className="text-[10px] text-slate-600 mt-1.5 pl-1">Claude 3 Haiku · Cmd+Enter para enviar</p>
+      </div>
     </div>
   )
 }
