@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
   if (action === 'register') return handleRegister(req, res);
   if (action === 'me') return handleMe(req, res);
   if (action === 'reset-password') return handleResetPassword(req, res);
+  if (action === 'api-key') return handleApiKey(req, res);
 
   return res.status(400).json({ error: 'Acción no válida' });
 }
@@ -178,5 +180,80 @@ async function handleResetPassword(req, res) {
   } catch (error) {
     console.error('Reset password error:', error);
     return res.status(500).json({ error: 'Error al procesar la solicitud' });
+  }
+}
+
+// ─── API KEY (GET / POST) ─────────────────────────────────────────
+
+async function handleApiKey(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método no permitido' });
+  }
+
+  const auth = req.headers.authorization || '';
+  const token = auth.replace('Bearer ', '');
+  let userId;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+    userId = decoded.userId;
+  } catch {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+  );
+
+  if (req.method === 'GET') {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('api_keys')
+        .select('key_value')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(200).json({ apiKey: data?.key_value || null });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const newKey = `efi_${crypto.randomUUID().replace(/-/g, '')}`;
+
+      const { data: existing } = await supabaseAdmin
+        .from('api_keys')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      let result;
+      if (existing) {
+        result = await supabaseAdmin
+          .from('api_keys')
+          .update({ key_value: newKey })
+          .eq('id', existing.id)
+          .select()
+          .single();
+      } else {
+        result = await supabaseAdmin
+          .from('api_keys')
+          .insert({ user_id: userId, key_value: newKey })
+          .select()
+          .single();
+      }
+
+      if (result.error) {
+        return res.status(500).json({ error: result.error.message });
+      }
+      return res.status(200).json({ apiKey: result.data.key_value });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
   }
 }
