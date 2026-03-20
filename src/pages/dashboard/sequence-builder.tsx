@@ -77,8 +77,8 @@ export default function SequenceBuilderPage() {
                 : "text-violet-400 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20"
             }`}
           >
-            <Bot className="w-4 h-4" />
-            <span>EficacIA Assistant</span>
+            <span>🤖</span>
+            <span>Asistente EficacIA</span>
           </Button>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2 min-w-[120px]">
             <Save className={`w-4 h-4 ${isSaving ? "animate-spin" : ""}`} />
@@ -178,8 +178,8 @@ export default function SequenceBuilderPage() {
                 className="mt-6 gap-2 border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
                 onClick={() => setAssistantOpen(true)}
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                Abrir Asistente IA
+                <span>🤖</span>
+                Abrir Asistente EficacIA
               </Button>
             </Card>
           )}

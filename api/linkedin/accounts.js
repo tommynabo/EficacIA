@@ -262,8 +262,12 @@ export default async function handler(req, res) {
             continue;
           }
           const invData = await invResp.json();
-          const invitations = invData.items || invData.invitations || invData || [];
-          console.log(`[WITHDRAW] Found ${invitations.length} sent invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
+          const rawInvitations = invData.items || invData.invitations || invData || [];
+          // Filter: only process "sent" invitations (outbound), skip received ones
+          const invitations = rawInvitations.filter(inv =>
+            !inv.direction || inv.direction === 'sent' || inv.type === 'sent' || inv.status === 'sent' || inv.status === 'pending'
+          );
+          console.log(`[WITHDRAW] Found ${rawInvitations.length} total, ${invitations.length} sent invitations for ${account.unipile_account_id}. Cutoff: ${cutoffDate.toISOString()}`);
 
           for (const inv of invitations) {
             const sentAt = inv.created_at || inv.sent_at;

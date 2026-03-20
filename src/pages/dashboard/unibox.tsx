@@ -358,28 +358,32 @@ export default function UniboxPage() {
     }
   }
 
-  // ── Archive/Ignore contact (DB only, no Unipile call) ─────────────
+  // ── Block contact (DB only, no Unipile call) ─────────────────
   const handleBlock = async () => {
     if (!selectedLead) {
       setActionMsg({ type: "error", text: "No se pudo identificar el contacto. Selecciona el chat de nuevo." })
       setTimeout(() => setActionMsg(null), 4000)
       return
     }
-    if (!confirm("¿Archivar este contacto en EficacIA? El chat seguirá visible en LinkedIn.")) return
+    if (!confirm("¿Bloquear este contacto en EficacIA? El chat se ocultará de la Unibox.")) return
 
     setBlockLoading(true)
     try {
-      const r = await api("/api/linkedin/unibox?action=update_lead", {
-        method: "PATCH",
-        body: JSON.stringify({ leadId: selectedLead.id, status: "ignored" }),
+      const r = await api("/api/linkedin/unibox?action=block", {
+        method: "POST",
+        body: JSON.stringify({ leadId: selectedLead.id }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error)
-      setSelectedLead(prev => prev ? { ...prev, status: "ignored" } : prev)
-      setActionMsg({ type: "success", text: "Contacto archivado en EficacIA" })
+      setSelectedLead(prev => prev ? { ...prev, status: "blocked" } : prev)
+      // Remove the chat from the visible list
+      setChats(prev => prev.filter(c => c.id !== selectedChat?.id))
+      setSelectedChat(null)
+      setMessages([])
+      setActionMsg({ type: "success", text: "Contacto bloqueado" })
       setTimeout(() => setActionMsg(null), 4000)
     } catch (e: any) {
-      setActionMsg({ type: "error", text: e.message || "Error al archivar" })
+      setActionMsg({ type: "error", text: e.message || "Error al bloquear" })
       setTimeout(() => setActionMsg(null), 4000)
     } finally {
       setBlockLoading(false)
@@ -818,18 +822,18 @@ export default function UniboxPage() {
                 )}
               </div>
 
-              {/* Block / Archive button */}
+              {/* Block button */}
               <button
                 onClick={handleBlock}
                 disabled={blockLoading}
-                title={selectedLead ? "Archivar/Ignorar este contacto en EficacIA" : "Selecciona un chat para archivar"}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-colors disabled:opacity-50"
+                title={selectedLead ? "Bloquear este contacto en EficacIA" : "Selecciona un chat para bloquear"}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/40 transition-colors disabled:opacity-50"
               >
                 {blockLoading
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <ShieldBan className="w-3.5 h-3.5" />
                 }
-                <span className="hidden lg:inline">Archivar</span>
+                <span className="hidden lg:inline">Bloquear</span>
               </button>
             </div>
           </div>

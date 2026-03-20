@@ -257,6 +257,11 @@ export default async function handler(req, res) {
     const { providerId, name, publicIdentifier } = req.body;
     if (!providerId) return res.status(400).json({ error: 'Falta providerId' });
 
+    // Split full name into first_name / last_name (DB uses first_name, not name)
+    const nameParts = (name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Desconocido';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
+
     // Build profile URL if we have the public identifier
     const profileUrl = publicIdentifier
       ? `https://www.linkedin.com/in/${publicIdentifier}/`
@@ -267,7 +272,7 @@ export default async function handler(req, res) {
     if (profileUrl) {
       const { data } = await supabaseAdmin
         .from('leads')
-        .select('id, tags, sequence_paused, name, linkedin_url, status')
+        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
         .ilike('linkedin_url', `%${publicIdentifier}%`)
         .eq('team_id', teamId)
         .limit(1);
@@ -276,7 +281,7 @@ export default async function handler(req, res) {
     if (!existingLead) {
       const { data } = await supabaseAdmin
         .from('leads')
-        .select('id, tags, sequence_paused, name, linkedin_url, status')
+        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
         .ilike('linkedin_url', `%${providerId}%`)
         .eq('team_id', teamId)
         .limit(1);
@@ -293,13 +298,14 @@ export default async function handler(req, res) {
       .insert({
         team_id: teamId,
         campaign_id: null,
-        name: name || 'Desconocido',
+        first_name: firstName,
+        last_name: lastName,
         linkedin_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
         status: 'pending',
         tags: [],
         sequence_paused: false,
       })
-      .select('id, tags, sequence_paused, name, linkedin_url, status')
+      .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
       .single();
 
     if (error) {
@@ -309,15 +315,14 @@ export default async function handler(req, res) {
     return res.status(200).json({ lead: newLead, created: true });
   }
 
-  // ─── POST ignore/archive — update lead status to ignored ─────────
+  // ─── POST block — mark lead as blocked in DB (no Unipile call) ─────
   if (req.method === 'POST' && action === 'block') {
-    // Renamed behaviour: no longer calls Unipile block; just marks lead as ignored in DB
     const { leadId } = req.body;
     if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
 
     const { data: lead, error } = await supabaseAdmin
       .from('leads')
-      .update({ status: 'ignored' })
+      .update({ status: 'blocked' })
       .eq('id', leadId)
       .eq('team_id', teamId)
       .select('id, status')
@@ -335,7 +340,7 @@ export default async function handler(req, res) {
     // Look up lead by linkedin_profile_url containing the provider_id
     const { data: leads } = await supabaseAdmin
       .from('leads')
-      .select('id, tags, sequence_paused, name, linkedin_url')
+      .select('id, tags, sequence_paused, first_name, last_name, linkedin_url')
       .ilike('linkedin_url', `%${providerId}%`)
       .limit(1);
 
