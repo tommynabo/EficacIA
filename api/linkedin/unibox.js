@@ -358,15 +358,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ lead: newLead, created: true });
   }
 
-  // ─── POST block — mark lead blocked ONLY in DB (Unipile does not support native block) ─────
+  // ─── POST block — DB block + best-effort Unipile LinkedIn block ──────────
   if (req.method === 'POST' && action === 'block') {
-    const { leadId, unipile_id } = req.body;
+    const { leadId, unipile_id, accountId } = req.body;
 
     if (!leadId && !unipile_id) {
       return res.status(400).json({ error: 'Falta leadId o unipile_id' });
     }
 
-    // ── Block by internal leadId ────────────────────────────────────────
+    // ── Block in DB (always, never fails the response) ──────────────────
     if (leadId) {
       const { data: lead, error } = await supabaseAdmin
         .from('leads')
@@ -378,10 +378,27 @@ export default async function handler(req, res) {
 
       if (!error && lead) {
         console.log(`[UNIBOX][block] Lead ${leadId} blocked in DB`);
-        // Best-effort: also store unipile_id for filter (requires migration_leads_unipile_id.sql)
+        // Best-effort: store unipile_id for future filter
         if (unipile_id) {
           supabaseAdmin.from('leads').update({ unipile_id }).eq('id', leadId).eq('team_id', teamId)
             .then(() => {}).catch(() => {});
+        }
+        // ── Best-effort: block on LinkedIn via Unipile ──────────────────
+        if (unipile_id && accountId) {
+          const blockUrl = `${unipileBase()}/api/v1/users/${unipile_id}/block?account_id=${accountId}`;
+          console.log(`[UNIBOX][block] Calling Unipile block: POST ${blockUrl}`);
+          fetch(blockUrl, {
+            method: 'POST',
+            headers: unipileHeaders(),
+            body: JSON.stringify({ account_id: accountId }),
+          }).then(async r => {
+            if (r.ok) {
+              console.log(`[UNIBOX][block] ✅ Unipile block successful for ${unipile_id}`);
+            } else {
+              const errText = await r.text();
+              console.warn(`[UNIBOX][block] Unipile block returned ${r.status}: ${errText}`);
+            }
+          }).catch(err => console.warn('[UNIBOX][block] Unipile block call failed:', err.message));
         }
         return res.status(200).json({ success: true, lead });
       }

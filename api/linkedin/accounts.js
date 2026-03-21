@@ -325,23 +325,30 @@ export default async function handler(req, res) {
               continue;
             }
             try {
-              // Unipile withdraw: try several endpoint/body combos until one succeeds
-              // Strategy 1: DELETE /api/v1/users/invite/{inv.provider_id || inv.id} + account_id in body
-              // Strategy 2: DELETE /api/v1/users/{invited_user_public_id}/invite + account_id in body
-              // Strategy 3: DELETE /api/v1/users/{invited_user_id}/invite + account_id in body
+              // The GET endpoint is: GET /api/v1/users/invite/sent?account_id=...
+              // So the DELETE for a specific sent invite should mirror that path:
+              // DELETE /api/v1/users/invite/sent/{id}?account_id=...
+              // We also try account_id as query param (same as GET) since body may be ignored on DELETE
+              const acctQ = `account_id=${account.unipile_account_id}`;
+              const base = unipileBase();
               const strategies = [
-                `${unipileBase()}/api/v1/users/invite/${inv.provider_id || invId}`,
-                `${unipileBase()}/api/v1/users/${inv.invited_user_public_id}/invite`,
-                `${unipileBase()}/api/v1/users/${inv.invited_user_id || invId}/invite`,
-              ].filter((url, i, arr) => arr.indexOf(url) === i); // deduplicate
+                // Most likely: mirrors GET resource path, account_id as query param
+                { url: `${base}/api/v1/users/invite/sent/${invId}?${acctQ}`, body: null },
+                // Fallback: same but account_id in body
+                { url: `${base}/api/v1/users/invite/sent/${invId}`, body: JSON.stringify({ account_id: account.unipile_account_id }) },
+                // Fallback: without 'sent'
+                { url: `${base}/api/v1/users/invite/${invId}?${acctQ}`, body: null },
+                // Fallback: user public id
+                { url: `${base}/api/v1/users/${inv.invited_user_public_id}/invite?${acctQ}`, body: null },
+              ];
 
               let wResp = null;
-              for (const delUrl of strategies) {
-                console.log(`[WITHDRAW] Trying DELETE ${delUrl} (account_id in body)`);
-                wResp = await fetch(delUrl, {
+              for (const strategy of strategies) {
+                console.log(`[WITHDRAW] Trying DELETE ${strategy.url}`);
+                wResp = await fetch(strategy.url, {
                   method: 'DELETE',
                   headers: unipileHeaders(),
-                  body: JSON.stringify({ account_id: account.unipile_account_id }),
+                  ...(strategy.body ? { body: strategy.body } : {}),
                 });
                 console.log(`[WITHDRAW] → ${wResp.status}`);
                 if (wResp.ok) break;
