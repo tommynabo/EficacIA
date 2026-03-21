@@ -99,6 +99,21 @@ export default async function handler(req, res) {
       const data = await r.json();
       const chatItems = data.items || data.chats || [];
 
+      // ── Fetch blocked leads to use as filter ──────────────────────────
+      const { data: blockedLeads } = await supabaseAdmin
+        .from('leads')
+        .select('linkedin_url')
+        .eq('team_id', teamId)
+        .eq('status', 'blocked');
+
+      const blockedIdentifiers = new Set(
+        (blockedLeads || []).flatMap(l => {
+          if (!l.linkedin_url) return [];
+          const match = l.linkedin_url.match(/linkedin\.com\/in\/([^/?]+)/i);
+          return match ? [match[1].toLowerCase()] : [];
+        })
+      );
+
       // ── Enrich each chat with attendee names + picture_url ──
       const enriched = await Promise.all(chatItems.map(async (chat) => {
         try {
@@ -126,8 +141,17 @@ export default async function handler(req, res) {
         return chat;
       }));
 
-      // Return with enriched attendees
-      return res.status(200).json({ ...data, items: enriched });
+      // ── Filter out chats whose lead is blocked ─────────────────────
+      const filtered = enriched.filter(chat => {
+        const attendees = chat.attendees_enriched || [];
+        const nonSelf = attendees.filter(a => !a.is_self);
+        return !nonSelf.some(
+          a => a.public_identifier && blockedIdentifiers.has(a.public_identifier.toLowerCase())
+        );
+      });
+
+      // Return with enriched attendees (blocked leads excluded)
+      return res.status(200).json({ ...data, items: filtered });
     } catch (e) {
       console.error('[UNIBOX][chats] excepción:', e);
       return res.status(500).json({ error: 'Error de red con Unipile' });
@@ -315,40 +339,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ lead: newLead, created: true });
   }
 
-  // ─── POST block — mark lead blocked in DB + real LinkedIn block via Unipile ─────
+  // ─── POST block — mark lead blocked ONLY in DB (Unipile does not support native block) ─────
   if (req.method === 'POST' && action === 'block') {
-    const { leadId, unipile_id, accountId } = req.body;
+    const { leadId, unipile_id } = req.body;
 
     if (!leadId && !unipile_id) {
       return res.status(400).json({ error: 'Falta leadId o unipile_id' });
     }
 
-    // ── Step 1: Actually block on LinkedIn via Unipile ──────────────────
-    if (unipile_id && accountId) {
-      try {
-        // Correct Unipile endpoint: POST /api/v1/users/{provider_id}/block
-        const blockUrl = `${unipileBase()}/api/v1/users/${unipile_id}/block`;
-        console.log(`[UNIBOX][block] Calling Unipile block: POST ${blockUrl} account_id=${accountId}`);
-        const bResp = await fetch(blockUrl, {
-          method: 'POST',
-          headers: unipileHeaders(),
-          body: JSON.stringify({ account_id: accountId }),
-        });
-        const bData = await bResp.text();
-        if (bResp.ok) {
-          console.log(`[UNIBOX][block] ✅ LinkedIn block successful for provider_id=${unipile_id}`);
-        } else {
-          console.warn(`[UNIBOX][block] Unipile block returned ${bResp.status}: ${bData}`);
-        }
-      } catch (blockErr) {
-        console.error('[UNIBOX][block] Unipile block call failed:', blockErr.message);
-      }
-    } else {
-      console.warn('[UNIBOX][block] Missing accountId or unipile_id — skipping Unipile block call');
-    }
-
-    // ── Step 2: Update Supabase status to blocked ────────────────────────
-    // Strategy 1: block by internal leadId
+    // ── Block by internal leadId ────────────────────────────────────────
     if (leadId) {
       const { data: lead, error } = await supabaseAdmin
         .from('leads')
@@ -365,7 +364,7 @@ export default async function handler(req, res) {
       if (error) console.error('[UNIBOX][block] by leadId failed:', error.message);
     }
 
-    // Strategy 2: block by unipile_id column
+    // ── Fallback: block by unipile_id column ────────────────────────────
     if (unipile_id) {
       const { data: lead, error } = await supabaseAdmin
         .from('leads')
@@ -380,7 +379,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, lead });
       }
 
-      // Strategy 3: fallback — search by linkedin_url
+      // Fallback: search by linkedin_url
       const { data: leads } = await supabaseAdmin
         .from('leads')
         .select('id')
@@ -406,7 +405,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ success: true, message: 'Blocked on LinkedIn; no matching lead in DB' });
+    return res.status(200).json({ success: true, message: 'No matching lead found in DB' });
   }
   // ─── GET blocked_leads — returns all leads with status='blocked' for this team ───
   if (req.method === 'GET' && action === 'blocked_leads') {

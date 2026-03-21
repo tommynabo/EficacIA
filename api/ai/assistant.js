@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurado en el servidor' });
   }
 
-  const { messages, leadName } = req.body || {};
+  const { messages, leadName, stepType } = req.body || {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages es requerido y debe ser un array no vacío' });
@@ -62,6 +62,7 @@ export default async function handler(req, res) {
   const systemPrompt = `Eres EficacIA Assistant, un asistente experto en ventas B2B y comunicación en LinkedIn.
 Tu objetivo es ayudar al usuario a redactar, reescribir y mejorar mensajes para sus conversaciones de LinkedIn.
 ${leadName ? `El usuario está hablando actualmente con: ${leadName}.` : ''}
+${stepType === 'invitation' ? 'RESTRICCIÓN CRÍTICA: Esto es una nota de invitación de LinkedIn, el límite máximo absoluto es de 300 caracteres. El mensaje DEBE ser de 300 caracteres o menos, contados con precisión. Si supera este límite, no es válido.' : ''}
 
 Reglas:
 - Responde siempre en español

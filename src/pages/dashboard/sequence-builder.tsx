@@ -61,14 +61,14 @@ export default function SequenceBuilderPage() {
     setAiGenerating(true)
     try {
       const isInvitation = step.type === "invitation"
-      const content = `Genera un mensaje de LinkedIn de tipo "${isInvitation ? "invitaci\u00f3n de conexi\u00f3n" : "mensaje de seguimiento"}". Objetivo del usuario: ${aiObjective.trim()}. Devuelve SOLO el texto del mensaje, sin explicaciones, sin comillas, sin sal\u00fados gen\u00e9ricos. ${isInvitation ? "IMPORTANTE: LinkedIn limita las invitaciones a 200 caracteres en total. El mensaje debe ser ultra-conciso, directo y persuasivo. Cuenta los caracteres con precisi\u00f3n." : "El mensaje puede tener varios p\u00e1rrafos cortos si el objetivo lo requiere, pero debe ser claro, personalizado y orientado a la acci\u00f3n. M\u00e1ximo 1500 caracteres."}`
+      const content = `Genera un mensaje de LinkedIn de tipo "${isInvitation ? "invitaci\u00f3n de conexi\u00f3n" : "mensaje de seguimiento"}". Objetivo del usuario: ${aiObjective.trim()}. Devuelve SOLO el texto del mensaje, sin explicaciones, sin comillas, sin sal\u00fados gen\u00e9ricos. ${isInvitation ? "IMPORTANTE: LinkedIn limita las invitaciones a 300 caracteres en total. El mensaje debe ser ultra-conciso, directo y persuasivo. Cuenta los caracteres con precisi\u00f3n." : "El mensaje puede tener varios p\u00e1rrafos cortos si el objetivo lo requiere, pero debe ser claro, personalizado y orientado a la acci\u00f3n. M\u00e1ximo 1500 caracteres."}`
       const r = await fetch("/api/ai/assistant", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
         },
-        body: JSON.stringify({ messages: [{ role: "user", content }] }),
+        body: JSON.stringify({ messages: [{ role: "user", content }], stepType: isInvitation ? "invitation" : "message" }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error")
@@ -162,7 +162,7 @@ export default function SequenceBuilderPage() {
                           variant="ghost"
                           type="button"
                           onClick={(e) => { e.preventDefault(); setAiDialogStepId(step.id); setAiObjective("") }}
-                          className="absolute bottom-2 right-2 text-white bg-blue-600 hover:bg-violet-600 transition-colors"
+                          className="absolute bottom-2 right-2 bg-purple-600 text-white hover:bg-blue-900 transition-colors"
                         >
                           <Sparkles className="w-4 h-4 mr-1" /> IA
                         </Button>
@@ -172,7 +172,7 @@ export default function SequenceBuilderPage() {
                             <div className="flex items-center gap-2 mb-3">
                               <Sparkles className="w-4 h-4 text-violet-400" />
                               <span className="text-sm font-medium text-slate-200">EficacIA Assistant</span>
-                              <span className="ml-auto text-[10px] text-slate-500">{step.type === "invitation" ? "Máx. 200 car." : "Máx. 1500 car."}</span>
+                              <span className="ml-auto text-[10px] text-slate-500">{step.type === "invitation" ? "Máx. 300 car." : "Máx. 1500 car."}</span>
                               <button onClick={() => setAiDialogStepId(null)} className="text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
                             </div>
                             <p className="text-xs text-slate-400 mb-2">¿Cuál es el objetivo de este mensaje?</p>
@@ -187,7 +187,7 @@ export default function SequenceBuilderPage() {
                               size="sm"
                               disabled={!aiObjective.trim() || aiGenerating}
                               onClick={() => generateForStep(step.id)}
-                              className="w-full gap-2 bg-violet-500 hover:bg-violet-600 text-white"
+                              className="w-full gap-2 bg-purple-600 text-white hover:bg-blue-900"
                             >
                               {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                               {aiGenerating ? "Generando…" : "Generar mensaje"}

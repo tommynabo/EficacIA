@@ -261,12 +261,13 @@ export default async function handler(req, res) {
 
     try {
       const specificAccountId = req.query.accountId || req.body?.accountId;
+      const isForce = req.query.force === 'true' || req.body?.force === true;
       let query = supabaseAdmin
         .from('linkedin_accounts')
         .select('id, unipile_account_id, withdraw_after_days, team_id')
-        .eq('auto_withdraw_invites', true)
         .eq('is_valid', true);
 
+      if (!isForce) query = query.eq('auto_withdraw_invites', true);
       if (specificAccountId) query = query.eq('unipile_account_id', specificAccountId);
 
       if (!isValidCron && userId) {
@@ -318,8 +319,8 @@ export default async function handler(req, res) {
           for (const inv of invitations) {
             const sentAt = parseSentDate(inv.date);
             const invId = inv.id || inv.provider_id;
-            console.log(`[WITHDRAW] Invitation ${invId} | date="${inv.date}" | parsed=${sentAt ? sentAt.toISOString() : 'null'} | cutoff=${cutoffDate.toISOString()}`);
-            if (!sentAt || sentAt >= cutoffDate) {
+            console.log(`[WITHDRAW] Invitation ${invId} | date="${inv.date}" | parsed=${sentAt ? sentAt.toISOString() : 'null'} | cutoff=${cutoffDate.toISOString()} | force=${isForce}`);
+            if (!isForce && (!sentAt || sentAt >= cutoffDate)) {
               console.log(`[WITHDRAW] Skipping ${invId}: sent ${sentAt ? sentAt.toISOString() : '(no date)'} — not old enough`);
               continue;
             }
@@ -456,11 +457,19 @@ export default async function handler(req, res) {
     // Pero devolvemos el ID de la cuenta creada en nuestra DB
     registerUnipileAccount(liAtClean).then(async (unipile) => {
       if (unipile.success) {
+        // Clear any conflicting unipile_account_id from other rows before setting ours
+        // This prevents "duplicate key violates unique constraint idx_linkedin_accounts_unipile_id"
+        await supabaseAdmin
+          .from('linkedin_accounts')
+          .update({ unipile_account_id: null })
+          .eq('unipile_account_id', unipile.accountId)
+          .neq('id', account.id);
+
         await supabaseAdmin
           .from('linkedin_accounts')
           .update({ 
             unipile_account_id: unipile.accountId,
-            connection_method: 'unipile', // Marcamos como vinculado
+            connection_method: 'unipile',
             last_unipile_error: null
           })
           .eq('id', account.id);
