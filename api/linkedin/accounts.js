@@ -304,7 +304,7 @@ export default async function handler(req, res) {
           const invData = await invResp.json();
           // Log the raw Unipile payload structure for debugging
           console.log(`[WITHDRAW] Raw payload keys: ${JSON.stringify(Object.keys(invData))}`);
-          console.log(`[WITHDRAW] Sample invitation:`, JSON.stringify((invData.items || invData.data || invData.invitations || [])[0] || 'none').slice(0, 500));
+          console.log(`[WITHDRAW] Sample invitation:`, JSON.stringify((invData.items || invData.data || invData.invitations || [])[0] || 'none').slice(0, 2000));
           const rawInvitations = invData.items || invData.data || invData.invitations || [];
           // Filter: only process "sent" / outbound invitations, skip received ones
           const invitations = rawInvitations.filter(inv => {
@@ -325,22 +325,35 @@ export default async function handler(req, res) {
               continue;
             }
             try {
-              // Unipile endpoint: DELETE /api/v1/users/{invited_user_id}/invite?account_id=...
-              // Uses the invited person's LinkedIn provider ID, NOT the invitation object ID
-              const userProviderId = inv.invited_user_id || invId;
-              const delUrl = `${unipileBase()}/api/v1/users/${userProviderId}/invite?account_id=${account.unipile_account_id}`;
-              console.log(`[WITHDRAW] Deleting invitation for user ${userProviderId} (inv ${invId}): DELETE ${delUrl}`);
-              const wResp = await fetch(delUrl, {
-                method: 'DELETE',
-                headers: unipileHeaders(),
-              });
+              // Unipile withdraw: try several endpoint/body combos until one succeeds
+              // Strategy 1: DELETE /api/v1/users/invite/{inv.provider_id || inv.id} + account_id in body
+              // Strategy 2: DELETE /api/v1/users/{invited_user_public_id}/invite + account_id in body
+              // Strategy 3: DELETE /api/v1/users/{invited_user_id}/invite + account_id in body
+              const strategies = [
+                `${unipileBase()}/api/v1/users/invite/${inv.provider_id || invId}`,
+                `${unipileBase()}/api/v1/users/${inv.invited_user_public_id}/invite`,
+                `${unipileBase()}/api/v1/users/${inv.invited_user_id || invId}/invite`,
+              ].filter((url, i, arr) => arr.indexOf(url) === i); // deduplicate
+
+              let wResp = null;
+              for (const delUrl of strategies) {
+                console.log(`[WITHDRAW] Trying DELETE ${delUrl} (account_id in body)`);
+                wResp = await fetch(delUrl, {
+                  method: 'DELETE',
+                  headers: unipileHeaders(),
+                  body: JSON.stringify({ account_id: account.unipile_account_id }),
+                });
+                console.log(`[WITHDRAW] → ${wResp.status}`);
+                if (wResp.ok) break;
+                const errBody = await wResp.text();
+                console.warn(`[WITHDRAW] Strategy failed (${wResp.status}): ${errBody}`);
+              }
               console.log(`[WITHDRAW] DELETE ${invId} → ${wResp.status}`);
               if (wResp.ok) {
                 withdrawn++;
                 console.log(`[WITHDRAW] ✅ Invitación ${invId} eliminada exitosamente para cuenta ${account.unipile_account_id}`);
               } else {
-                const wErr = await wResp.text();
-                console.error(`[WITHDRAW] DELETE failed for ${invId}: ${wErr}`);
+                console.error(`[WITHDRAW] All strategies failed for invitation ${invId}`);
                 errors++;
               }
             } catch (delErr) { console.error(`[WITHDRAW] Exception deleting ${inv.id}:`, delErr.message); errors++; }

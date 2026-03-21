@@ -59,17 +59,18 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'El último mensaje debe ser del usuario' });
   }
 
-  const systemPrompt = `Eres EficacIA Assistant, un asistente experto en ventas B2B y comunicación en LinkedIn.
-Tu objetivo es ayudar al usuario a redactar, reescribir y mejorar mensajes para sus conversaciones de LinkedIn.
-${leadName ? `El usuario está hablando actualmente con: ${leadName}.` : ''}
-${stepType === 'invitation' ? 'RESTRICCIÓN CRÍTICA: Esto es una nota de invitación de LinkedIn, el límite máximo absoluto es de 300 caracteres. El mensaje DEBE ser de 300 caracteres o menos, contados con precisión. Si supera este límite, no es válido.' : ''}
+  const isInvitation = stepType === 'invitation';
 
-Reglas:
-- Responde siempre en español
-- Sé conciso y directo (máximo 300 palabras por respuesta salvo que el usuario pida algo más largo)
-- Enfócate en ayudar a redactar mensajes naturales, persuasivos y no robóticos
-- Cuando sugieras mensajes para LinkedIn, asegúrate de que sean breves (< 300 caracteres para invitaciones)
-- Puedes sugerir estrategias de seguimiento, cierres suaves, o respuestas a objeciones comunes`;
+  const systemPrompt = [
+    'Eres un experto copywriter para ventas B2B en LinkedIn.',
+    'TUS VARIABLES PERMITIDAS SON ÚNICAMENTE: {{first_name}}, {{last_name}}, {{company_name}}. DEBES usar {{first_name}} al saludar. NUNCA inventes nombres reales, usa SIEMPRE las variables.',
+    isInvitation
+      ? 'REGLA CRÍTICA: ESTO ES UNA NOTA DE CONEXIÓN DE LINKEDIN. TU RESPUESTA DEBE TENER UN MÁXIMO ABSOLUTO DE 250 CARACTERES (para dejar margen a las variables). SI TE PASAS, EL SISTEMA FALLARÁ. SÉ BREVE Y DIRECTO. Cuenta los caracteres con precisión antes de responder.'
+      : 'No hay límite de caracteres, pero mantén la concisión B2B: párrafos cortos, orientados a acción, sin relleno innecesario.',
+    'Devuelve ÚNICAMENTE el texto del mensaje, sin comillas, sin encabezados, sin explicaciones.',
+    'Responde siempre en español.',
+    leadName ? `El usuario está trabajando con el contacto: ${leadName}.` : '',
+  ].filter(Boolean).join('\n');
 
   try {
     const client = new Anthropic({ apiKey });
@@ -80,7 +81,9 @@ Reglas:
       messages: validatedMessages,
     });
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    // Strip surrounding quotes the model sometimes adds
+    const content = raw.trim().replace(/^["'«»\u201c\u201d]+|["'«»\u201c\u201d]+$/g, '').trim();
     return res.status(200).json({ content, model: MODEL });
   } catch (err) {
     console.error('[AI ASSISTANT]', err);

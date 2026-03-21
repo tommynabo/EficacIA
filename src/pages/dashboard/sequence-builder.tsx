@@ -72,8 +72,9 @@ export default function SequenceBuilderPage() {
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error")
+      // Strip any leading/trailing quotes the model may have added
+      let generated = (d.content as string).trim().replace(/^["'«»\u201c\u201d]+|["'«»\u201c\u201d]+$/g, "").trim()
       // Enforce hard 300-char limit for invitation steps (AI can misjudge length)
-      let generated = d.content as string
       if (isInvitation && generated.length > 300) {
         generated = generated.slice(0, 300).replace(/\s+\S*$/, "")
       }
