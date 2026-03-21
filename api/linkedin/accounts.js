@@ -325,8 +325,11 @@ export default async function handler(req, res) {
               continue;
             }
             try {
-              const delUrl = `${unipileBase()}/api/v1/users/invite/${invId}?account_id=${account.unipile_account_id}`;
-              console.log(`[WITHDRAW] Deleting invitation ${invId} (sent ${sentAt}): DELETE ${delUrl}`);
+              // Unipile endpoint: DELETE /api/v1/users/{invited_user_id}/invite?account_id=...
+              // Uses the invited person's LinkedIn provider ID, NOT the invitation object ID
+              const userProviderId = inv.invited_user_id || invId;
+              const delUrl = `${unipileBase()}/api/v1/users/${userProviderId}/invite?account_id=${account.unipile_account_id}`;
+              console.log(`[WITHDRAW] Deleting invitation for user ${userProviderId} (inv ${invId}): DELETE ${delUrl}`);
               const wResp = await fetch(delUrl, {
                 method: 'DELETE',
                 headers: unipileHeaders(),

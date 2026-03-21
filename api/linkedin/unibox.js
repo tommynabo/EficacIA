@@ -323,21 +323,33 @@ export default async function handler(req, res) {
     }
 
     // Create a minimal orphan lead (campaign_id is nullable after migration)
-    const { data: newLead, error } = await supabaseAdmin
+    // Try inserting with unipile_id; if column doesn't exist yet, insert without it
+    let insertData = {
+      team_id: teamId,
+      campaign_id: null,
+      first_name: firstName,
+      last_name: lastName,
+      linkedin_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
+      status: 'pending',
+      tags: [],
+      sequence_paused: false,
+    };
+
+    let { data: newLead, error } = await supabaseAdmin
       .from('leads')
-      .insert({
-        team_id: teamId,
-        campaign_id: null,
-        first_name: firstName,
-        last_name: lastName,
-        linkedin_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
-        unipile_id: providerId,
-        status: 'pending',
-        tags: [],
-        sequence_paused: false,
-      })
+      .insert({ ...insertData, unipile_id: providerId })
       .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
       .single();
+
+    // If column doesn't exist yet (migration not applied), retry without unipile_id
+    if (error && error.message && error.message.includes('unipile_id')) {
+      console.warn('[UNIBOX][upsert_lead] unipile_id column missing, retrying without it');
+      ({ data: newLead, error } = await supabaseAdmin
+        .from('leads')
+        .insert(insertData)
+        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
+        .single());
+    }
 
     if (error) {
       console.error('[UNIBOX][upsert_lead]', error.message);
@@ -358,7 +370,7 @@ export default async function handler(req, res) {
     if (leadId) {
       const { data: lead, error } = await supabaseAdmin
         .from('leads')
-        .update({ status: 'blocked', ...(unipile_id ? { unipile_id } : {}) })
+        .update({ status: 'blocked' })
         .eq('id', leadId)
         .eq('team_id', teamId)
         .select('id, status')
@@ -366,6 +378,11 @@ export default async function handler(req, res) {
 
       if (!error && lead) {
         console.log(`[UNIBOX][block] Lead ${leadId} blocked in DB`);
+        // Best-effort: also store unipile_id for filter (requires migration_leads_unipile_id.sql)
+        if (unipile_id) {
+          supabaseAdmin.from('leads').update({ unipile_id }).eq('id', leadId).eq('team_id', teamId)
+            .then(() => {}).catch(() => {});
+        }
         return res.status(200).json({ success: true, lead });
       }
       if (error) console.error('[UNIBOX][block] by leadId failed:', error.message);
