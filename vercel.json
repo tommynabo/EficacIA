@@ -20,10 +20,6 @@
   ],
   "crons": [
     {
-      "path": "/api/linkedin/campaign-engine",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/linkedin/invitations/withdraw",
       "schedule": "0 3 * * *"
     }
