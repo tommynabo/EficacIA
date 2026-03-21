@@ -60,7 +60,6 @@ export default function LandingPage() {
             <Button size="lg" className="group w-full sm:w-auto text-base h-12 px-8 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 whitespace-nowrap" asChild>
               <Link to="/pricing">
                 Comenzar 3 Días de Prueba
-                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
             <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8 border-slate-700 text-slate-300 hover:bg-slate-800/60 hover:text-white hover:border-slate-600" asChild>
@@ -68,10 +67,8 @@ export default function LandingPage() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-400" /> Sin tarjeta de crédito</div>
             <div className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-400" /> 3 días de prueba gratis</div>
             <div className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-400" /> Cancela cuando quieras</div>
-            <div className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-400" /> +500 equipos confían en nosotros</div>
           </div>
         </div>
       </section>
@@ -257,7 +254,7 @@ export default function LandingPage() {
             Planes transparentes sin sorpresas
           </h2>
           <p className="text-slate-400 text-lg mb-10">
-            Desde <span className="text-white font-semibold">42€/mes</span>. Incluye 3 días de prueba gratuita sin tarjeta de crédito.
+            Desde <span className="text-white font-semibold">42€/mes</span>. Incluye 3 días de prueba gratuita.
           </p>
           <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base whitespace-nowrap" asChild>
             <Link to="/pricing">Ver todos los planes <ChevronRight className="ml-1 w-4 h-4" /></Link>
@@ -275,10 +272,10 @@ export default function LandingPage() {
             </div>
             <h2 className="text-4xl font-bold tracking-tight text-white mb-4">Empieza a prospectar hoy</h2>
             <p className="text-slate-400 text-lg mb-8 max-w-lg mx-auto">
-              Únete a más de 500 equipos de ventas que ya generan pipeline de forma consistente con EficacIA.
+              Únete a los equipos de ventas que ya generan pipeline de forma consistente con EficacIA.
             </p>
             <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/30 h-12 px-8 text-base whitespace-nowrap" asChild>
-              <Link to="/pricing">Comenzar Prueba Gratis <ArrowRight className="ml-2 w-4 h-4" /></Link>
+              <Link to="/pricing">Comenzar Prueba Gratis</Link>
             </Button>
           </div>
         </div>
@@ -308,17 +305,10 @@ export default function LandingPage() {
               </ul>
             </div>
             <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wide">Empresa</h4>
-              <ul className="space-y-3 text-sm text-slate-500">
-                <li><span className="hover:text-slate-300 transition-colors cursor-pointer">Blog</span></li>
-                <li><span className="hover:text-slate-300 transition-colors cursor-pointer">Contacto</span></li>
-              </ul>
-            </div>
-            <div>
               <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wide">Legal</h4>
               <ul className="space-y-3 text-sm text-slate-500">
-                <li><span className="hover:text-slate-300 transition-colors cursor-pointer">Privacidad</span></li>
-                <li><span className="hover:text-slate-300 transition-colors cursor-pointer">Términos</span></li>
+                <li><Link to="/privacidad" className="hover:text-slate-300 transition-colors cursor-pointer">Política de Privacidad</Link></li>
+                <li><Link to="/terminos" className="hover:text-slate-300 transition-colors cursor-pointer">Términos y Condiciones</Link></li>
               </ul>
             </div>
           </div>

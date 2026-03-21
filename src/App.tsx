@@ -14,6 +14,8 @@ import UniboxPage from "./pages/dashboard/unibox"
 import AnalyticsPage from "./pages/dashboard/analytics"
 import SettingsPage from "./pages/dashboard/settings"
 import LinkedInLivePage from "./pages/linkedin-live"
+import TerminosPage from "./pages/terminos"
+import PrivacidadPage from "./pages/privacidad"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -40,6 +42,8 @@ function AppRoutes() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/afiliados" element={<AfiliadosPage />} />
+      <Route path="/terminos" element={<TerminosPage />} />
+      <Route path="/privacidad" element={<PrivacidadPage />} />
       <Route path="/linkedin-live" element={<LinkedInLivePage />} />
       
       <Route

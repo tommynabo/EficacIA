@@ -48,10 +48,7 @@ export default function FeaturesPage() {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/25 via-transparent to-transparent" />
         </div>
         <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs font-semibold uppercase tracking-widest mb-8">
-            <Layers className="w-3.5 h-3.5" />
-            Desglose Técnico
-          </div>
+
           <h1 className="text-5xl md:text-6xl font-bold tracking-tighter mb-6 leading-tight">
             <span className="bg-clip-text text-transparent bg-gradient-to-b from-white via-slate-100 to-slate-400">
               Tecnología que convierte
@@ -65,7 +62,7 @@ export default function FeaturesPage() {
             EficacIA no es un bot. Es un sistema de automatización diseñado desde cero para replicar comportamiento humano y mantenerse invisible para los algoritmos de LinkedIn.
           </p>
           <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base" asChild>
-            <Link to="/pricing">Empezar 7 días gratis <ArrowRight className="ml-2 w-4 h-4" /></Link>
+            <Link to="/pricing">Empezar Prueba Gratuita</Link>
           </Button>
         </div>
       </section>
@@ -322,9 +319,9 @@ export default function FeaturesPage() {
       <section className="py-16 px-6 border-t border-slate-800/60">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-white mb-4">¿Visto suficiente?</h2>
-          <p className="text-slate-400 mb-8">Prueba EficacIA 7 días gratis. Sin tarjeta de crédito. Cancela cuando quieras.</p>
+          <p className="text-slate-400 mb-8">Prueba EficacIA 7 días gratis. Cancela cuando quieras.</p>
           <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base" asChild>
-            <Link to="/pricing">Empezar Prueba Gratuita <ArrowRight className="ml-2 w-4 h-4" /></Link>
+            <Link to="/pricing">Empezar Prueba Gratuita</Link>
           </Button>
         </div>
       </section>

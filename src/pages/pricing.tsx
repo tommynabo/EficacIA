@@ -198,7 +198,6 @@ export default function PricingPage() {
           </div>
         </div>
 
-        {/* Trust badges */}
         <div className="flex justify-center gap-8 mb-10 text-sm text-slate-500">
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4" />
@@ -207,10 +206,6 @@ export default function PricingPage() {
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4" />
             <span>Cancela cuando quieras</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Star className="w-4 h-4" />
-            <span>+500 equipos confían en nosotros</span>
           </div>
         </div>
 

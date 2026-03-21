@@ -47,7 +47,8 @@ router.post('/create-checkout-session', async (req: Request, res: Response) => {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      payment_method_types: ['card'],
+      // By omitting payment_method_types, Stripe automatically uses all methods active in the Dashboard
+      // including Apple Pay, Google Pay, SEPA Direct Debit, etc.
       line_items: [
         {
           price: planConfig.priceId,
