@@ -3,7 +3,13 @@ export interface User {
   email: string;
   name?: string;
   stripe_id?: string;
-  subscription_status: 'free' | 'pro' | 'enterprise';
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  subscription_status: 'free' | 'pro' | 'enterprise' | 'trial';
+  subscription_plan?: 'free' | 'starter' | 'pro' | 'enterprise';
+  trial_ends_at?: string;
+  ai_prompt_sequence?: string;
+  ai_prompt_unibox?: string;
   settings: Record<string, any>;
   created_at: string;
   updated_at: string;

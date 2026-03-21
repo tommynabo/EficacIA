@@ -22,6 +22,7 @@ export class AuthService {
       // @ts-ignore-next-line - Supabase types not fully generated
       const { data: userData, error: dbError } = await supabase
         .from('users')
+        // @ts-ignore-next-line
         .insert({
           id: userId,
           email,
@@ -102,6 +103,7 @@ export class AuthService {
       // @ts-ignore-next-line - Supabase types not fully generated
       const { data, error } = await supabase
         .from('users')
+        // @ts-ignore-next-line
         .update(updates)
         .eq('id', userId)
         .select()

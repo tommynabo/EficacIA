@@ -24,6 +24,7 @@ router.post('/register', async (req: Request, res: Response) => {
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 7);
 
+      // @ts-ignore-next-line
       await supabase.from('users').update({
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,

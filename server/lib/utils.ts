@@ -2,10 +2,11 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 
 export function generateJWT(userId: string, email: string): string {
+  const options = { expiresIn: config.JWT_EXPIRY } as const;
   return jwt.sign(
     { userId, email },
-    config.JWT_SECRET,
-    { expiresIn: config.JWT_EXPIRY }
+    config.JWT_SECRET as string,
+    options as any
   );
 }
 

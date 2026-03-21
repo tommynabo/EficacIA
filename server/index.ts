@@ -3,7 +3,6 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import { config } from './config/index.js';
 import { initSupabase, supabase } from './lib/supabase.js';
-import { initSupabase } from './lib/supabase.js';
 import { initRedis } from './lib/redis.js';
 import { authMiddleware, errorHandler, notFoundHandler } from './middleware/index.js';
 import { initQueues } from './services/queue.service.js';
@@ -24,7 +23,7 @@ app.use(cors({
 }));
 
 // Stripe webhook needs raw body - must come BEFORE JSON parser
-const stripe = new Stripe(config.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
+const stripe = new Stripe(config.STRIPE_SECRET_KEY);
 const rawBodyParser = express.raw({ type: 'application/json' });
 
 app.post('/api/payments/stripe-webhook', rawBodyParser, async (req: any, res: Response) => {
@@ -47,6 +46,7 @@ app.post('/api/payments/stripe-webhook', rawBodyParser, async (req: any, res: Re
           if (subscription.status === 'past_due') status = 'past_due';
           if (subscription.cancel_at) status = 'pending_cancellation';
 
+          // @ts-ignore-next-line
           await supabase.from('users').update({
             subscription_status: status,
             stripe_subscription_id: subscription.id,
@@ -62,6 +62,7 @@ app.post('/api/payments/stripe-webhook', rawBodyParser, async (req: any, res: Re
         const userId = subscription.metadata?.userId;
 
         if (userId) {
+          // @ts-ignore-next-line
           await supabase.from('users').update({
             subscription_status: 'canceled',
             subscription_plan: 'free',
