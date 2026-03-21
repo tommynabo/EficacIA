@@ -113,6 +113,7 @@ export default async function handler(req, res) {
         mode: 'payment',
         payment_method_types: ['card'],
         line_items: [{ price: priceId, quantity: 1 }],
+        allow_promotion_codes: true,
         metadata: {
           plan: 'ai_credits',
           ...(userId && typeof userId === 'string' ? { userId } : {}),
