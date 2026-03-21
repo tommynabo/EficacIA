@@ -20,33 +20,33 @@ const PLANS: Array<{
 }> = [
   {
     key: 'pro',
-    name: 'Starter',
+    name: 'EficacIA PRO',
     tagline: 'Perfecto para empezar',
-    monthlyPrice: 49,
-    annualTotal: 490,
+    monthlyPrice: 42,
+    annualTotal: 420,
     popular: false,
     accentColor: 'indigo',
     features: [
-      'Hasta 500 leads/mes',
-      'Búsqueda LinkedIn básica',
-      '1 campaña activa',
-      'Secuencias de 3 pasos',
+      'Leads ilimitados',
+      '3 cuentas de LinkedIn',
+      'Campañas ilimitadas',
+      'Secuencias multi-paso con IA',
       'Unibox unificado',
       'Soporte por email',
     ],
   },
   {
     key: 'growth',
-    name: 'Growth',
+    name: 'EficacIA GROWTH',
     tagline: 'El preferido por los equipos',
-    monthlyPrice: 99,
-    annualTotal: 990,
+    monthlyPrice: 79,
+    annualTotal: 780,
     popular: true,
     badge: 'MÁS POPULAR',
     accentColor: 'violet',
     features: [
-      'Hasta 5.000 leads/mes',
-      'LinkedIn + Sales Navigator',
+      'Leads ilimitados',
+      '5 cuentas de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
       'AI Assistant incluido',
@@ -57,16 +57,18 @@ const PLANS: Array<{
   },
   {
     key: 'agency',
-    name: 'Scale',
+    name: 'EficacIA SCALE',
     tagline: 'Para agencias y equipos grandes',
-    monthlyPrice: 199,
-    annualTotal: 1990,
+    monthlyPrice: 149,
+    annualTotal: 1440,
     popular: false,
     accentColor: 'purple',
     features: [
       'Leads ilimitados',
-      'Todo lo del plan Growth',
-      'Multi-cuenta LinkedIn',
+      '10 cuentas de LinkedIn',
+      'Campañas ilimitadas',
+      'Secuencias multi-paso con IA',
+      'AI Assistant incluido',
       'Dashboard de agencia',
       'Whitelabel disponible',
       'Gestor de cuenta dedicado',
@@ -95,9 +97,6 @@ function Navbar() {
         </div>
         <div className="flex items-center gap-3">
           <Link to="/login" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">Iniciar Sesión</Link>
-          <Button asChild className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 text-sm h-9 px-4">
-            <Link to="/register">Registrarse</Link>
-          </Button>
         </div>
       </div>
     </nav>
@@ -165,7 +164,7 @@ export default function PricingPage() {
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto">
             Comienza con{' '}
-            <span className="text-indigo-400 font-semibold">7 días de prueba gratis</span>.
+            <span className="text-indigo-400 font-semibold">3 días de prueba gratis</span>.
             {' '}No se cobra nada hasta que termine el trial.
           </p>
         </div>
@@ -234,10 +233,10 @@ export default function PricingPage() {
             return (
               <Card
                 key={plan.key}
-                className={`relative flex flex-col p-8 transition-all duration-300 border ${
+                className={`relative flex flex-col p-8 transition-all duration-300 border cursor-default ${
                   plan.popular
-                    ? 'ring-2 ring-violet-500/60 bg-slate-800/80 border-violet-500/30 shadow-2xl shadow-violet-500/10'
-                    : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                    ? 'ring-2 ring-violet-500/60 bg-slate-800/80 border-violet-500/30 shadow-2xl shadow-violet-500/10 hover:scale-[1.02] hover:shadow-violet-500/25'
+                    : 'bg-slate-900/60 border-slate-800 hover:border-indigo-500/60 hover:scale-[1.02]'
                 }`}
               >
                 {/* Popular badge */}
@@ -263,12 +262,12 @@ export default function PricingPage() {
                         €{plan.monthlyPrice}/mes sin descuento
                       </p>
                       <p className="text-xs text-emerald-400 font-medium">
-                        Facturado €{plan.annualTotal}/año — ahorra €{annualSavings(plan)}
+                        Pago único €{plan.annualTotal}/año — ahorra €{annualSavings(plan)}
                       </p>
                     </div>
                   ) : (
                     <p className="text-xs text-indigo-400 mt-2">
-                      7 días gratis — luego €{plan.monthlyPrice}/mes
+                      3 días gratis — luego €{plan.monthlyPrice}/mes
                     </p>
                   )}
                 </div>
@@ -292,7 +291,7 @@ export default function PricingPage() {
                 <Button
                   onClick={() => handleCheckout(plan)}
                   disabled={loading !== null}
-                  className={`w-full h-12 text-base font-semibold transition-all ${
+                  className={`w-full h-12 text-base font-semibold transition-all whitespace-nowrap ${
                     plan.popular
                       ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-lg shadow-indigo-500/20'
                       : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-slate-600'
@@ -306,29 +305,13 @@ export default function PricingPage() {
                   ) : (
                     <>
                       <CreditCard className="w-4 h-4 mr-2" />
-                      Empezar 7 días gratis
+                      Empezar 3 días gratis
                     </>
                   )}
                 </Button>
               </Card>
             )
           })}
-        </div>
-
-        {/* Promo code */}
-        <div className="mt-16 max-w-3xl mx-auto p-8 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-violet-950/40 border border-indigo-500/20">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center mb-4">
-            <Zap className="w-5 h-5 text-indigo-400" />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2">¿Tienes un código de prueba?</h3>
-          <p className="text-slate-400 mb-6 text-sm">
-            Si tienes un código promocional puedes registrarte completamente gratis sin ingresar tarjeta de crédito.
-          </p>
-          <Link to="/register">
-            <Button className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0">
-              Registrarse con Código Gratis
-            </Button>
-          </Link>
         </div>
 
         {/* FAQ */}
@@ -338,7 +321,7 @@ export default function PricingPage() {
             {[
               {
                 q: '¿Se cobra algo durante el trial?',
-                a: 'No. Durante los 7 días de prueba no se realiza ningún cobro. Tu tarjeta solo se verifica para confirmar que es válida. Si cancelas antes de que termine el trial, no te cobramos nada.',
+                a: 'No. Durante los 3 días de prueba no se realiza ningún cobro. Tu tarjeta solo se verifica para confirmar que es válida. Si cancelas antes de que termine el trial, no te cobramos nada.',
               },
               {
                 q: '¿Puedo cambiar de plan?',

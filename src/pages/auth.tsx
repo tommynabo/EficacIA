@@ -29,11 +29,18 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
   } | null>(null)
   const [loadingStripe, setLoadingStripe] = React.useState(!!sessionId)
 
-  const [formData, setFormData] = React.useState({ email: "", password: "", fullName: "", promoCode: "" })
+  const [formData, setFormData] = React.useState({ email: "", password: "", fullName: "" })
 
   React.useEffect(() => {
     if (isAuthenticated) navigate("/dashboard")
   }, [isAuthenticated, navigate])
+
+  // Guard: /register requires a valid Stripe session_id
+  React.useEffect(() => {
+    if (mode === 'register' && !sessionId) {
+      navigate('/pricing', { replace: true })
+    }
+  }, [mode, sessionId, navigate])
 
   React.useEffect(() => {
     if (sessionId && mode === 'register') {
@@ -45,7 +52,8 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           setStripeData(data)
           setFormData(prev => ({ ...prev, email: data.email || '', fullName: data.name || '' }))
         } catch (err: any) {
-          setError('No se pudieron recuperar los datos del pago. Puedes registrarte normalmente.')
+          // Session invalid or payment not complete — send back to pricing
+          navigate('/pricing', { replace: true })
         } finally {
           setLoadingStripe(false)
         }
@@ -82,18 +90,10 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           const data = await res.json()
           if (data.token) { localStorage.setItem('auth_token', data.token); localStorage.setItem('user', JSON.stringify(data.user)) }
           await login(formData.email, formData.password)
-        } else if (formData.promoCode) {
-          const res = await fetch(`${API_URL}/api/auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: formData.email, password: formData.password, fullName: formData.fullName, promoCode: formData.promoCode }),
-          })
-          if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.error || 'Error en registro') }
-          const data = await res.json()
-          if (data.token) { localStorage.setItem('auth_token', data.token); localStorage.setItem('user', JSON.stringify(data.user)) }
-          await login(formData.email, formData.password)
-        } else {
-          await signup(formData.email, formData.password, formData.fullName)
+          } else {
+          // Should not reach here — guard redirects to /pricing without session_id
+          navigate('/pricing', { replace: true })
+          return
         }
       }
       navigate("/dashboard")
@@ -156,7 +156,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
         {stripeData && mode === 'register' && (
           <div className="mt-4 mx-auto max-w-sm p-3 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
-            <p className="text-sm text-green-400">Pago verificado — Solo falta tu contraseña para activar tu trial de 7 días</p>
+            <p className="text-sm text-green-400">Pago verificado — Solo falta tu contraseña para activar tu trial de 3 días</p>
           </div>
         )}
 
@@ -164,8 +164,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
         {mode === "login" && !showForgot && (
           <p className="mt-2 text-center text-sm text-slate-400">
             ¿No tienes cuenta?{" "}
-            <Link to="/register" className="font-medium text-blue-500 hover:text-blue-400">Regístrate aquí</Link>{" "}o{" "}
-            <Link to="/pricing" className="font-medium text-blue-500 hover:text-blue-400">comienza un trial gratis</Link>
+            <Link to="/pricing" className="font-medium text-blue-500 hover:text-blue-400">Elige un plan y empieza gratis</Link>
           </p>
         )}
         {mode === "register" && !stripeData && (
@@ -291,13 +290,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                   </div>
                 </div>
 
-                {mode === "register" && !stripeData && (
-                  <div className="border-t border-slate-700 pt-6">
-                    <p className="text-xs text-slate-400 mb-4">¿Tienes un código de prueba gratuita? Ingresalo aquí para obtener 7 días gratis:</p>
-                    <Input id="promoCode" name="promoCode" type="text"
-                      placeholder="Ejemplo: EficaciaEsLoMejor2026" value={formData.promoCode} onChange={handleChange} />
-                  </div>
-                )}
+
 
                 {mode === "login" && (
                   <div className="flex items-center justify-between">
@@ -322,8 +315,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
                   <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
                     {isLoading ? "Cargando..."
                       : mode === "login" ? "Iniciar Sesión"
-                      : stripeData ? "Activar Trial de 7 Días"
-                      : formData.promoCode ? "Registrarse con Código Gratis"
+                      : stripeData ? "Activar 3 Días de Prueba Gratis"
                       : "Crear Cuenta"}
                   </Button>
                 </div>
