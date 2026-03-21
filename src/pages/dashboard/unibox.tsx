@@ -986,6 +986,7 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
   const [input, setInput] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const endRef = React.useRef<HTMLDivElement>(null)
+  const assistantInputRef = React.useRef<HTMLTextAreaElement>(null)
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -995,6 +996,9 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
     const text = input.trim()
     if (!text || loading) return
     setInput("")
+    if (assistantInputRef.current) {
+      assistantInputRef.current.style.height = "auto"
+    }
     const newMessages: AssistantMessage[] = [...messages, { role: "user", content: text }]
     setMessages(newMessages)
     setLoading(true)
@@ -1069,10 +1073,17 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
       <div className="border-t border-slate-800 p-3 shrink-0">
         <div className="flex items-end gap-2">
           <textarea
+            ref={assistantInputRef}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={e => {
+              setInput(e.target.value)
+              if (assistantInputRef.current) {
+                assistantInputRef.current.style.height = "auto"
+                assistantInputRef.current.style.height = `${Math.min(assistantInputRef.current.scrollHeight, 150)}px`
+              }
+            }}
             onKeyDown={onKey}
-            rows={2}
+            rows={1}
             placeholder="Pregunta algo… (Cmd+Enter para enviar)"
             className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
           />

@@ -134,13 +134,64 @@ async function handleMe(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const { full_name, timezone } = req.body || {};
-      const updates = {};
-      if (full_name !== undefined) updates.full_name = full_name;
-      if (timezone !== undefined) updates.timezone = timezone;
-      
-      const { data: user, error } = await supabase.from('users').update(updates).eq('id', decoded.userId).select().single();
-      if (error) return res.status(400).json({ error: error.message });
+      const updates = { ...(req.body || {}) };
+
+      // Strip fields that must never be overwritten via this endpoint
+      const BLOCKED = ['id', 'email', 'subscription_plan', 'subscription_status',
+        'stripe_customer_id', 'stripe_subscription_id', 'created_at', 'role'];
+      BLOCKED.forEach(k => delete updates[k]);
+
+      const updateKeys = Object.keys(updates);
+      console.log('[auth/me] PUT fields being saved:', updateKeys);
+
+      let { data: user, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', decoded.userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[auth/me] PUT attempt 1 failed:', {
+          message: error.message,
+          code:    error.code,
+          details: error.details,
+          hint:    error.hint,
+          fields:  updateKeys,
+        });
+
+        // Attempt to reload PostgREST schema cache (no-op if RPC not available)
+        try { await supabase.rpc('pg_reload_schema', {}).catch(() => null); } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 250));
+
+        // Retry
+        const retry = await supabase
+          .from('users')
+          .update(updates)
+          .eq('id', decoded.userId)
+          .select()
+          .single();
+        user  = retry.data;
+        error = retry.error;
+
+        if (error) {
+          console.error('[auth/me] PUT attempt 2 failed:', {
+            message: error.message,
+            code:    error.code,
+            hint:    error.hint,
+            fields:  updateKeys,
+          });
+          return res.status(400).json({
+            error:   `Error al actualizar perfil: ${error.message}`,
+            code:    error.code,
+            details: error.details,
+            hint:    error.hint ||
+              `Verifica que las columnas [${updateKeys.join(', ')}] existen en la tabla 'users'. ` +
+              'Si acabas de ejecutar una migración, recarga el esquema de Supabase o espera ~30 s.',
+            fields: updateKeys,
+          });
+        }
+      }
       return res.status(200).json(user);
     }
   } catch (error) {

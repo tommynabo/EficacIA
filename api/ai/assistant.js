@@ -21,15 +21,12 @@ const supabase = createClient(
 
 // --- Hardcoded safety rules — DO NOT remove or soften these ---
 const RULE_VARIABLES =
-  'REGLA DE VARIABLES: Tienes estrictamente prohibido usar corchetes o inventar variables. ' +
-  'LAS ÚNICAS VARIABLES QUE PUEDES USAR SON: {{first_name}}, {{last_name}}, {{company_name}}. ' +
-  'Si no sabes un dato, no pongas un placeholder, redacta el texto para que funcione sin él.';
+  'Eres un redactor de LinkedIn quirúrgico. Regla 1: Tus únicas variables son {{first_name}} y {{company_name}}.\n' +
+  'Regla 2: Si el contexto es INVITACIÓN, el mensaje total NO debe superar los 200 caracteres bajo ninguna circunstancia. Debes prever que el nombre del lead puede ser largo; por tanto, el cuerpo del texto debe ser minimalista.';
 
 const RULE_INVITATION =
-  'REGLA CRÍTICA DE API: Este mensaje es una nota de conexión de LinkedIn. ' +
-  'EL LÍMITE ES DE 300 CARACTERES, PERO DEBES DEVOLVER MÁXIMO 200 CARACTERES ' +
-  'para dejar espacio a la variable del nombre. SÉ EXTREMADAMENTE BREVE. NO AÑADAS SALUDOS LARGOS.';
-
+  'Devuelve ÚnicaMENTE el texto de la invitación, sin comillas, sin encabezados, sin explicaciones adicionales. ' +
+  'El límite de 200 caracteres es absoluto: cuenta cada carácter antes de responder.';
 // Fallback prompts when the user has not configured their own
 const FALLBACK_PROMPT_SEQUENCE =
   'Eres un experto copywriter para ventas B2B en LinkedIn. Tu objetivo es redactar mensajes de ' +
@@ -118,9 +115,13 @@ export default async function handler(req, res) {
     // Step 4: Post-process — strip surrounding quotes
     let content = raw.trim().replace(/^["'«»\u201c\u201d]+|["'«»\u201c\u201d]+$/g, '').trim();
 
-    // Safety slice for invitation steps in case the model ignores the character rule
-    if (isInvitation) {
-      content = content.slice(0, 290);
+    // Safety guard: invitations only — if the model ignored the 200-char rule, reject and ask for a shorter rewrite
+    if (isInvitation && content.length > 250) {
+      return res.status(400).json({
+        error:
+          'El mensaje de invitación supera el límite estricto de 250 caracteres. ' +
+          'Por favor, pide a la IA que lo resuma más.',
+      });
     }
 
     return res.status(200).json({ content, model: MODEL });

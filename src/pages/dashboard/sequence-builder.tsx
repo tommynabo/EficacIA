@@ -287,6 +287,7 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
   const [input, setInput] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const endRef = React.useRef<HTMLDivElement>(null)
+  const assistantInputRef = React.useRef<HTMLTextAreaElement>(null)
 
   React.useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
@@ -294,6 +295,9 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
     const text = input.trim()
     if (!text || loading) return
     setInput("")
+    if (assistantInputRef.current) {
+      assistantInputRef.current.style.height = "auto"
+    }
     const next: AssistantMsg[] = [...messages, { role: "user", content: text }]
     setMessages(next)
     setLoading(true)
@@ -362,10 +366,17 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
       <div className="border-t border-slate-800 p-4">
         <div className="flex items-end gap-2">
           <textarea
+            ref={assistantInputRef}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={e => {
+              setInput(e.target.value)
+              if (assistantInputRef.current) {
+                assistantInputRef.current.style.height = "auto"
+                assistantInputRef.current.style.height = `${Math.min(assistantInputRef.current.scrollHeight, 150)}px`
+              }
+            }}
             onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send() } }}
-            rows={2}
+            rows={1}
             placeholder="Pide una mejora, un mensaje nuevo… (Cmd+Enter)"
             className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
           />

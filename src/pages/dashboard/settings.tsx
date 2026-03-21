@@ -670,13 +670,12 @@ export default function SettingsPage() {
           <div>
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-violet-400" />
-              <h3 className="text-lg font-semibold text-slate-100">EficacIA Assistant – Prompts Base</h3>
+              <h3 className="text-lg font-semibold text-slate-100">EficacIA Assistant</h3>
             </div>
             <p className="text-sm text-slate-400 mt-1">
               Define el rol y tono permanente del asistente. Estas instrucciones se inyectan automáticamente
-              en cada conversación según el contexto. Las variables permitidas son{" "}
-              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{first_name}}"}</code>,{" "}
-              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{last_name}}"}</code> y{" "}
+              en cada conversación según el contexto. Las únicas variables permitidas son{" "}
+              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{first_name}}"}</code>{" "}y{" "}
               <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{company_name}}"}</code>.
             </p>
           </div>
@@ -693,7 +692,7 @@ export default function SettingsPage() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-md bg-violet-500/20 flex items-center justify-center text-xs font-bold text-violet-400">1</div>
-                    <CardTitle className="text-violet-300 text-sm">Rol para Secuencias (Contactos Fríos)</CardTitle>
+                    <CardTitle className="text-violet-300 text-sm">Instrucciones para Secuencias (Frío)</CardTitle>
                   </div>
                   <CardDescription className="text-slate-400 text-xs mt-1">
                     Usado cuando el asistente genera mensajes en el Sequence Builder. Define tu expertise, sector y tono para outreach en frío.
@@ -701,7 +700,7 @@ export default function SettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <textarea
-                    rows={5}
+                    rows={8}
                     placeholder="Ej: Eres un experto en ventas B2B SaaS. Tu objetivo es generar interés genuino en directores de tecnología de empresas de 50-500 empleados. Usa un tono profesional pero directo, sin jerga corporativa..."
                     value={aiPromptSequence}
                     onChange={e => setAiPromptSequence(e.target.value)}
@@ -715,7 +714,7 @@ export default function SettingsPage() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-md bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">2</div>
-                    <CardTitle className="text-blue-300 text-sm">Rol para Unibox (Contactos Calientes / Respuestas)</CardTitle>
+                    <CardTitle className="text-blue-300 text-sm">Instrucciones para Unibox (Caliente)</CardTitle>
                   </div>
                   <CardDescription className="text-slate-400 text-xs mt-1">
                     Usado cuando el asistente responde desde la Unibox a contactos que ya han respondido. Define cómo manejar objeciones y avanzar la conversación.
@@ -723,7 +722,7 @@ export default function SettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <textarea
-                    rows={5}
+                    rows={8}
                     placeholder="Ej: Eres un experto en cierre de ventas consultivas. El contacto ya respondió. Tu objetivo es cualificar al prospecto y acordar una llamada de 15 minutos. Sé empático y adapta el mensaje al contexto de la conversación..."
                     value={aiPromptUnibox}
                     onChange={e => setAiPromptUnibox(e.target.value)}

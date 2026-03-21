@@ -110,7 +110,8 @@ export class AuthService {
         .single();
 
       if (error) {
-        throw new Error(error.message);
+        console.error('[AuthService.updateUser] Error updating profile:', error);
+        throw new Error(`DB Error: ${error.message} (Hint: ${error.hint || 'No hint'})`);
       }
 
       return data as User;
