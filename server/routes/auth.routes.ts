@@ -107,11 +107,13 @@ router.put('/me', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const { name, settings } = req.body;
+    const { name, settings, ai_prompt_sequence, ai_prompt_unibox } = req.body;
     const updates: any = {};
 
     if (name) updates.name = name;
     if (settings) updates.settings = settings;
+    if (ai_prompt_sequence !== undefined) updates.ai_prompt_sequence = ai_prompt_sequence;
+    if (ai_prompt_unibox !== undefined) updates.ai_prompt_unibox = ai_prompt_unibox;
 
     const user = await AuthService.updateUser(userId, updates);
 

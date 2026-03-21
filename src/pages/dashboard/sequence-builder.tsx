@@ -68,7 +68,7 @@ export default function SequenceBuilderPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
         },
-        body: JSON.stringify({ messages: [{ role: "user", content }], stepType: isInvitation ? "invitation" : "message" }),
+        body: JSON.stringify({ messages: [{ role: "user", content }], source: 'sequence', stepType: isInvitation ? "invitation" : "message" }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error")
@@ -304,7 +304,7 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
         },
-        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), source: 'sequence' }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error")

@@ -4,8 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Moon, Sun, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Trash2, PencilLine, Ban, UserCheck } from "lucide-react"
-import { useTheme } from "@/src/contexts/ThemeContext"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck } from "lucide-react"
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -30,14 +29,12 @@ export default function SettingsPage() {
   const [awRunning, setAwRunning] = React.useState<Record<string, boolean>>({})
   const [awMsg, setAwMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  // AI assistant prompts state (localStorage)
-  interface AIPrompt { id: string; name: string; content: string }
-  const [prompts, setPrompts] = React.useState<AIPrompt[]>(() => {
-    try { return JSON.parse(localStorage.getItem("eficacia_ai_prompts") || "[]") } catch { return [] }
-  })
-  const [promptName, setPromptName] = React.useState("")
-  const [promptContent, setPromptContent] = React.useState("")
-  const [editingPromptId, setEditingPromptId] = React.useState<string | null>(null)
+  // AI assistant prompts state (persisted to backend)
+  const [aiPromptSequence, setAiPromptSequence] = React.useState("")
+  const [aiPromptUnibox, setAiPromptUnibox] = React.useState("")
+  const [aiPromptsLoading, setAiPromptsLoading] = React.useState(false)
+  const [aiPromptsSaving, setAiPromptsSaving] = React.useState(false)
+  const [aiPromptsMsg, setAiPromptsMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
   // Blocked leads state
   interface BlockedLead { id: string; first_name: string | null; last_name: string | null; linkedin_url: string | null; company: string | null; tags: string[] }
@@ -58,6 +55,9 @@ export default function SettingsPage() {
     }
     if (activeTab === "blocked") {
       loadBlockedLeads()
+    }
+    if (activeTab === "ai-assistant") {
+      loadAiPrompts()
     }
   }, [activeTab])
 
@@ -193,6 +193,41 @@ export default function SettingsPage() {
       console.error(e)
     } finally {
       setIsLoadingKey(false)
+    }
+  }
+
+  const loadAiPrompts = async () => {
+    try {
+      setAiPromptsLoading(true)
+      const res = await fetch(`${envUrl}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiPromptSequence(data.ai_prompt_sequence || "")
+        setAiPromptUnibox(data.ai_prompt_unibox || "")
+      }
+    } catch { /* silent */ }
+    finally { setAiPromptsLoading(false) }
+  }
+
+  const saveAiPrompts = async () => {
+    try {
+      setAiPromptsSaving(true)
+      const res = await fetch(`${envUrl}/api/auth/me`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ai_prompt_sequence: aiPromptSequence, ai_prompt_unibox: aiPromptUnibox }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setAiPromptsMsg({ type: "success", text: "✓ Prompts guardados correctamente" })
+      setTimeout(() => setAiPromptsMsg(null), 4000)
+    } catch (e: any) {
+      setAiPromptsMsg({ type: "error", text: e.message || "Error al guardar" })
+      setTimeout(() => setAiPromptsMsg(null), 4000)
+    } finally {
+      setAiPromptsSaving(false)
     }
   }
 
@@ -635,105 +670,92 @@ export default function SettingsPage() {
           <div>
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-violet-400" />
-              <h3 className="text-lg font-semibold text-slate-100">Prompts Personalizados</h3>
+              <h3 className="text-lg font-semibold text-slate-100">EficacIA Assistant – Prompts Base</h3>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              Define el contexto y tono que el EficacIA Assistant usará como base en todas tus conversaciones.
-              Se guardan localmente en tu navegador.
+              Define el rol y tono permanente del asistente. Estas instrucciones se inyectan automáticamente
+              en cada conversación según el contexto. Las variables permitidas son{" "}
+              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{first_name}}"}</code>,{" "}
+              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{last_name}}"}</code> y{" "}
+              <code className="bg-slate-950 px-1 py-0.5 rounded text-violet-400">{"{{company_name}}"}</code>.
             </p>
           </div>
 
-          {/* Create / Edit form */}
-          <Card className="border-violet-500/20 bg-violet-500/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-violet-300 text-sm">
-                {editingPromptId ? "Editar Prompt" : "Nuevo Prompt"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-400">Nombre del prompt</label>
-                <Input
-                  placeholder="Ej: Tono directo y profesional"
-                  value={promptName}
-                  onChange={e => setPromptName(e.target.value)}
-                  className="bg-slate-900 border-slate-700"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-400">Contenido / Instrucciones</label>
-                <textarea
-                  rows={4}
-                  placeholder="Ej: Responde siempre de forma directa y concisa. Evita los saludos genéricos. El tono debe ser profesional pero cercano..."
-                  value={promptContent}
-                  onChange={e => setPromptContent(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
-                />
-              </div>
-              <div className="flex gap-2 justify-end">
-                {editingPromptId && (
-                  <Button variant="ghost" size="sm" onClick={() => {
-                    setEditingPromptId(null); setPromptName(""); setPromptContent("")
-                  }}>Cancelar</Button>
-                )}
+          {aiPromptsLoading ? (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Cargando prompts...</span>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Prompt 1: Sequences */}
+              <Card className="border-violet-500/20 bg-violet-500/5">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-violet-500/20 flex items-center justify-center text-xs font-bold text-violet-400">1</div>
+                    <CardTitle className="text-violet-300 text-sm">Rol para Secuencias (Contactos Fríos)</CardTitle>
+                  </div>
+                  <CardDescription className="text-slate-400 text-xs mt-1">
+                    Usado cuando el asistente genera mensajes en el Sequence Builder. Define tu expertise, sector y tono para outreach en frío.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <textarea
+                    rows={5}
+                    placeholder="Ej: Eres un experto en ventas B2B SaaS. Tu objetivo es generar interés genuino en directores de tecnología de empresas de 50-500 empleados. Usa un tono profesional pero directo, sin jerga corporativa..."
+                    value={aiPromptSequence}
+                    onChange={e => setAiPromptSequence(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-none"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Prompt 2: Unibox */}
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">2</div>
+                    <CardTitle className="text-blue-300 text-sm">Rol para Unibox (Contactos Calientes / Respuestas)</CardTitle>
+                  </div>
+                  <CardDescription className="text-slate-400 text-xs mt-1">
+                    Usado cuando el asistente responde desde la Unibox a contactos que ya han respondido. Define cómo manejar objeciones y avanzar la conversación.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <textarea
+                    rows={5}
+                    placeholder="Ej: Eres un experto en cierre de ventas consultivas. El contacto ya respondió. Tu objetivo es cualificar al prospecto y acordar una llamada de 15 minutos. Sé empático y adapta el mensaje al contexto de la conversación..."
+                    value={aiPromptUnibox}
+                    onChange={e => setAiPromptUnibox(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Save feedback */}
+              {aiPromptsMsg && (
+                <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+                  aiPromptsMsg.type === "success"
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                    : "text-red-400 bg-red-500/10 border-red-500/20"
+                }`}>
+                  {aiPromptsMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  {aiPromptsMsg.text}
+                </div>
+              )}
+
+              <div className="flex justify-end">
                 <Button
-                  size="sm"
-                  disabled={!promptName.trim() || !promptContent.trim()}
+                  disabled={aiPromptsSaving}
+                  onClick={saveAiPrompts}
                   className="gap-2 bg-violet-600 hover:bg-violet-700"
-                  onClick={() => {
-                    const updated: AIPrompt[] = editingPromptId
-                      ? prompts.map(p => p.id === editingPromptId ? { id: p.id, name: promptName.trim(), content: promptContent.trim() } : p)
-                      : [...prompts, { id: Date.now().toString(), name: promptName.trim(), content: promptContent.trim() }]
-                    setPrompts(updated)
-                    localStorage.setItem("eficacia_ai_prompts", JSON.stringify(updated))
-                    setPromptName(""); setPromptContent(""); setEditingPromptId(null)
-                  }}
                 >
-                  <PencilLine className="w-3.5 h-3.5" />
-                  {editingPromptId ? "Guardar Cambios" : "Añadir Prompt"}
+                  {aiPromptsSaving
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</>
+                    : <><Sparkles className="w-4 h-4" /> Guardar Prompts</>
+                  }
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Prompts list */}
-          {prompts.length === 0 ? (
-            <Card className="p-8 flex flex-col items-center gap-3 border-dashed border-slate-700 text-center">
-              <Sparkles className="w-10 h-10 text-slate-600" />
-              <p className="text-slate-400 text-sm">No hay prompts guardados. Crea el primero arriba.</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {prompts.map(p => (
-                <Card key={p.id} className="border-slate-800 bg-slate-900/40">
-                  <CardContent className="pt-5 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <p className="font-semibold text-slate-100 text-sm">{p.name}</p>
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">{p.content}</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => { setEditingPromptId(p.id); setPromptName(p.name); setPromptContent(p.content) }}
-                          className="text-slate-500 hover:text-violet-400 p-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
-                        >
-                          <PencilLine className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            const updated = prompts.filter(x => x.id !== p.id)
-                            setPrompts(updated)
-                            localStorage.setItem("eficacia_ai_prompts", JSON.stringify(updated))
-                          }}
-                          className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
             </div>
           )}
         </div>

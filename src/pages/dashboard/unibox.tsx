@@ -1009,6 +1009,7 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           leadName,
+          source: 'unibox',
         }),
       })
       const d = await r.json()
