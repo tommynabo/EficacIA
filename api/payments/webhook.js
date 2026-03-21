@@ -74,28 +74,45 @@ export default async function handler(req, res) {
 
     // ── AI Credits one-time purchase ──────────────────────────────────────
     if (plan === 'ai_credits') {
+      const sessionId = session.id;
       const customerEmail =
         session.customer_details?.email ||
         session.customer_email ||
         null;
 
-      console.log(`[WEBHOOK] AI credits purchase. userId=${userId} email=${customerEmail}`);
+      console.log(`[WEBHOOK] AI credits purchase. sessionId=${sessionId} userId=${userId} email=${customerEmail}`);
 
-      // Resolve user record
+      // Resolve user record — only select id and email to avoid failing if
+      // ai_credits column doesn't exist yet (migration may not have run)
       let userRecord = null;
       if (userId) {
-        const { data } = await supabase.from('users').select('id, ai_credits').eq('id', userId).single();
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, email, ai_credits, last_credits_session_id')
+          .eq('id', userId)
+          .single();
+        if (error) console.warn('[WEBHOOK] userId lookup error:', error.message);
         userRecord = data;
       }
       if (!userRecord && customerEmail) {
-        const { data } = await supabase.from('users').select('id, ai_credits').eq('email', customerEmail).single();
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, email, ai_credits, last_credits_session_id')
+          .eq('email', customerEmail)
+          .single();
+        if (error) console.warn('[WEBHOOK] email lookup error:', error.message);
         userRecord = data;
       }
 
       if (!userRecord) {
         console.error('[WEBHOOK] Could not find user for AI credits purchase. email:', customerEmail, 'userId:', userId);
-        // Return 200 to prevent Stripe from retrying — the event can be replayed manually
         return res.status(200).json({ received: true, warning: 'User not found' });
+      }
+
+      // Idempotency: skip if this session was already processed
+      if (userRecord.last_credits_session_id === sessionId) {
+        console.log(`[WEBHOOK] Session ${sessionId} already processed for user ${userRecord.id}. Skipping.`);
+        return res.status(200).json({ received: true, skipped: 'already_processed' });
       }
 
       const currentCredits = typeof userRecord.ai_credits === 'number' ? userRecord.ai_credits : 0;
@@ -103,7 +120,7 @@ export default async function handler(req, res) {
 
       const { error: updateError } = await supabase
         .from('users')
-        .update({ ai_credits: newCredits })
+        .update({ ai_credits: newCredits, last_credits_session_id: sessionId })
         .eq('id', userRecord.id);
 
       if (updateError) {

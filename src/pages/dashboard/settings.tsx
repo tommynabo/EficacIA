@@ -65,7 +65,14 @@ export default function SettingsPage() {
       loadAiPrompts()
     }
     if (activeTab === "credits") {
-      loadAiCredits()
+      // Check if returning from a successful Stripe payment
+      const paymentStatus = searchParams.get("payment")
+      const sessionId = searchParams.get("session_id")
+      if (paymentStatus === "success" && sessionId) {
+        syncCreditsAfterPayment(sessionId)
+      } else {
+        loadAiCredits()
+      }
     }
   }, [activeTab])
 
@@ -81,6 +88,37 @@ export default function SettingsPage() {
       }
     } catch { /* silent */ }
     finally { setCreditsLoading(false) }
+  }
+
+  const syncCreditsAfterPayment = async (sessionId: string) => {
+    setCreditsLoading(true)
+    setCreditsMsg(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/credits-sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setAiCredits(data.credits)
+        if (data.granted) {
+          setCreditsMsg({ type: "success", text: "¡+1.000 créditos añadidos a tu cuenta!" })
+        } else {
+          setCreditsMsg({ type: "success", text: "Pago completado. Tu saldo está actualizado." })
+        }
+      } else {
+        // Fallback: just load current balance
+        await loadAiCredits()
+        setCreditsMsg({ type: "error", text: data.error || "No se pudieron aplicar los créditos. Contacta con soporte." })
+      }
+    } catch {
+      await loadAiCredits()
+    } finally {
+      setCreditsLoading(false)
+      // Clean up URL params so sync doesn't re-run on refresh
+      setSearchParams({ tab: "credits" }, { replace: true })
+    }
   }
 
   const handleBuyCredits = async () => {

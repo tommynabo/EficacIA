@@ -119,7 +119,7 @@ export default async function handler(req, res) {
           ...(userId && typeof userId === 'string' ? { userId } : {}),
         },
         billing_address_collection: 'auto',
-        success_url: `${baseUrl}/dashboard/settings?tab=credits&payment=success`,
+        success_url: `${baseUrl}/dashboard/settings?tab=credits&payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${baseUrl}/dashboard/settings?tab=credits`,
       };
     } else {
