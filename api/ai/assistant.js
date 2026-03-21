@@ -21,7 +21,10 @@ const supabase = createClient(
 
 // --- Hardcoded safety rules — DO NOT remove or soften these ---
 const RULE_VARIABLES =
-  'Eres un redactor de LinkedIn quirúrgico. Regla 1: Tus únicas variables son {{first_name}} y {{company_name}}.\n' +
+  'Eres un redactor de LinkedIn quirúrgico.\n' +
+  'Regla 1: Si el mensaje es para una SECUENCIA (envío masivo), las únicas variables de personalización permitidas son {{nombre}}, {{apellido}} y {{empresa}}. ' +
+  'Tienes PROHIBIDO usar variables en inglés como {{first_name}}, {{last_name}} o {{company_name}}. ' +
+  'Si necesitas referirte al contacto, usa estrictamente {{nombre}}.\n' +
   'Regla 2: Si el contexto es INVITACIÓN, el mensaje total NO debe superar los 200 caracteres bajo ninguna circunstancia. Debes prever que el nombre del lead puede ser largo; por tanto, el cuerpo del texto debe ser minimalista.';
 
 const RULE_INVITATION =
@@ -52,7 +55,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurado en el servidor' });
   }
 
-  const { messages, source, stepType, leadName } = req.body || {};
+  const { messages, source, stepType, leadName, contactName, contactCompany } = req.body || {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages es requerido y debe ser un array no vacío' });
@@ -86,16 +89,26 @@ export default async function handler(req, res) {
     : ((userData?.ai_prompt_sequence || '').trim() || FALLBACK_PROMPT_SEQUENCE);
 
   // Steps 2 & 3: Build hardened system prompt with mandatory rules
-  const systemParts = [
-    rolePrompt,
-    RULE_VARIABLES,
-    isInvitation
-      ? RULE_INVITATION
-      : 'Devuelve ÚNICAMENTE el texto del mensaje, sin comillas, sin encabezados, sin explicaciones.',
-    'Responde siempre en español.',
-  ];
+  const systemParts = [rolePrompt, RULE_VARIABLES];
 
-  if (leadName) {
+  if (isUnibox && contactName) {
+    // REAL conversation — substitute actual name & company, no variables
+    const companyPart = contactCompany ? ` de la empresa ${contactCompany}` : '';
+    systemParts.push(
+      `CONTEXTO REAL: Estás respondiendo a una conversación activa con ${contactName}${companyPart}. ` +
+      `Escribe el nombre real directamente en el mensaje ("${contactName}"). ` +
+      'NO uses la variable {{nombre}}, {{apellido}} ni {{empresa}}; éstas son sólo para secuencias masivas.'
+    );
+  } else if (isInvitation) {
+    systemParts.push(RULE_INVITATION);
+  } else {
+    systemParts.push('Devuelve ÚnicaMENTE el texto del mensaje, sin comillas, sin encabezados, sin explicaciones.');
+  }
+
+  systemParts.push('Responde siempre en español.');
+
+  // Legacy fallback: if no contactName was passed but leadName exists, still hint the contact
+  if (leadName && !contactName) {
     systemParts.push(`El usuario está hablando con el contacto: ${leadName}.`);
   }
 

@@ -416,6 +416,7 @@ export default function UniboxPage() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error al enviar")
       setDraft("")
+      if (textareaRef.current) textareaRef.current.style.height = "auto"
       // Append optimistically
       const optimistic: Message = {
         id: `opt-${Date.now()}`,
@@ -922,10 +923,16 @@ export default function UniboxPage() {
               <textarea
                 ref={textareaRef}
                 value={draft}
-                onChange={e => setDraft(e.target.value)}
+                onChange={e => {
+                  setDraft(e.target.value)
+                  if (textareaRef.current) {
+                    textareaRef.current.style.height = "auto"
+                    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
+                  }
+                }}
                 onKeyDown={onKeyDown}
                 placeholder="Escribe un mensaje… (Cmd+Enter para enviar)"
-                rows={2}
+                rows={1}
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none"
               />
               <Button
@@ -962,6 +969,14 @@ export default function UniboxPage() {
       {assistantOpen && (
         <EficacIAAssistantPanel
           leadName={selectedChat ? chatTitle(selectedChat, globalMyProviderId) : undefined}
+          contactName={
+            selectedLead?.name ||
+            (selectedChat ? chatTitle(selectedChat, globalMyProviderId) : undefined)
+          }
+          contactCompany={
+            (getOtherAttendee(selectedChat || undefined, globalMyProviderId) as any)?.company_name ||
+            undefined
+          }
           onClose={() => setAssistantOpen(false)}
         />
       )}
@@ -976,7 +991,17 @@ interface AssistantMessage {
   content: string
 }
 
-function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onClose: () => void }) {
+function EficacIAAssistantPanel({
+  leadName,
+  contactName,
+  contactCompany,
+  onClose,
+}: {
+  leadName?: string
+  contactName?: string
+  contactCompany?: string
+  onClose: () => void
+}) {
   const [messages, setMessages] = React.useState<AssistantMessage[]>([
     {
       role: "assistant",
@@ -1013,6 +1038,8 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           leadName,
+          contactName,
+          contactCompany,
           source: 'unibox',
         }),
       })
@@ -1031,7 +1058,7 @@ function EficacIAAssistantPanel({ leadName, onClose }: { leadName?: string; onCl
   }
 
   return (
-    <div className="w-80 border-l border-slate-800 flex flex-col bg-slate-950/80 shrink-0">
+    <div className="w-96 border-l border-slate-800 flex flex-col bg-slate-950/80 shrink-0">
       {/* Header */}
       <div className="h-14 flex items-center justify-between px-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2">
