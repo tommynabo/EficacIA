@@ -10,3 +10,4 @@ coverage/
 .vercel
 .env*.local
 setup-stripe-new.mjs
+create-coupon.mjs
