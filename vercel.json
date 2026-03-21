@@ -18,6 +18,16 @@
       ]
     }
   ],
+  "crons": [
+    {
+      "path": "/api/linkedin/campaign-engine",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/linkedin/invitations/withdraw",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/auth/login", "destination": "/api/auth?action=login" },
     { "source": "/api/auth/register", "destination": "/api/auth?action=register" },

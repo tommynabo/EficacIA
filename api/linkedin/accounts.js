@@ -250,7 +250,8 @@ export default async function handler(req, res) {
   if (req.query.action === 'withdraw') {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
-    const cronSecret = req.headers['x-cron-secret'];
+    const cronSecret = req.headers['x-cron-secret']
+      || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
     const isValidCron = cronSecret && cronSecret === process.env.CRON_SECRET;
     const userId = getUserId(req);
     if (!isValidCron && !userId) return res.status(401).json({ error: 'No autenticado' });
@@ -393,7 +394,7 @@ export default async function handler(req, res) {
 
     const { data: accounts, error } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at, unipile_account_id, max_actions_per_hour')
+      .select('id, team_id, username, profile_name, is_valid, created_at, last_validated_at, unipile_account_id, max_actions_per_hour, auto_withdraw_invites, withdraw_after_days')
       .eq('team_id', teamId)
       .order('created_at', { ascending: false });
 
