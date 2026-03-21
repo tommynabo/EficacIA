@@ -248,7 +248,10 @@ export default async function handler(req, res) {
 
   // ── WITHDRAW action (cron or manual) ───────────────────────────────
   if (req.query.action === 'withdraw') {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+    // Vercel native cron sends GET; manual/frontend calls send POST — accept both
+    if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido' });
+
+    console.log(`[WITHDRAW] ▶ triggered via ${req.method} | force=${req.query.force ?? 'false'} | accountId=${req.query.accountId ?? 'all'} | time=${new Date().toISOString()}`);
 
     const cronSecret = req.headers['x-cron-secret']
       || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');

@@ -460,9 +460,11 @@ export default function SettingsPage() {
                       </div>
                       {/* Toggle */}
                       <button
-                        onClick={() => setAwAccounts(prev => prev.map(a =>
-                          a.id === acc.id ? { ...a, auto_withdraw_invites: !a.auto_withdraw_invites } : a
-                        ))}
+                        onClick={() => {
+                          const updated = { ...acc, auto_withdraw_invites: !acc.auto_withdraw_invites };
+                          setAwAccounts(prev => prev.map(a => a.id === acc.id ? updated : a));
+                          saveAWSettings(updated);
+                        }}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                           acc.auto_withdraw_invites ? "bg-emerald-500" : "bg-slate-600"
                         }`}
