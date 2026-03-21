@@ -105,8 +105,8 @@ export default function SettingsPage() {
   const runWithdrawNow = async (acc: AWAccount) => {
     try {
       setAwRunning(prev => ({ ...prev, [acc.id]: true }))
-      const query = acc.unipile_account_id ? `?accountId=${acc.unipile_account_id}` : ""
-      const res = await fetch(`${envUrl}/api/linkedin/accounts?action=withdraw${query ? "&accountId=" + acc.unipile_account_id : ""}`, {
+      const accountParam = acc.unipile_account_id ? `&accountId=${acc.unipile_account_id}` : ""
+      const res = await fetch(`${envUrl}/api/linkedin/accounts?action=withdraw&force=true${accountParam}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
       })

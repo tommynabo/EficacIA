@@ -102,16 +102,20 @@ export default async function handler(req, res) {
       // ── Fetch blocked leads to use as filter ──────────────────────────
       const { data: blockedLeads } = await supabaseAdmin
         .from('leads')
-        .select('linkedin_url')
+        .select('linkedin_url, unipile_id')
         .eq('team_id', teamId)
         .eq('status', 'blocked');
 
-      const blockedIdentifiers = new Set(
+      // Build two sets: one for public slugs from URL, one for raw provider IDs
+      const blockedSlugs = new Set(
         (blockedLeads || []).flatMap(l => {
           if (!l.linkedin_url) return [];
           const match = l.linkedin_url.match(/linkedin\.com\/in\/([^/?]+)/i);
           return match ? [match[1].toLowerCase()] : [];
         })
+      );
+      const blockedProviderIds = new Set(
+        (blockedLeads || []).map(l => l.unipile_id).filter(Boolean).map(id => id.toLowerCase())
       );
 
       // ── Enrich each chat with attendee names + picture_url ──
@@ -145,9 +149,11 @@ export default async function handler(req, res) {
       const filtered = enriched.filter(chat => {
         const attendees = chat.attendees_enriched || [];
         const nonSelf = attendees.filter(a => !a.is_self);
-        return !nonSelf.some(
-          a => a.public_identifier && blockedIdentifiers.has(a.public_identifier.toLowerCase())
-        );
+        return !nonSelf.some(a => {
+          const slug = a.public_identifier ? a.public_identifier.toLowerCase() : null;
+          const pid = a.provider_id ? a.provider_id.toLowerCase() : null;
+          return (slug && blockedSlugs.has(slug)) || (pid && blockedProviderIds.has(pid));
+        });
       });
 
       // Return with enriched attendees (blocked leads excluded)
@@ -325,6 +331,7 @@ export default async function handler(req, res) {
         first_name: firstName,
         last_name: lastName,
         linkedin_url: profileUrl || `https://www.linkedin.com/in/${providerId}/`,
+        unipile_id: providerId,
         status: 'pending',
         tags: [],
         sequence_paused: false,
@@ -351,7 +358,7 @@ export default async function handler(req, res) {
     if (leadId) {
       const { data: lead, error } = await supabaseAdmin
         .from('leads')
-        .update({ status: 'blocked' })
+        .update({ status: 'blocked', ...(unipile_id ? { unipile_id } : {}) })
         .eq('id', leadId)
         .eq('team_id', teamId)
         .select('id, status')

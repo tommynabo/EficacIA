@@ -72,7 +72,12 @@ export default function SequenceBuilderPage() {
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || "Error")
-      updateStep(stepId, { content: d.content })
+      // Enforce hard 300-char limit for invitation steps (AI can misjudge length)
+      let generated = d.content as string
+      if (isInvitation && generated.length > 300) {
+        generated = generated.slice(0, 300).replace(/\s+\S*$/, "")
+      }
+      updateStep(stepId, { content: generated })
       setAiDialogStepId(null)
       setAiObjective("")
     } catch (e: any) {
@@ -155,8 +160,16 @@ export default function SequenceBuilderPage() {
                           className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pb-10 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-28"
                           placeholder="Escribe tu mensaje aquí..."
                           value={step.content}
+                          maxLength={step.type === "invitation" ? 300 : undefined}
                           onChange={(e) => updateStep(step.id, { content: e.target.value })}
                         />
+                        {step.type === "invitation" && (
+                          <span className={`absolute top-2 right-2 text-[10px] font-mono pointer-events-none ${
+                            step.content.length > 280 ? "text-red-400" : "text-slate-500"
+                          }`}>
+                            {step.content.length}/300
+                          </span>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
