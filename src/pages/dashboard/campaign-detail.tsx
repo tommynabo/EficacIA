@@ -146,7 +146,14 @@ export default function CampaignDetailPage() {
         }),
       })
       const d = await r.json()
-      if (!r.ok) throw new Error(d.error || "Error")
+      if (!r.ok) {
+        if (r.status === 403 && d.code === 'NO_CREDITS') {
+          alert("Has agotado tus créditos. Recarga en Settings → Créditos IA para seguir usando la IA.")
+        } else {
+          throw new Error(d.error || "Error")
+        }
+        return
+      }
       updateStep(activeStep.id, { content: d.content })
       setAiDialogOpen(false)
       setAiObjective("")

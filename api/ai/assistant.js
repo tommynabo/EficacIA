@@ -87,12 +87,18 @@ export default async function handler(req, res) {
   const isUnibox = source === 'unibox';
   const isInvitation = source === 'sequence' && stepType === 'invitation';
 
-  // Step 1: Load the user's custom role prompt from the database
+  // Step 1: Load the user's custom role prompt and ai_credits from the database
   const { data: userData } = await supabase
     .from('users')
-    .select('ai_prompt_sequence, ai_prompt_unibox')
+    .select('ai_prompt_sequence, ai_prompt_unibox, ai_credits')
     .eq('id', userId)
     .single();
+
+  // Step 1b: Check AI credits — block if exhausted
+  const currentCredits = userData?.ai_credits ?? 0;
+  if (currentCredits <= 0) {
+    return res.status(403).json({ error: 'Créditos agotados', code: 'NO_CREDITS' });
+  }
 
   const rolePrompt = isUnibox
     ? ((userData?.ai_prompt_unibox || '').trim() || FALLBACK_PROMPT_UNIBOX)
@@ -154,6 +160,14 @@ export default async function handler(req, res) {
           'Por favor, pide a la IA que lo resuma más.',
       });
     }
+
+    // Deduct 1 AI credit (best-effort, do not fail the response if this errors)
+    supabase
+      .from('users')
+      .update({ ai_credits: Math.max(0, currentCredits - 1) })
+      .eq('id', userId)
+      .then(() => {})
+      .catch((e) => console.warn('[AI ASSISTANT] Failed to deduct credit:', e.message));
 
     return res.status(200).json({ content, model: MODEL });
   } catch (err) {

@@ -71,7 +71,14 @@ export default function SequenceBuilderPage() {
         body: JSON.stringify({ messages: [{ role: "user", content }], source: 'sequence', stepType: isInvitation ? "invitation" : "message" }),
       })
       const d = await r.json()
-      if (!r.ok) throw new Error(d.error || "Error")
+      if (!r.ok) {
+        if (r.status === 403 && d.code === 'NO_CREDITS') {
+          alert("Has agotado tus créditos. Recarga en Settings → Créditos IA para seguir usando la IA.")
+        } else {
+          throw new Error(d.error || "Error")
+        }
+        return
+      }
       // Strip any leading/trailing quotes the model may have added
       let generated = (d.content as string).trim().replace(/^["'«»\u201c\u201d]+|["'«»\u201c\u201d]+$/g, "").trim()
       // Enforce hard 300-char limit for invitation steps (AI can misjudge length)
@@ -311,7 +318,13 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), source: 'sequence' }),
       })
       const d = await r.json()
-      if (!r.ok) throw new Error(d.error || "Error")
+      if (!r.ok) {
+        const msg = (r.status === 403 && d.code === 'NO_CREDITS')
+          ? "Has agotado tus créditos. Recarga en Settings → Créditos IA para seguir usando la IA."
+          : (d.error || "Error")
+        setMessages(prev => [...prev, { role: "assistant", content: msg }])
+        return
+      }
       setMessages(prev => [...prev, { role: "assistant", content: d.content }])
     } catch (e: any) {
       setMessages(prev => [...prev, { role: "assistant", content: `Error: ${e.message}` }])

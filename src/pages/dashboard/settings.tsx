@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard } from "lucide-react"
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -36,6 +36,11 @@ export default function SettingsPage() {
   const [aiPromptsSaving, setAiPromptsSaving] = React.useState(false)
   const [aiPromptsMsg, setAiPromptsMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
+  // AI Credits state
+  const [aiCredits, setAiCredits] = React.useState<number | null>(null)
+  const [creditsLoading, setCreditsLoading] = React.useState(false)
+  const [creditsMsg, setCreditsMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
+
   // Blocked leads state
   interface BlockedLead { id: string; first_name: string | null; last_name: string | null; linkedin_url: string | null; company: string | null; tags: string[] }
   const [blockedLeads, setBlockedLeads] = React.useState<BlockedLead[]>([])
@@ -59,7 +64,47 @@ export default function SettingsPage() {
     if (activeTab === "ai-assistant") {
       loadAiPrompts()
     }
+    if (activeTab === "credits") {
+      loadAiCredits()
+    }
   }, [activeTab])
+
+  const loadAiCredits = async () => {
+    try {
+      setCreditsLoading(true)
+      const res = await fetch(`${envUrl}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiCredits(typeof data.ai_credits === "number" ? data.ai_credits : 0)
+      }
+    } catch { /* silent */ }
+    finally { setCreditsLoading(false) }
+  }
+
+  const handleBuyCredits = async () => {
+    const priceId = import.meta.env.VITE_STRIPE_AI_CREDITS_PRICE_ID
+    if (!priceId) {
+      setCreditsMsg({ type: "error", text: "El producto de créditos no está configurado (VITE_STRIPE_AI_CREDITS_PRICE_ID)." })
+      setTimeout(() => setCreditsMsg(null), 5000)
+      return
+    }
+    try {
+      setCreditsMsg(null)
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId, plan: "ai_credits", userId: token() ? JSON.parse(atob(token()!.split(".")[1])).userId : undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error creando sesión de pago")
+      if (data.url) window.location.href = data.url
+    } catch (e: any) {
+      setCreditsMsg({ type: "error", text: e.message || "Error al iniciar el pago" })
+      setTimeout(() => setCreditsMsg(null), 5000)
+    }
+  }
 
   const loadAWAccounts = async () => {
     try {
@@ -246,6 +291,7 @@ export default function SettingsPage() {
           { key: "auto-withdraw", label: "Auto-Withdraw" },
           { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
+          { key: "credits", label: "Créditos IA" },
         ].map(({ key, label, badge }) => (
           <button
             key={key}
@@ -757,6 +803,103 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── CREDITS TAB ──────────────────────────────────────────────── */}
+      {activeTab === "credits" && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h3 className="text-lg font-semibold text-slate-100">Créditos IA</h3>
+          </div>
+          <p className="text-sm text-slate-400 -mt-4">
+            Cada vez que el asistente genera un mensaje, se consume 1 crédito. Recarga cuando los necesites.
+          </p>
+
+          {/* Current balance card */}
+          <Card className="border-slate-700 bg-slate-900/50">
+            <CardContent className="pt-6 flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                <Zap className="w-7 h-7 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">Saldo actual</p>
+                {creditsLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-slate-400 mt-1" />
+                ) : (
+                  <p className="text-3xl font-bold text-slate-100">
+                    {aiCredits !== null ? aiCredits.toLocaleString() : "—"}
+                    <span className="text-sm font-normal text-slate-400 ml-1">créditos</span>
+                  </p>
+                )}
+              </div>
+              {aiCredits !== null && aiCredits <= 50 && (
+                <div className="ml-auto flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {aiCredits === 0 ? "Sin créditos — la IA está bloqueada" : "Saldo bajo"}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Buy pack card */}
+          <Card className="border-violet-500/30 bg-gradient-to-br from-violet-500/5 to-blue-500/5">
+            <CardContent className="pt-6 space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-slate-100">Pack 1.000 créditos IA</span>
+                    <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">One-time</Badge>
+                  </div>
+                  <p className="text-sm text-slate-400">
+                    Genera hasta 1.000 mensajes adicionales con el asistente IA.
+                    Sin suscripción, sin caducidad.
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-2xl font-bold text-slate-100">10 €</p>
+                  <p className="text-xs text-slate-500">pago único</p>
+                </div>
+              </div>
+
+              <ul className="space-y-1.5 text-sm text-slate-300">
+                {[
+                  "1.000 mensajes generados por IA",
+                  "Sirve para Unibox, Secuencias y Campaign Builder",
+                  "Sin fecha de caducidad",
+                  "Pago seguro vía Stripe",
+                ].map(item => (
+                  <li key={item} className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              {creditsMsg && (
+                <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+                  creditsMsg.type === "success"
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                    : "text-red-400 bg-red-500/10 border-red-500/20"
+                }`}>
+                  {creditsMsg.type === "success"
+                    ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    : <AlertCircle className="w-4 h-4 shrink-0" />
+                  }
+                  {creditsMsg.text}
+                </div>
+              )}
+
+              <Button
+                onClick={handleBuyCredits}
+                className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white py-5 text-base font-semibold"
+              >
+                <CreditCard className="w-5 h-5" />
+                Comprar 1.000 créditos — 10 €
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

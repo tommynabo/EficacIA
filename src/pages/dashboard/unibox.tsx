@@ -1046,7 +1046,13 @@ function EficacIAAssistantPanel({
         }),
       })
       const d = await r.json()
-      if (!r.ok) throw new Error(d.error || "Error")
+      if (!r.ok) {
+        const msg = (r.status === 403 && d.code === 'NO_CREDITS')
+          ? "Has agotado tus créditos. Recarga en Settings → Créditos IA para seguir usando la IA."
+          : (d.error || "Error")
+        setMessages(prev => [...prev, { role: "assistant", content: msg }])
+        return
+      }
       setMessages(prev => [...prev, { role: "assistant", content: d.content }])
     } catch (e: any) {
       setMessages(prev => [...prev, { role: "assistant", content: `Error: ${e.message}` }])

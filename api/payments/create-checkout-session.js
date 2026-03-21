@@ -2,8 +2,8 @@ import Stripe from 'stripe';
 
 // ─── Allowed Price IDs ────────────────────────────────────────────────────────
 // Set STRIPE_PRO_MONTHLY, STRIPE_PRO_ANNUAL, STRIPE_GROWTH_MONTHLY,
-// STRIPE_GROWTH_ANNUAL, STRIPE_AGENCY_MONTHLY, STRIPE_AGENCY_ANNUAL
-// in your Vercel / .env environment variables.
+// STRIPE_GROWTH_ANNUAL, STRIPE_AGENCY_MONTHLY, STRIPE_AGENCY_ANNUAL,
+// and STRIPE_AI_CREDITS_PRICE_ID in your Vercel / .env environment variables.
 //
 // Security: priceId sent by the client is always validated against this whitelist.
 // When env vars are not yet configured (empty), any Stripe-format ID is accepted
@@ -16,7 +16,13 @@ const ALLOWED_PRICE_IDS = new Set(
     process.env.STRIPE_GROWTH_ANNUAL,
     process.env.STRIPE_AGENCY_MONTHLY,
     process.env.STRIPE_AGENCY_ANNUAL,
+    process.env.STRIPE_AI_CREDITS_PRICE_ID,
   ].filter(Boolean),
+);
+
+// One-time payment price IDs (payment mode, not subscription)
+const ONE_TIME_PRICE_IDS = new Set(
+  [process.env.STRIPE_AI_CREDITS_PRICE_ID].filter(Boolean),
 );
 
 // Reverse map: priceId → plan slug — used to populate session metadata.
@@ -98,29 +104,46 @@ export default async function handler(req, res) {
     const baseUrl = `${proto}://${host}`;
 
     // ── Create Stripe Checkout Session ─────────────────────────────────────
-    const sessionParams = {
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      subscription_data: {
-        trial_period_days: 7,
+    const isOneTime = ONE_TIME_PRICE_IDS.has(priceId) || plan === 'ai_credits';
+
+    let sessionParams;
+    if (isOneTime) {
+      // One-time payment for AI credits — no trial, no subscription
+      sessionParams = {
+        mode: 'payment',
+        payment_method_types: ['card'],
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: {
+          plan: 'ai_credits',
+          ...(userId && typeof userId === 'string' ? { userId } : {}),
+        },
+        billing_address_collection: 'auto',
+        success_url: `${baseUrl}/dashboard/settings?tab=credits&payment=success`,
+        cancel_url:  `${baseUrl}/dashboard/settings?tab=credits`,
+      };
+    } else {
+      sessionParams = {
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [{ price: priceId, quantity: 1 }],
+        subscription_data: {
+          trial_period_days: 7,
+          metadata: {
+            plan,
+            billing: billingPeriod,
+            ...(userId && typeof userId === 'string' ? { userId } : {}),
+          },
+        },
         metadata: {
           plan,
           billing: billingPeriod,
-          // userId allows the webhook to adjudicate the subscription without a
-          // database lookup by email. Present only in authenticated upgrade flows.
           ...(userId && typeof userId === 'string' ? { userId } : {}),
         },
-      },
-      metadata: {
-        plan,
-        billing: billingPeriod,
-        ...(userId && typeof userId === 'string' ? { userId } : {}),
-      },
-      billing_address_collection: 'auto',
-      success_url: `${baseUrl}/register?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
-      cancel_url:  `${baseUrl}/pricing`,
-    };
+        billing_address_collection: 'auto',
+        success_url: `${baseUrl}/register?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
+        cancel_url:  `${baseUrl}/pricing`,
+      };
+    }
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 

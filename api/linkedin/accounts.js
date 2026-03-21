@@ -392,6 +392,39 @@ export default async function handler(req, res) {
 
   // GET - listar cuentas LinkedIn del usuario
   if (req.method === 'GET') {
+    // GET ?action=pending_invitations&id=<accountId> — count pending sent invitations via Unipile
+    if (req.query.action === 'pending_invitations') {
+      const { id } = req.query;
+      if (!id) return res.status(400).json({ error: 'id requerido' });
+
+      const teamId = await getOrCreateTeam(userId);
+      if (!teamId) return res.status(200).json({ count: 0 });
+
+      const { data: account } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('unipile_account_id')
+        .eq('id', id)
+        .eq('team_id', teamId)
+        .single();
+
+      if (!account?.unipile_account_id) return res.status(200).json({ count: 0 });
+
+      const dsn = (process.env.UNIPILE_DSN || '').trim();
+      const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
+      if (!dsn || !apiKey) return res.status(200).json({ count: 0 });
+
+      try {
+        const invUrl = `https://${dsn}/api/v1/linkedin/invitations/sent?account_id=${account.unipile_account_id}&limit=100`;
+        const invResp = await fetch(invUrl, { headers: { 'X-API-KEY': apiKey, Accept: 'application/json' } });
+        if (!invResp.ok) return res.status(200).json({ count: 0 });
+        const invData = await invResp.json();
+        const items = invData.items || invData.data || invData.invitations || [];
+        return res.status(200).json({ count: items.length });
+      } catch {
+        return res.status(200).json({ count: 0 });
+      }
+    }
+
     const teamId = await getOrCreateTeam(userId);
     if (!teamId) return res.status(200).json({ success: true, accounts: [] });
 

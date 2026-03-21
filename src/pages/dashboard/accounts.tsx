@@ -10,6 +10,71 @@ import ConnectLinkedInButton from "@/src/components/connect-linkedin-button"
 const RISK_THRESHOLD = 15 // acciones/hora — por encima de esto se muestra la advertencia
 const MAX_ACTIONS_LIMIT = 120
 
+// ─── Health Score ──────────────────────────────────────────────────────────────
+// Score 0-100: penalizes high send rate and pending invitations.
+const SAFE_ACTIONS_LIMIT = RISK_THRESHOLD       // 15 actions/hr is safe baseline
+const PENALIZE_INVITATIONS_THRESHOLD = 50       // >50 pending = starts hurting score
+const PENALIZE_INVITATIONS_DANGER = 150         // >=150 pending = max penalty
+
+function calcHealthScore(actionsPerHour: number, pendingInvitations: number): number {
+  // Speed penalty: 0 at safe limit, max 50 points lost at MAX_ACTIONS_LIMIT
+  const speedRatio = Math.min(actionsPerHour, MAX_ACTIONS_LIMIT) / MAX_ACTIONS_LIMIT
+  const speedPenalty = Math.round(speedRatio * 50)
+
+  // Invitation penalty: 0 below threshold, max 50 points lost at danger level
+  const invitationRatio = Math.min(
+    Math.max(pendingInvitations - PENALIZE_INVITATIONS_THRESHOLD, 0),
+    PENALIZE_INVITATIONS_DANGER - PENALIZE_INVITATIONS_THRESHOLD
+  ) / (PENALIZE_INVITATIONS_DANGER - PENALIZE_INVITATIONS_THRESHOLD)
+  const invitationPenalty = Math.round(invitationRatio * 50)
+
+  return Math.max(0, 100 - speedPenalty - invitationPenalty)
+}
+
+function getHealthColor(score: number): string {
+  if (score >= 80) return "#10b981" // emerald-500
+  if (score >= 50) return "#f59e0b" // amber-500
+  return "#f43f5e"                  // rose-500
+}
+
+function getHealthTooltip(actionsPerHour: number, pendingInvitations: number, score: number): string {
+  const parts: string[] = []
+  if (actionsPerHour > SAFE_ACTIONS_LIMIT) {
+    parts.push(`Velocidad agresiva (${actionsPerHour}/hr)`)
+  }
+  if (pendingInvitations >= PENALIZE_INVITATIONS_THRESHOLD) {
+    parts.push(`Muchas invitaciones pendientes (${pendingInvitations})`)
+  }
+  if (parts.length === 0) {
+    return score >= 80 ? "Cuenta sana — comportamiento dentro de los límites seguros" : "Score bajo por factores de actividad"
+  }
+  return parts.join(" · ")
+}
+
+interface HealthBadgeProps {
+  score: number
+  tooltip: string
+}
+
+function HealthBadge({ score, tooltip }: HealthBadgeProps) {
+  const color = getHealthColor(score)
+  return (
+    <div className="relative group inline-flex">
+      <div
+        className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm"
+        style={{ background: color, boxShadow: `0 0 0 3px ${color}33` }}
+      >
+        {score}
+      </div>
+      {/* Tooltip */}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl max-w-xs text-center">
+        {tooltip}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-700" />
+      </div>
+    </div>
+  )
+}
+
 interface LinkedInAccount {
   id: string
   team_id: string
@@ -53,6 +118,33 @@ export default function AccountsPage() {
 
   // Auto-withdraw settings are now managed from Settings → Auto-Withdraw tab
 
+  // Pending invitations per account (accountId → count), used to calculate health score
+  const [pendingInvitations, setPendingInvitations] = React.useState<Record<string, number>>({})
+
+  const fetchPendingInvitations = async (accountList: LinkedInAccount[]) => {
+    const token = localStorage.getItem("auth_token")
+    const results: Record<string, number> = {}
+    await Promise.all(
+      accountList.map(async (account) => {
+        try {
+          const res = await fetch(
+            `/api/linkedin/accounts?action=pending_invitations&id=${account.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+          if (res.ok) {
+            const data = await res.json()
+            results[account.id] = typeof data.count === "number" ? data.count : 0
+          } else {
+            results[account.id] = 0
+          }
+        } catch {
+          results[account.id] = 0
+        }
+      })
+    )
+    setPendingInvitations(results)
+  }
+
   const fetchAccounts = async () => {
     try {
       setIsLoading(true)
@@ -66,7 +158,10 @@ export default function AccountsPage() {
         throw new Error(data.error || "Error cargando cuentas")
       }
       const data = await response.json()
-      setAccounts(data.accounts || [])
+      const fetchedAccounts = data.accounts || []
+      setAccounts(fetchedAccounts)
+      // Load pending invitations in background for health score
+      fetchPendingInvitations(fetchedAccounts)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error loading accounts")
     } finally {
@@ -379,6 +474,7 @@ export default function AccountsPage() {
               <TableHead>PERFIL</TableHead>
               <TableHead>ESTADO</TableHead>
               <TableHead>VELOCIDAD</TableHead>
+              <TableHead>SALUD</TableHead>
               <TableHead>CONECTADA</TableHead>
               <TableHead className="text-right">ACCIONES</TableHead>
             </TableRow>
@@ -390,13 +486,14 @@ export default function AccountsPage() {
                   <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-28 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-10 w-10 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
             ) : accounts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-16 text-slate-400">
+                <TableCell colSpan={6} className="text-center py-16 text-slate-400">
                   <Linkedin className="w-12 h-12 mx-auto mb-4 text-slate-600" />
                   <p className="mb-2 font-medium">No hay cuentas conectadas</p>
                   <p className="text-sm mb-4">Conecta tu LinkedIn de forma segura con Unipile</p>
@@ -441,6 +538,15 @@ export default function AccountsPage() {
                         )
                       })()}
                     </button>
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const pending = pendingInvitations[account.id] ?? 0
+                      const actions = account.max_actions_per_hour ?? 5
+                      const score = calcHealthScore(actions, pending)
+                      const tooltip = getHealthTooltip(actions, pending, score)
+                      return <HealthBadge score={score} tooltip={tooltip} />
+                    })()}
                   </TableCell>
                   <TableCell className="text-slate-300">
                     {new Date(account.created_at).toLocaleDateString("es-ES")}
