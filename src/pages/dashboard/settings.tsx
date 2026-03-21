@@ -94,7 +94,7 @@ export default function SettingsPage() {
     setCreditsLoading(true)
     setCreditsMsg(null)
     try {
-      const res = await fetch(`${envUrl}/api/payments/credits-sync`, {
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session?action=credits-sync`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),

@@ -33,6 +33,7 @@
     { "source": "/api/auth/api-key", "destination": "/api/auth?action=api-key" },
     { "source": "/api/linkedin/invitations/withdraw", "destination": "/api/linkedin/accounts?action=withdraw" },
     { "source": "/callback", "destination": "/api/unipile?action=webhook" },
+    { "source": "/api/payments/credits-sync", "destination": "/api/payments/create-checkout-session?action=credits-sync" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/eficacia-extension.zip", "destination": "/eficacia-extension.zip" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
