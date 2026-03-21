@@ -281,7 +281,7 @@ function BuilderAssistantPanel({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = React.useState<AssistantMsg[]>([
     {
       role: "assistant",
-      content: "¡Hola! Soy tu EficacIA Assistant. Puedo ayudarte a redactar o mejorar los mensajes de tu secuencia, sugerir enfoques de outreach y personalizar el tono. ¿En qué empezamos?",
+      content: "¿Qué mensaje de secuencia quieres crear o mejorar? Describe el contexto, el tipo de lead y el objetivo, y te entrego el texto listo.",
     },
   ])
   const [input, setInput] = React.useState("")

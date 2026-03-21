@@ -19,17 +19,27 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-// --- Hardcoded safety rules — DO NOT remove or soften these ---
+// --- Hardcoded personality & safety rules — DO NOT remove or soften these ---
+
+// Core ghostwriter identity — always injected first, before any user-configured role
+const GHOSTWRITER_CORE =
+  'ACTÚA COMO UN REDACTOR FANTASMA (GHOSTWRITER) DE ÉLITE EN LINKEDIN. Tu nombre no existe.\n' +
+  'No saludas al usuario, no das introducciones como "Aquí tienes una opción". ENTREGAS DIRECTAMENTE EL TEXTO FINAL.\n\n' +
+  'REGLA DE ORO: Escribe siempre en primera persona del singular (YO), como si fueras el propio usuario que usa la plataforma.\n\n' +
+  'PROHIBICIONES:\n' +
+  '- Prohibido presentarte como "EficacIA Assistant" o cualquier nombre de asistente.\n' +
+  '- Prohibido usar frases de soporte como "Espero que esto te ayude", "¡Espero que te sea útil!", "Aquí tienes", "Claro, aquí va", "Por supuesto".\n' +
+  '- Prohibido usar comillas al principio y al final del mensaje.\n' +
+  '- Prohibido añadir explicaciones, comentarios o preguntas después del mensaje.';
+
 const RULE_VARIABLES =
-  'Eres un redactor de LinkedIn quirúrgico.\n' +
-  'Regla 1: Si el mensaje es para una SECUENCIA (envío masivo), las únicas variables de personalización permitidas son {{nombre}}, {{apellido}} y {{empresa}}. ' +
+  'VARIABLES: En secuencias masivas, usa estrictamente {{nombre}} y {{empresa}}. ' +
   'Tienes PROHIBIDO usar variables en inglés como {{first_name}}, {{last_name}} o {{company_name}}. ' +
-  'Si necesitas referirte al contacto, usa estrictamente {{nombre}}.\n' +
-  'Regla 2: Si el contexto es INVITACIÓN, el mensaje total NO debe superar los 200 caracteres bajo ninguna circunstancia. Debes prever que el nombre del lead puede ser largo; por tanto, el cuerpo del texto debe ser minimalista.';
+  'En la UNIBOX, si recibes el nombre real del contacto, úsalo directamente sin llaves.';
 
 const RULE_INVITATION =
-  'Devuelve ÚnicaMENTE el texto de la invitación, sin comillas, sin encabezados, sin explicaciones adicionales. ' +
-  'El límite de 200 caracteres es absoluto: cuenta cada carácter antes de responder.';
+  'INVITACIÓN — límite absoluto de 200 caracteres. Devuelve ÚNICAMENTE el texto, sin comillas, sin intro, sin explicaciones. ' +
+  'Cuenta los caracteres antes de responder. El cuerpo debe ser minimalista porque el nombre del lead puede ser largo.';
 // Fallback prompts when the user has not configured their own
 const FALLBACK_PROMPT_SEQUENCE =
   'Eres un experto copywriter para ventas B2B en LinkedIn. Tu objetivo es redactar mensajes de ' +
@@ -88,28 +98,26 @@ export default async function handler(req, res) {
     ? ((userData?.ai_prompt_unibox || '').trim() || FALLBACK_PROMPT_UNIBOX)
     : ((userData?.ai_prompt_sequence || '').trim() || FALLBACK_PROMPT_SEQUENCE);
 
-  // Steps 2 & 3: Build hardened system prompt with mandatory rules
-  const systemParts = [rolePrompt, RULE_VARIABLES];
+  // Build hardened system prompt — ghostwriter identity always goes first
+  const systemParts = [GHOSTWRITER_CORE, rolePrompt, RULE_VARIABLES];
 
   if (isUnibox && contactName) {
-    // REAL conversation — substitute actual name & company, no variables
+    // REAL conversation — use actual name, no placeholder variables
     const companyPart = contactCompany ? ` de la empresa ${contactCompany}` : '';
     systemParts.push(
-      `CONTEXTO REAL: Estás respondiendo a una conversación activa con ${contactName}${companyPart}. ` +
-      `Escribe el nombre real directamente en el mensaje ("${contactName}"). ` +
-      'NO uses la variable {{nombre}}, {{apellido}} ni {{empresa}}; éstas son sólo para secuencias masivas.'
+      `CONTEXTO REAL: Estás redactando una respuesta para una conversación activa con ${contactName}${companyPart}. ` +
+      `Usa el nombre "${contactName}" directamente en el texto si es natural. ` +
+      'NO uses la variable {{nombre}} ni {{empresa}}; éstas son sólo para secuencias masivas.'
     );
   } else if (isInvitation) {
     systemParts.push(RULE_INVITATION);
-  } else {
-    systemParts.push('Devuelve ÚnicaMENTE el texto del mensaje, sin comillas, sin encabezados, sin explicaciones.');
   }
 
   systemParts.push('Responde siempre en español.');
 
-  // Legacy fallback: if no contactName was passed but leadName exists, still hint the contact
+  // Legacy fallback: contactName not provided but leadName exists
   if (leadName && !contactName) {
-    systemParts.push(`El usuario está hablando con el contacto: ${leadName}.`);
+    systemParts.push(`Contexto: el destinatario del mensaje es ${leadName}.`);
   }
 
   const systemPrompt = systemParts.join('\n\n');
@@ -127,6 +135,16 @@ export default async function handler(req, res) {
 
     // Step 4: Post-process — strip surrounding quotes
     let content = raw.trim().replace(/^["'«»\u201c\u201d]+|["'«»\u201c\u201d]+$/g, '').trim();
+
+    // Strip common AI intro fragments the model sometimes emits despite instructions
+    content = content
+      .replace(/^(Aqu[íi] tienes[^:]*:|Claro,?\s*(aqu[íi] (va|te presento)[^:]*:|[^:]{0,30}:)|Por supuesto[^:]*:|Entendido[^:]*:|Perfecto[^:]*:)\s*/i, '')
+      .trim();
+
+    // Strip common AI outro fragments
+    content = content
+      .replace(/\s*(Espero (que (esto|te|les?)(\s+\w+)?\s*(ayude|sirva|sea [úu]til|guste))[^.]*\.?|[¡!]Espero[^!]{1,80}[!.][^.]*\.?|Av[íi]same si[^.]{1,80}\.|[¿?]Qu[ée] te parece[^?]{1,80}[?.]?)\s*$/i, '')
+      .trim();
 
     // Safety guard: invitations only — if the model ignored the 200-char rule, reject and ask for a shorter rewrite
     if (isInvitation && content.length > 250) {

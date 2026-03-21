@@ -1005,7 +1005,9 @@ function EficacIAAssistantPanel({
   const [messages, setMessages] = React.useState<AssistantMessage[]>([
     {
       role: "assistant",
-      content: `¡Hola! Soy tu EficacIA Assistant. ${leadName ? `Estás hablando con **${leadName}**. ` : ""}¿En qué puedo ayudarte? Puedo redactar respuestas, sugerir estrategias o reescribir mensajes.`,
+      content: contactName
+        ? `Conversación activa con **${contactName}**. ¿Qué mensaje quieres redactar? Describe el contexto y te entrego el texto listo para enviar.`
+        : `¿Qué mensaje quieres redactar? Describe el contexto y te entrego el texto listo para copiar.`,
     },
   ])
   const [input, setInput] = React.useState("")
