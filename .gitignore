@@ -9,3 +9,4 @@ coverage/
 !.env.example
 .vercel
 .env*.local
+setup-stripe-new.mjs
