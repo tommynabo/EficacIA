@@ -60,8 +60,9 @@ const PLANS: Array<{
     name: 'EficacIA SCALE',
     tagline: 'Para agencias y equipos grandes',
     monthlyPrice: 149,
-    annualTotal: 1440,
+    annualTotal: 1152,
     popular: false,
+    badge: 'OFERTA LIMITADA',
     accentColor: 'purple',
     features: [
       'Leads ilimitados',
@@ -106,7 +107,7 @@ function Navbar() {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PricingPage() {
-  const [billing, setBilling] = useState<BillingPeriod>('monthly')
+  const [billing, setBilling] = useState<BillingPeriod>('annual')
   const [loading, setLoading] = useState<PlanKey | null>(null)
   const [error, setError] = useState<string | null>(null)
 

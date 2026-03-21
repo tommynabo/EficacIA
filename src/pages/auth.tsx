@@ -38,7 +38,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
   // Guard: /register requires a valid Stripe session_id
   React.useEffect(() => {
     if (mode === 'register' && !sessionId) {
-      navigate('/pricing', { replace: true })
+      navigate('/', { replace: true })
     }
   }, [mode, sessionId, navigate])
 
@@ -53,7 +53,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           setFormData(prev => ({ ...prev, email: data.email || '', fullName: data.name || '' }))
         } catch (err: any) {
           // Session invalid or payment not complete — send back to pricing
-          navigate('/pricing', { replace: true })
+          navigate('/', { replace: true })
         } finally {
           setLoadingStripe(false)
         }
@@ -92,7 +92,7 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           await login(formData.email, formData.password)
           } else {
           // Should not reach here — guard redirects to /pricing without session_id
-          navigate('/pricing', { replace: true })
+          navigate('/', { replace: true })
           return
         }
       }

@@ -73,6 +73,22 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ─── Oferta de Lanzamiento ────────────────────────────────────────── */}
+      <section className="relative px-6 -mt-16 mb-16 z-20">
+        <div className="max-w-4xl mx-auto rounded-2xl border border-violet-500/50 bg-gradient-to-r from-indigo-900/90 to-violet-950/90 p-4 text-center shadow-2xl shadow-violet-500/20 flex flex-col sm:flex-row items-center justify-center gap-4 backdrop-blur-xl">
+          <div className="flex items-center gap-2 text-violet-200">
+            <span className="text-xl">🚀</span>
+            <span className="font-semibold whitespace-nowrap">Oferta de Lanzamiento:</span>
+          </div>
+          <p className="text-white text-sm md:text-base">
+            Los primeros <span className="font-bold text-violet-300">50 usuarios</span> obtienen el Plan SCALE con un <span className="font-bold text-emerald-400">20% extra de descuento</span> de por vida. ¡Quedan pocas plazas!
+          </p>
+          <Button size="sm" className="bg-violet-500 hover:bg-violet-600 text-white border-0 shrink-0 whitespace-nowrap flex items-center" asChild>
+            <Link to="/pricing">Reclamar Oferta</Link>
+          </Button>
+        </div>
+      </section>
+
       {/* ─── Stats Bar ────────────────────────────────────────────────────── */}
       <section className="border-y border-slate-800/60 bg-slate-900/20">
         <div className="max-w-5xl mx-auto px-6 py-10 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
@@ -257,7 +273,7 @@ export default function LandingPage() {
             Desde <span className="text-white font-semibold">42€/mes</span>. Incluye 3 días de prueba gratuita.
           </p>
           <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base whitespace-nowrap" asChild>
-            <Link to="/pricing">Ver todos los planes <ChevronRight className="ml-1 w-4 h-4" /></Link>
+            <Link to="/pricing" className="flex items-center justify-center">Ver todos los planes</Link>
           </Button>
         </div>
       </section>
