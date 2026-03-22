@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, TrendingUp, ExternalLink, RefreshCw } from "lucide-react"
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -13,6 +13,22 @@ export default function SettingsPage() {
 
   const [apiKey, setApiKey] = React.useState<string | null>(null)
   const [isLoadingKey, setIsLoadingKey] = React.useState(false)
+
+  // ─── Finanzas / Stripe Connect state ──────────────────────────────────────
+  interface ConnectAccountStatus {
+    id?: string
+    status: 'complete' | 'incomplete' | 'not_created'
+    charges_enabled?: boolean
+    payouts_enabled?: boolean
+    currently_due?: string[]
+    past_due?: string[]
+    display_name?: string | null
+    message?: string
+  }
+  const [connectStatus, setConnectStatus] = React.useState<ConnectAccountStatus | null>(null)
+  const [connectLoading, setConnectLoading] = React.useState(false)
+  const [connectOnboarding, setConnectOnboarding] = React.useState(false)
+  const [connectMsg, setConnectMsg] = React.useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Change password state
   const [newPassword, setNewPassword] = React.useState("")
@@ -74,6 +90,14 @@ export default function SettingsPage() {
         loadAiCredits()
       }
     }
+    if (activeTab === "finanzas") {
+      // Check if returning from Stripe onboarding
+      const onboardingStatus = searchParams.get("onboarding")
+      if (onboardingStatus === "success" || onboardingStatus === "refresh") {
+        setSearchParams({ tab: "finanzas" }, { replace: true })
+      }
+      loadConnectStatus()
+    }
   }, [activeTab])
 
   const loadAiCredits = async () => {
@@ -88,6 +112,57 @@ export default function SettingsPage() {
       }
     } catch { /* silent */ }
     finally { setCreditsLoading(false) }
+  }
+
+  // ─── Stripe Connect / Finanzas handlers ──────────────────────────────────
+  const loadConnectStatus = async () => {
+    setConnectLoading(true)
+    setConnectMsg(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/connect-onboarding`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setConnectStatus(data)
+    } catch (e: any) {
+      setConnectMsg({ type: "error", text: e.message || "Error al obtener estado de la cuenta" })
+    } finally {
+      setConnectLoading(false)
+    }
+  }
+
+  const startOnboarding = async () => {
+    setConnectOnboarding(true)
+    setConnectMsg(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/connect-onboarding`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      if (data.url) window.location.href = data.url
+    } catch (e: any) {
+      setConnectMsg({ type: "error", text: e.message || "Error iniciando onboarding" })
+    } finally {
+      setConnectOnboarding(false)
+    }
+  }
+
+  const openStripeDashboard = async () => {
+    setConnectMsg(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/connect-onboarding?action=login-link`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      if (data.url) window.open(data.url, "_blank", "noopener,noreferrer")
+    } catch (e: any) {
+      setConnectMsg({ type: "error", text: e.message || "Error generando enlace al dashboard" })
+    }
   }
 
   const syncCreditsAfterPayment = async (sessionId: string) => {
@@ -330,6 +405,8 @@ export default function SettingsPage() {
           { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
           { key: "credits", label: "Créditos IA" },
+          { key: "afiliados", label: "🚀 Afiliados" },
+          { key: "finanzas", label: "💰 Finanzas" },
         ].map(({ key, label, badge }) => (
           <button
             key={key}
@@ -938,6 +1015,304 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ─── AFILIADOS TAB ────────────────────────────────────────────── */}
+      {activeTab === "afiliados" && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-100">Programa de Afiliados</h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Comparte EficacIA con tu red y gana comisiones recurrentes por cada cliente que traigas.
+            </p>
+          </div>
+
+          {/* Hero CTA */}
+          <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-orange-500/5">
+            <CardContent className="pt-6 flex flex-col sm:flex-row items-center gap-6">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                <span className="text-3xl">🚀</span>
+              </div>
+              <div className="flex-1 text-center sm:text-left">
+                <p className="text-base font-bold text-slate-100 mb-1">¡Únete al programa y empieza a ganar!</p>
+                <p className="text-sm text-slate-400">Registra tu cuenta de afiliado y obtén tu enlace personalizado con tracking automático.</p>
+              </div>
+              <a
+                href="https://eficacia.getrewardful.com/signup"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold text-sm transition-colors whitespace-nowrap"
+              >
+                Crear cuenta de afiliado
+              </a>
+            </CardContent>
+          </Card>
+
+          {/* Tiers */}
+          <div>
+            <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Niveles de Comisión</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Bronce */}
+              <Card className="border-amber-700/40 bg-slate-900/60">
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥉</span>
+                    <div>
+                      <p className="font-bold text-amber-700">Bronce</p>
+                      <p className="text-xs text-slate-500">Nivel inicial</p>
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-amber-600">30%</div>
+                  <p className="text-xs text-slate-400">Comisión recurrente por cada pago de tus referidos, mes tras mes.</p>
+                  <div className="text-xs text-slate-500 bg-slate-800/60 rounded-lg px-3 py-2">
+                    Desde el primer referido
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Plata */}
+              <Card className="border-slate-400/40 bg-slate-900/60 ring-1 ring-slate-400/20">
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥈</span>
+                    <div>
+                      <p className="font-bold text-slate-300">Plata</p>
+                      <p className="text-xs text-slate-500">Nivel intermedio</p>
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-300">40%</div>
+                  <p className="text-xs text-slate-400">Comisión recurrente ampliada al superar el umbral mensual.</p>
+                  <div className="text-xs text-slate-500 bg-slate-800/60 rounded-lg px-3 py-2">
+                    Al superar <span className="text-slate-300 font-semibold">1.000 €/mes</span> referidos
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Oro */}
+              <Card className="border-yellow-500/40 bg-gradient-to-br from-yellow-500/5 to-amber-500/5 ring-1 ring-yellow-500/30">
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥇</span>
+                    <div>
+                      <p className="font-bold text-yellow-400">Oro</p>
+                      <p className="text-xs text-slate-500">Nivel élite</p>
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-yellow-400">50%</div>
+                  <p className="text-xs text-slate-400">La comisión más alta del programa, para afiliados top.</p>
+                  <div className="text-xs text-slate-500 bg-slate-800/60 rounded-lg px-3 py-2">
+                    Al superar <span className="text-yellow-400 font-semibold">2.500 €/mes</span> referidos
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* How it works */}
+          <Card className="border-slate-800 bg-slate-900/40">
+            <CardHeader>
+              <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Cómo funciona</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {[
+                { step: "1", text: "Regístrate como afiliado en el portal de Rewardful y obtén tu enlace único con ?via=tu_codigo." },
+                { step: "2", text: "Comparte tu enlace en LinkedIn, tu web o con tu comunidad. El tracking es automático y cookieless." },
+                { step: "3", text: "Cuando alguien se suscribe a EficacIA desde tu enlace, la comisión se asigna automáticamente." },
+                { step: "4", text: "Cobra mensualmente vía transferencia bancaria cuando alcances el mínimo de pago." },
+              ].map(({ step, text }) => (
+                <div key={step} className="flex gap-4">
+                  <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">{step}</div>
+                  <p className="text-sm text-slate-400 pt-0.5">{text}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ─── FINANZAS TAB — Stripe Connect V2 ────────────────────────────── */}
+      {activeTab === "finanzas" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-semibold text-slate-100">Finanzas y Reparto</h3>
+              </div>
+              <p className="text-sm text-slate-400 mt-1">
+                Estado de la cuenta Stripe Connect y configuración del reparto automático del 50%.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={loadConnectStatus}
+              disabled={connectLoading}
+              className="gap-1.5 text-slate-400 hover:text-white"
+            >
+              {connectLoading
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <RefreshCw className="w-4 h-4" />
+              }
+              Actualizar
+            </Button>
+          </div>
+
+          {connectMsg && (
+            <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+              connectMsg.type === "success"
+                ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                : "text-red-400 bg-red-500/10 border-red-500/20"
+            }`}>
+              {connectMsg.type === "success"
+                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                : <AlertCircle className="w-4 h-4 shrink-0" />
+              }
+              {connectMsg.text}
+            </div>
+          )}
+
+          {connectLoading && !connectStatus ? (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Consultando estado de la cuenta…</span>
+            </div>
+          ) : connectStatus ? (
+            <div className="space-y-4">
+
+              {/* ── Account status card ─────────────────────────────────── */}
+              <Card className={`border ${
+                connectStatus.status === "complete"
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : connectStatus.status === "incomplete"
+                  ? "border-amber-500/30 bg-amber-500/5"
+                  : "border-slate-700 bg-slate-900/40"
+              }`}>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                      connectStatus.status === "complete"   ? "bg-emerald-500/10 border border-emerald-500/20"
+                      : connectStatus.status === "incomplete" ? "bg-amber-500/10 border border-amber-500/20"
+                      : "bg-slate-800 border border-slate-700"
+                    }`}>
+                      <TrendingUp className={`w-6 h-6 ${
+                        connectStatus.status === "complete" ? "text-emerald-400"
+                        : connectStatus.status === "incomplete" ? "text-amber-400"
+                        : "text-slate-500"
+                      }`} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-100">
+                          {connectStatus.status === "not_created"
+                            ? "Cuenta Connect no creada"
+                            : connectStatus.display_name || `Cuenta ${connectStatus.id}`
+                          }
+                        </p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          connectStatus.status === "complete"   ? "bg-emerald-500/20 text-emerald-400"
+                          : connectStatus.status === "incomplete" ? "bg-amber-500/20 text-amber-400"
+                          : "bg-slate-700 text-slate-400"
+                        }`}>
+                          {connectStatus.status === "complete"   ? "✓ Activa"
+                          : connectStatus.status === "incomplete" ? "⚠ Incompleta"
+                          : "Sin configurar"}
+                        </span>
+                      </div>
+                      {connectStatus.id && (
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">{connectStatus.id}</p>
+                      )}
+                      {connectStatus.message && (
+                        <p className="text-sm text-slate-400 mt-1">{connectStatus.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Requirements warnings */}
+                  {(connectStatus.past_due?.length ?? 0) > 0 && (
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+                      <p className="font-semibold mb-1">⛔ Documentos vencidos — la cuenta puede restringirse:</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-xs">
+                        {connectStatus.past_due!.map(r => <li key={r}>{r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {(connectStatus.currently_due?.length ?? 0) > 0 && (
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-400">
+                      <p className="font-semibold mb-1">⚠ Información pendiente de enviar:</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-xs">
+                        {connectStatus.currently_due!.map(r => <li key={r}>{r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    {connectStatus.status !== "complete" && (
+                      <Button
+                        onClick={startOnboarding}
+                        disabled={connectOnboarding}
+                        className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white whitespace-nowrap flex items-center justify-center"
+                      >
+                        {connectOnboarding
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirigiendo…</>
+                          : <><Plus className="w-4 h-4" /> Completar perfil de cobros</>
+                        }
+                      </Button>
+                    )}
+                    {connectStatus.status === "complete" && (
+                      <Button
+                        onClick={openStripeDashboard}
+                        variant="outline"
+                        className="gap-2 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap flex items-center justify-center"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Ir al Dashboard de Stripe
+                      </Button>
+                    )}
+                    {connectStatus.status === "incomplete" && (
+                      <Button
+                        onClick={openStripeDashboard}
+                        variant="outline"
+                        className="gap-2 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap flex items-center justify-center"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Abrir Dashboard de Stripe
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ── Revenue split explainer ─────────────────────────────── */}
+              <Card className="border-slate-800 bg-slate-900/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Reparto Automático de Ingresos</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { label: "Plataforma (EficacIA)", pct: "50%", color: "indigo" },
+                      { label: "Socio / Colaborador",   pct: "50%", color: "violet" },
+                    ].map(({ label, pct, color }) => (
+                      <div key={label} className={`p-4 rounded-xl bg-${color}-500/5 border border-${color}-500/20 text-center`}>
+                        <p className={`text-3xl font-black text-${color}-400`}>{pct}</p>
+                        <p className="text-xs text-slate-400 mt-1">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-2 text-xs text-slate-500">
+                    <p>• El reparto se ejecuta automáticamente vía webhook <code className="bg-slate-800 px-1 rounded text-slate-300">invoice.paid</code>.</p>
+                    <p>• Se deduce la comisión de Stripe antes de calcular el 50% (basado en el BalanceTransaction real).</p>
+                    <p>• Las comisiones de afiliados Rewardful ya están descontadas del <code className="bg-slate-800 px-1 rounded text-slate-300">amount_paid</code>.</p>
+                    <p>• Cada transferencia es idempotente: si el webhook se reintenta, no se produce doble pago.</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          ) : null}
         </div>
       )}
     </div>

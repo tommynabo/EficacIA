@@ -4,10 +4,17 @@
       "command": "npx",
       "args": [
         "-y",
-        "@stripe/agent-toolkit@latest",
-        "mcp",
+        "@stripe/mcp",
         "--api-key",
-        "${env:STRIPE_SECRET_KEY}"
+        "${input:stripeApiKey}"
+      ],
+      "inputs": [
+        {
+          "id": "stripeApiKey",
+          "type": "promptString",
+          "description": "Stripe secret key (sk_live_...)",
+          "password": true
+        }
       ]
     }
   }

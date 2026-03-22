@@ -2,9 +2,9 @@ import * as React from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import {
-  Zap, Inbox, Users, Check, ArrowRight, Shield,
+  Zap, Inbox, Users, Check, Shield,
   MessageSquare, Brain, Layers, Target, BarChart3,
-  Globe, Sparkles, TrendingUp, ChevronRight
+  Globe, Sparkles, TrendingUp
 } from "lucide-react"
 
 export default function LandingPage() {
@@ -57,12 +57,12 @@ export default function LandingPage() {
             Extrae leads de calidad, lanza campañas ultra-personalizadas y gestiona todas tus conversaciones desde un único Unibox inteligente. Todo sin riesgo de bloqueo.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
-            <Button size="lg" className="group w-full sm:w-auto text-base h-12 px-8 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 whitespace-nowrap" asChild>
+            <Button size="lg" className="group w-full sm:w-auto text-base h-12 px-8 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 whitespace-nowrap flex items-center justify-center" asChild>
               <Link to="/pricing">
                 Comenzar 3 Días de Prueba
               </Link>
             </Button>
-            <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8 border-slate-700 text-slate-300 hover:bg-slate-800/60 hover:text-white hover:border-slate-600" asChild>
+            <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8 border-slate-700 text-slate-300 hover:bg-slate-800/60 hover:text-white hover:border-slate-600 whitespace-nowrap flex items-center justify-center" asChild>
               <Link to="/features">Ver Cómo Funciona</Link>
             </Button>
           </div>
@@ -78,13 +78,13 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto rounded-2xl border border-violet-500/50 bg-gradient-to-r from-indigo-900/90 to-violet-950/90 p-4 text-center shadow-2xl shadow-violet-500/20 flex flex-col sm:flex-row items-center justify-center gap-4 backdrop-blur-xl">
           <div className="flex items-center gap-2 text-violet-200">
             <span className="text-xl">🚀</span>
-            <span className="font-semibold whitespace-nowrap">Oferta de Lanzamiento:</span>
+            <span className="font-semibold whitespace-nowrap">OFERTA DE LANZAMIENTO:</span>
           </div>
           <p className="text-white text-sm md:text-base">
-            Los primeros <span className="font-bold text-violet-300">50 usuarios</span> obtienen el Plan SCALE con un <span className="font-bold text-emerald-400">20% extra de descuento</span> de por vida. ¡Quedan pocas plazas!
+            Plan <span className="font-bold text-violet-300">SCALE</span> por <span className="font-bold text-emerald-400">99€/mes</span> (o <span className="font-bold text-emerald-400">80€/mes</span> anual) para los primeros <span className="font-bold text-violet-300">50 usuarios</span>. ¡Quedan pocas plazas!
           </p>
-          <Button size="sm" className="bg-violet-500 hover:bg-violet-600 text-white border-0 shrink-0 whitespace-nowrap flex items-center" asChild>
-            <Link to="/pricing">Reclamar Oferta</Link>
+          <Button size="sm" className="bg-violet-500 hover:bg-violet-600 text-white border-0 shrink-0 whitespace-nowrap flex items-center justify-center" asChild>
+            <Link to="/pricing">¡Aprovechar ahora!</Link>
           </Button>
         </div>
       </section>
@@ -272,8 +272,8 @@ export default function LandingPage() {
           <p className="text-slate-400 text-lg mb-10">
             Desde <span className="text-white font-semibold">42€/mes</span>. Incluye 3 días de prueba gratuita.
           </p>
-          <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base whitespace-nowrap" asChild>
-            <Link to="/pricing" className="flex items-center justify-center">Ver todos los planes</Link>
+          <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20 h-12 px-8 text-base whitespace-nowrap flex items-center justify-center" asChild>
+            <Link to="/pricing">Ver todos los planes</Link>
           </Button>
         </div>
       </section>
@@ -290,7 +290,7 @@ export default function LandingPage() {
             <p className="text-slate-400 text-lg mb-8 max-w-lg mx-auto">
               Únete a los equipos de ventas que ya generan pipeline de forma consistente con EficacIA.
             </p>
-            <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/30 h-12 px-8 text-base whitespace-nowrap" asChild>
+            <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/30 h-12 px-8 text-base whitespace-nowrap flex items-center justify-center" asChild>
               <Link to="/pricing">Comenzar Prueba Gratis</Link>
             </Button>
           </div>
@@ -298,37 +298,29 @@ export default function LandingPage() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="border-t border-slate-800/60 py-16 px-6">
+      <footer className="border-t border-slate-800/60 py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
-            <div className="col-span-2 md:col-span-1">
-              <Link to="/" className="flex items-center gap-2.5 mb-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-8">
+            <div>
+              <Link to="/" className="flex items-center gap-2.5 mb-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
                   <Zap className="w-4 h-4 text-white" />
                 </div>
                 <span className="text-lg font-bold tracking-tight">EficacIA</span>
               </Link>
-              <p className="text-slate-500 text-sm leading-relaxed">
+              <p className="text-slate-500 text-sm leading-relaxed max-w-xs">
                 La plataforma de prospección LinkedIn con IA más avanzada del mercado hispanohablante.
               </p>
             </div>
-            <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wide">Producto</h4>
-              <ul className="space-y-3 text-sm text-slate-500">
-                <li><Link to="/features" className="hover:text-slate-300 transition-colors">Features</Link></li>
-                <li><Link to="/pricing" className="hover:text-slate-300 transition-colors">Precios</Link></li>
-                <li><Link to="/afiliados" className="hover:text-slate-300 transition-colors">Afiliados</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wide">Legal</h4>
-              <ul className="space-y-3 text-sm text-slate-500">
-                <li><Link to="/privacidad" className="hover:text-slate-300 transition-colors cursor-pointer">Política de Privacidad</Link></li>
-                <li><Link to="/terminos" className="hover:text-slate-300 transition-colors cursor-pointer">Términos y Condiciones</Link></li>
-              </ul>
+            <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm text-slate-500">
+              <Link to="/features" className="hover:text-slate-300 transition-colors">Features</Link>
+              <Link to="/pricing" className="hover:text-slate-300 transition-colors">Precios</Link>
+              <Link to="/afiliados" className="hover:text-slate-300 transition-colors">Afiliados</Link>
+              <Link to="/privacidad" className="hover:text-slate-300 transition-colors">Política de Privacidad</Link>
+              <Link to="/terminos" className="hover:text-slate-300 transition-colors">Términos y Condiciones</Link>
             </div>
           </div>
-          <div className="border-t border-slate-800/60 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="border-t border-slate-800/60 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-slate-600 text-sm">&copy; {new Date().getFullYear()} EficacIA. Todos los derechos reservados.</p>
             <div className="flex items-center gap-2">
               <Shield className="w-3.5 h-3.5 text-slate-600" />

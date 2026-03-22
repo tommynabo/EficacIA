@@ -6,7 +6,8 @@ import {
   LayoutDashboard, 
   Settings, 
   Zap,
-  LogOut
+  LogOut,
+  Rocket
 } from "lucide-react"
 import { cn } from "@/src/lib/utils"
 
@@ -49,6 +50,16 @@ export function DashboardLayout() {
               </Link>
             )
           })}
+          {/* Affiliate Program — external link */}
+          <a
+            href="https://eficacia.getrewardful.com/signup"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+          >
+            <Rocket className="w-5 h-5 text-amber-500" />
+            <span>🚀 Programa de Afiliados</span>
+          </a>
         </nav>
 
         <div className="p-4 border-t border-slate-800">

@@ -89,6 +89,10 @@ export default function AuthPage({ mode = "login" }: { mode?: "login" | "registe
           if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.error || 'Error en registro') }
           const data = await res.json()
           if (data.token) { localStorage.setItem('auth_token', data.token); localStorage.setItem('user', JSON.stringify(data.user)) }
+          // Fire Rewardful conversion event
+          if ((window as any).rewardful) {
+            (window as any).rewardful('convert', { email: formData.email })
+          }
           await login(formData.email, formData.password)
           } else {
           // Should not reach here — guard redirects to /pricing without session_id

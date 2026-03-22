@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, CreditCard, Shield, Zap, Loader2, ArrowLeft, Star } from 'lucide-react'
+import { Check, CreditCard, Shield, Zap, Loader2 } from 'lucide-react'
 import { Button } from '@/src/components/ui/button'
 import { Card } from '@/src/components/ui/card'
 import PaymentsService, { STRIPE_PRICES, PlanKey, BillingPeriod } from '@/src/services/payments'
@@ -59,10 +59,10 @@ const PLANS: Array<{
     key: 'agency',
     name: 'EficacIA SCALE',
     tagline: 'Para agencias y equipos grandes',
-    monthlyPrice: 149,
-    annualTotal: 1152,
+    monthlyPrice: 99,
+    annualTotal: 960,
     popular: false,
-    badge: 'OFERTA LIMITADA',
+    badge: '🚀 OFERTA LIMITADA',
     accentColor: 'purple',
     features: [
       'Leads ilimitados',
@@ -287,7 +287,7 @@ export default function PricingPage() {
                 <Button
                   onClick={() => handleCheckout(plan)}
                   disabled={loading !== null}
-                  className={`w-full h-12 text-base font-semibold transition-all whitespace-nowrap ${
+                  className={`w-full h-12 text-base font-semibold transition-all whitespace-nowrap flex items-center justify-center ${
                     plan.popular
                       ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-lg shadow-indigo-500/20'
                       : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-slate-600'
@@ -299,10 +299,7 @@ export default function PricingPage() {
                       Redirigiendo…
                     </>
                   ) : (
-                    <>
-                      <CreditCard className="w-4 h-4 mr-2" />
-                      Empezar 3 días gratis
-                    </>
+                    'Empezar 3 días gratis'
                   )}
                 </Button>
               </Card>
