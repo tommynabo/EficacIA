@@ -119,7 +119,7 @@ export default function SettingsPage() {
     setConnectLoading(true)
     setConnectMsg(null)
     try {
-      const res = await fetch(`${envUrl}/api/payments/connect-onboarding`, {
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session?action=connect-status`, {
         headers: { Authorization: `Bearer ${token()}` },
       })
       const data = await res.json()
@@ -136,7 +136,7 @@ export default function SettingsPage() {
     setConnectOnboarding(true)
     setConnectMsg(null)
     try {
-      const res = await fetch(`${envUrl}/api/payments/connect-onboarding`, {
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session?action=connect-onboard`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
       })
@@ -153,7 +153,7 @@ export default function SettingsPage() {
   const openStripeDashboard = async () => {
     setConnectMsg(null)
     try {
-      const res = await fetch(`${envUrl}/api/payments/connect-onboarding?action=login-link`, {
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session?action=connect-login-link`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}` },
       })

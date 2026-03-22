@@ -1,6 +1,8 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
+import { getStripe } from '../_lib/stripe.js';
+import { getAuthUser } from '../_lib/auth.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -75,6 +77,82 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // ── GET ?action=connect-status — Stripe Connect account status ────────────
+  if (req.method === 'GET' && req.query.action === 'connect-status') {
+    const { userId: authId, error: authErr } = await getAuthUser(req);
+    if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
+    const accountId = process.env.PARTNER_STRIPE_ACCOUNT_ID;
+    if (!accountId || accountId.startsWith('acct_xxxxx')) {
+      return res.status(200).json({ status: 'not_created', message: 'No hay cuenta Connect configurada.' });
+    }
+    try {
+      const stripe2 = getStripe();
+      const account = await stripe2.v2.core.accounts.retrieve(accountId, {
+        include: ['configuration.merchant', 'configuration.customer', 'requirements', 'identity'],
+      });
+      const req2 = account.requirements || {};
+      const isComplete = !req2.currently_due?.length && !req2.past_due?.length;
+      return res.status(200).json({
+        id: account.id,
+        status: isComplete ? 'complete' : 'incomplete',
+        currently_due: req2.currently_due || [],
+        past_due: req2.past_due || [],
+        display_name: account.identity?.business_details?.name || null,
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── POST ?action=connect-login-link — Stripe Express dashboard link ─────────
+  if (req.method === 'POST' && req.query.action === 'connect-login-link') {
+    const { userId: authId, error: authErr } = await getAuthUser(req);
+    if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
+    const accountId = process.env.PARTNER_STRIPE_ACCOUNT_ID;
+    if (!accountId || accountId.startsWith('acct_xxxxx')) {
+      return res.status(400).json({ error: 'Cuenta Connect no configurada' });
+    }
+    try {
+      const stripe2 = getStripe();
+      const loginLink = await stripe2.accounts.createLoginLink(accountId);
+      return res.status(200).json({ url: loginLink.url });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── POST ?action=connect-onboard — create/resume onboarding ──────────────────
+  if (req.method === 'POST' && req.query.action === 'connect-onboard') {
+    const { userId: authId, error: authErr } = await getAuthUser(req);
+    if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
+    const proto2 = req.headers['x-forwarded-proto'] || 'https';
+    const host2  = req.headers['x-forwarded-host'] || req.headers.host;
+    const base2  = process.env.FRONTEND_URL || `${proto2}://${host2}`;
+    try {
+      const stripe2 = getStripe();
+      let accountId = process.env.PARTNER_STRIPE_ACCOUNT_ID;
+      if (!accountId || accountId.startsWith('acct_xxxxx')) {
+        const newAcc = await stripe2.v2.core.accounts.create({
+          include: ['configuration.merchant', 'configuration.customer'],
+          configuration: { merchant: { mcc: '7372', tos_acceptance: { type: 'online' } }, customer: {} },
+          identity: { county: 'ES', entity_type: 'individual' },
+          controller: { dashboard: { type: 'full' }, requirement_collection: 'stripe', losses: { payments: 'stripe' } },
+        });
+        accountId = newAcc.id;
+        console.log('[CONNECT] New account created:', accountId);
+      }
+      const link = await stripe2.v2.core.accountLinks.create({
+        account: accountId,
+        return_url: `${base2}/dashboard/settings?tab=finanzas&onboarding=success`,
+        refresh_url: `${base2}/dashboard/settings?tab=finanzas&onboarding=refresh`,
+        use_case: { collection: { type: 'full' } },
+      });
+      return res.status(200).json({ url: link.url, account_id: accountId });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   // ── POST ?action=credits-sync — fallback credit grant after payment ────────
