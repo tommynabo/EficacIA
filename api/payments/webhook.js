@@ -284,136 +284,181 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// executePartnerSplit
+// executePartnerSplit  —  Payment Cascade (50/50 Revenue Split)
 //
 // Separate Charges & Transfers pattern:
-//   - The platform (EficacIA) is the merchant of record — Stripe charges the
-//     customer on the platform account.
-//   - After the charge settles, we create a Transfer to the partner's connected
-//     account from the platform account's balance.
-//   - This is different from "destination charges" where the connected account
-//     is the MOR. With Separate Charges we retain full control and compliance.
+//   - EficacIA is the merchant of record. Stripe charges the customer on the
+//     platform account; we then Transfer the partner share to their connected
+//     account from the platform balance.
 //
-// Amount calculation:
-//   1. Start with invoice.amount_paid (gross charged to customer, in cents).
-//   2. Retrieve the BalanceTransaction for the charge to get the exact Stripe fee.
-//   3. Net = amount_paid − stripe_fee
-//   4. Split = floor(net × 0.5)  [50% to partner, 50% retained by platform]
-//
-// If fee retrieval fails (e.g., no payment_intent on invoice), we fall back to
-// estimating the fee at 2% + 25 cents (conservative European card rate).
+// Cascade order per payment:
+//   1. Gross         = invoice.amount_paid  (total charged to customer)
+//   2. − Stripe Fee  = exact fee from BalanceTransaction  (fallback: estimate)
+//   3. − Op. Costs   = fixed infra costs  (PRO/GROWTH: 17 €, SCALE: 30 €)
+//   4. − Affiliate   = Rewardful commission IF subscription/customer metadata
+//                      contains a rewardful key  (per-plan fixed amounts)
+//                      PRO: 7.50 €  |  GROWTH: 18.60 €  |  SCALE: 35.70 €
+//                      SCALE OFERTA: 20.70 €  |  no affiliate: 0 €
+//   5. Net Profit    = result of steps 1-4  (floored at 0 — never negative)
+//   6. Partner Share = floor(Net Profit / 2)  →  transferred to partner
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Per-plan operational costs (cents)
+const PLAN_OPERATIONAL_COSTS = {
+  pro:          1700, // 17.00 €
+  growth:       1700, // 17.00 €
+  scale:        3000, // 30.00 €
+  scale_oferta: 3000, // 30.00 €  (same infra, different price point)
+};
+
+// Per-plan Rewardful affiliate commission (cents)  — only applied when affiliate
+const PLAN_AFFILIATE_CUTS = {
+  pro:          750,  //  7.50 €
+  growth:       1860, // 18.60 €
+  scale:        3570, // 35.70 €
+  scale_oferta: 2070, // 20.70 €
+};
+
+/** Normalise a raw plan string to one of the keys above. */
+function normalisePlan(raw = '') {
+  const s = raw.toLowerCase().replace(/[\s-]/g, '_');
+  if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
+  if (s.includes('scale'))  return 'scale';
+  if (s.includes('growth')) return 'growth';
+  return 'pro'; // default / PRO
+}
+
 async function executePartnerSplit(stripe, invoice) {
-  // ── 1. Resolve the partner's connected account ID ────────────────────────
+  // ── Guard: partner account must be configured ─────────────────────────────
   const partnerAccountId =
     process.env.PARTNER_STRIPE_ACCOUNT_ID ||
-    process.env.STRIPE_CONNECT_ACCOUNT_ID;   // backward-compat alias
+    process.env.STRIPE_CONNECT_ACCOUNT_ID; // backward-compat alias
 
   if (!partnerAccountId || partnerAccountId.startsWith('acct_xxxxx')) {
     console.log('[WEBHOOK] PARTNER_STRIPE_ACCOUNT_ID not set — skipping partner split');
     return;
   }
 
-  const grossAmount = invoice.amount_paid; // cents (e.g. 9900 = 99.00 €)
-  if (!grossAmount || grossAmount <= 0) {
+  // ── Step 1: Gross ─────────────────────────────────────────────────────────
+  const gross = invoice.amount_paid; // cents
+  if (!gross || gross <= 0) {
     console.log('[WEBHOOK] invoice.amount_paid is zero — nothing to split');
     return;
   }
 
-  // ── 2. Retrieve the exact Stripe processing fee from the BalanceTransaction ─
+  const subscriptionId =
+    typeof invoice.subscription === 'string' ? invoice.subscription : (invoice.subscription?.id || null);
+  const customerId =
+    typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer?.id || null);
+
+  // ── Fetch subscription and customer metadata (parallel) ───────────────────
+  let subMeta = {};
+  let custMeta = {};
+
+  await Promise.allSettled([
+    subscriptionId
+      ? stripe.subscriptions.retrieve(subscriptionId)
+          .then((s) => { subMeta = s.metadata || {}; })
+          .catch((e) => console.warn(`[WEBHOOK] Could not retrieve subscription ${subscriptionId}: ${e.message}`))
+      : Promise.resolve(),
+    customerId
+      ? stripe.customers.retrieve(customerId)
+          .then((c) => { custMeta = (c.deleted ? {} : c.metadata) || {}; })
+          .catch((e) => console.warn(`[WEBHOOK] Could not retrieve customer ${customerId}: ${e.message}`))
+      : Promise.resolve(),
+  ]);
+
+  // ── Determine plan ────────────────────────────────────────────────────────
+  const planRaw  = subMeta.plan || custMeta.plan || '';
+  const planKey  = normalisePlan(planRaw);
+
+  // ── Step 2: Stripe Fee (exact from BalanceTransaction, else estimated) ────
   let stripeFee = 0;
   try {
-    // Follow the chain: invoice → charge → balance_transaction
     const chargeId = invoice.charge;
     if (chargeId) {
-      const charge = await stripe.charges.retrieve(chargeId, {
-        expand: ['balance_transaction'],
-      });
+      const charge = await stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] });
       const bt = charge.balance_transaction;
       if (bt && typeof bt === 'object') {
-        // bt.fee is the total Stripe fee in cents (processing + any other fees)
         stripeFee = bt.fee || 0;
-        console.log(`[WEBHOOK] Stripe fee from balance_transaction: ${stripeFee} ¢ (${invoice.currency})`);
+        console.log(`[WEBHOOK] Stripe fee (exact): ${stripeFee} ¢`);
       }
     }
   } catch (feeErr) {
-    // Non-fatal — fall back to an estimated fee to avoid over-paying the partner
-    const estimatedFeeRate  = 0.02;   // 2% (conservative EU card rate incl. Rewardful)
-    const estimatedFeeFixed = 25;     // 0.25 € fixed in cents
-    stripeFee = Math.ceil(grossAmount * estimatedFeeRate) + estimatedFeeFixed;
-    console.warn(`[WEBHOOK] Could not retrieve Stripe fee — using estimate: ${stripeFee} ¢. Error: ${feeErr.message}`);
+    // Conservative EU card rate fallback: 2 % + 0.25 €
+    stripeFee = Math.ceil(gross * 0.02) + 25;
+    console.warn(`[WEBHOOK] Could not retrieve Stripe fee — estimate: ${stripeFee} ¢. ${feeErr.message}`);
   }
 
-  // ── 3. Compute net revenue, deduct operational costs, then 50% split ──────
-  //
-  //   net            = gross − stripe_fee
-  //   shareableBase  = net − OPERATIONAL_COSTS_CENTS (17€ = 1700 ¢)
-  //                    Covers: Unipile API + Anthropic AI credits
-  //   split          = floor(shareableBase × 0.50)
-  //
-  const OPERATIONAL_COSTS_CENTS = 1700; // 17 € / month platform costs
+  // ── Step 3: Operational Costs ─────────────────────────────────────────────
+  const operationalCosts = PLAN_OPERATIONAL_COSTS[planKey] ?? 1700;
 
-  const netAmount     = Math.max(0, grossAmount - stripeFee);
-  const shareableBase = netAmount - OPERATIONAL_COSTS_CENTS;
+  // ── Step 4: Affiliate Commission (Rewardful) ──────────────────────────────
+  // Rewardful can tag via several metadata keys — check all common variants.
+  const isAffiliate = !!(
+    subMeta.rewardful             ||
+    subMeta.rewardful_referral_id ||
+    subMeta.rewardful_id          ||
+    custMeta.rewardful            ||
+    custMeta.rewardful_referral_id ||
+    custMeta.rewardful_id
+  );
+  const affiliateCut = isAffiliate ? (PLAN_AFFILIATE_CUTS[planKey] ?? 0) : 0;
 
-  if (shareableBase <= 0) {
-    console.log(`[WEBHOOK] Skipping transfer — net (${netAmount} ¢) does not exceed operational costs (${OPERATIONAL_COSTS_CENTS} ¢)`);
-    return;
-  }
+  // ── Step 5: Net Profit (never negative) ───────────────────────────────────
+  const afterFee    = Math.max(0, gross - stripeFee);
+  const afterCosts  = Math.max(0, afterFee - operationalCosts);
+  const netProfit   = Math.max(0, afterCosts - affiliateCut);
 
-  const splitAmount = Math.floor(shareableBase * 0.5);
+  // ── Step 6: 50/50 Partner Share ───────────────────────────────────────────
+  const partnerShare = Math.floor(netProfit / 2);
 
-  if (splitAmount < 1) {
-    console.log(`[WEBHOOK] Split amount < 1 cent (shareableBase=${shareableBase} ¢) — skipping`);
-    return;
-  }
-
+  // Human-readable breakdown for Vercel logs
+  const fmt = (c) => `${(c / 100).toFixed(2)}€`;
   console.log(
-    `[WEBHOOK] Split: gross=${grossAmount} ¢ − fee=${stripeFee} ¢ = net=${netAmount} ¢ − costs=${OPERATIONAL_COSTS_CENTS} ¢ = base=${shareableBase} ¢ → partner gets ${splitAmount} ¢`
+    `[WEBHOOK] 💰 Pago ${fmt(gross)} → Fee ${fmt(stripeFee)} → Costes ${fmt(operationalCosts)} → Afiliado ${fmt(affiliateCut)} → Beneficio ${fmt(netProfit)} → Split Socio ${fmt(partnerShare)}` +
+    ` | plan=${planKey} afiliado=${isAffiliate} invoice=${invoice.id}`
   );
 
-  // ── 4. Execute the transfer ───────────────────────────────────────────────
-  //
-  // `stripe.transfers.create` moves funds from the EficacIA platform balance
-  // to the partner's connected account balance.
-  //
-  // Idempotency: using `invoice.id` as the key guarantees that even if Stripe
-  // retries the webhook (network error, timeout, etc.) we only ever transfer
-  // once per invoice.
-  //
+  if (partnerShare < 1) {
+    console.log(`[WEBHOOK] partnerShare < 1 cent after all deductions — skipping transfer`);
+    return;
+  }
+
+  // ── Execute the Transfer ──────────────────────────────────────────────────
+  // Idempotency key on invoice.id: even if Stripe retries the webhook we only
+  // ever issue one transfer per invoice.
   try {
     const transfer = await stripe.transfers.create(
       {
-        amount:       splitAmount,
-        currency:     invoice.currency || 'eur',
-        destination:  partnerAccountId,
-        description:  `EficacIA 50% revenue split — invoice ${invoice.id}`,
+        amount:      partnerShare,
+        currency:    invoice.currency || 'eur',
+        destination: partnerAccountId,
+        description: `EficacIA 50% revenue split — invoice ${invoice.id}`,
         metadata: {
-          invoice_id:         invoice.id,
-          gross_amount:       String(grossAmount),
-          stripe_fee:         String(stripeFee),
-          net_amount:         String(netAmount),
-          operational_costs:  String(OPERATIONAL_COSTS_CENTS),
-          shareable_base:     String(shareableBase),
-          split_percent:      '50',
-          customer_id:     typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer?.id || ''),
-          subscription_id: typeof invoice.subscription === 'string' ? invoice.subscription : (invoice.subscription?.id || ''),
+          invoice_id:        invoice.id,
+          plan:              planKey,
+          is_affiliate:      String(isAffiliate),
+          gross_amount:      String(gross),
+          stripe_fee:        String(stripeFee),
+          operational_costs: String(operationalCosts),
+          affiliate_cut:     String(affiliateCut),
+          net_profit:        String(netProfit),
+          partner_share:     String(partnerShare),
+          split_percent:     '50',
+          customer_id:       customerId || '',
+          subscription_id:   subscriptionId || '',
         },
       },
-      {
-        // Idempotency key — Stripe will return the same transfer object if
-        // this key was already used, instead of creating a duplicate transfer.
-        idempotencyKey: `partner_split_${invoice.id}`,
-      },
+      { idempotencyKey: `partner_split_${invoice.id}` },
     );
 
     console.log(
-      `[WEBHOOK] ✓ Partner split complete: ${splitAmount} ${invoice.currency} → ${partnerAccountId} (transfer ${transfer.id})`
+      `[WEBHOOK] ✓ Transfer completo: ${fmt(partnerShare)} → ${partnerAccountId} (transfer ${transfer.id})`
     );
   } catch (err) {
-    // Log the error but still return 200 to Stripe. A failed transfer is a
-    // platform concern — the customer's payment is already settled. Alert
-    // engineers to investigate and replay manually if needed.
+    // Log but still return 200 to Stripe — the customer payment is already
+    // settled. Investigate and replay manually via Stripe Dashboard if needed.
     console.error(`[WEBHOOK] ✗ Transfer failed for invoice ${invoice.id}:`, err.message);
   }
 }
