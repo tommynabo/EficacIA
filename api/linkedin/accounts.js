@@ -493,6 +493,31 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── Verificar límites del plan antes de crear cuenta nueva ────────────────
+    const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
+    const { data: userRow } = await supabaseAdmin
+      .from('users')
+      .select('subscription_status')
+      .eq('id', userId)
+      .single();
+    const userPlan = userRow?.subscription_status || 'free';
+    const planLimit = ACCOUNT_LIMITS[userPlan] ?? 1;
+
+    if (planLimit !== Infinity) {
+      const { count: accountCount } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('*', { count: 'exact', head: true })
+        .eq('team_id', teamId);
+      if ((accountCount || 0) >= planLimit) {
+        console.warn(`[LINKEDIN] Plan limit reached for user ${userId} (plan: ${userPlan}, limit: ${planLimit})`);
+        return res.status(403).json({
+          error: 'PLAN_LIMIT_REACHED',
+          limit: planLimit,
+          plan: userPlan,
+        });
+      }
+    }
+
     // Insertar nueva cuenta
     const { data: account, error: insertError } = await supabaseAdmin
       .from('linkedin_accounts')

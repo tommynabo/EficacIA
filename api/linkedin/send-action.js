@@ -500,6 +500,22 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Cuenta de LinkedIn no está conectada vía Unipile (ID faltante)' });
     }
 
+    // ─── Determine userId for AI credit operations ───────────────────────────
+    // When called from the campaign engine, userId = 'engine'; resolve the real
+    // owner from the campaign team so we can check and deduct AI credits.
+    let creditUserId = (userId !== 'engine') ? userId : null;
+    if (!creditUserId && campaignId) {
+      try {
+        const { data: creditCamp } = await supabaseAdmin.from('campaigns')
+          .select('team_id').eq('id', campaignId).single();
+        if (creditCamp?.team_id) {
+          const { data: creditTeam } = await supabaseAdmin.from('teams')
+            .select('owner_id').eq('id', creditCamp.team_id).single();
+          creditUserId = creditTeam?.owner_id || null;
+        }
+      } catch { /* non-fatal */ }
+    }
+
     const linkedinId = extractLinkedInId(lead.linkedin_url);
     if (!linkedinId) {
       return res.status(400).json({ error: 'El lead no tiene URL de LinkedIn válida' });
@@ -513,8 +529,32 @@ export default async function handler(req, res) {
     const remainingTags = finalMessage.match(/\{\{(\w+)\}\}/g);
     const needsAdvancedAI = !!remainingTags && remainingTags.length > 0;
 
+    // Snapshot of user's credit balance at the time of the check (used for
+    // deduction after a successful send — avoids a second DB fetch).
+    let aiCreditsSnapshot = null;
+
     if (needsAdvancedAI) {
       console.log(`[SEND-ACTION] Lead ${lead.id} needs AI vars: ${remainingTags.join(', ')}`);
+
+      // ── Guard: verify the user has at least 1 AI credit before calling Claude
+      if (creditUserId) {
+        const { data: creditUser } = await supabaseAdmin.from('users')
+          .select('ai_credits').eq('id', creditUserId).single();
+        const currentCredits = creditUser?.ai_credits ?? 0;
+        if (currentCredits < 1) {
+          console.warn(`[SEND-ACTION] Insufficient AI credits for user ${creditUserId} (${currentCredits})`);
+          await supabaseAdmin.from('leads').update({
+            sequence_status: 'paused',
+            error_message: 'Créditos de IA insuficientes. Recarga tu saldo en Configuración → Créditos.',
+            next_action_at: null,
+          }).eq('id', leadId);
+          return res.status(402).json({
+            error: 'INSUFFICIENT_AI_CREDITS',
+            message: 'Créditos de IA insuficientes. Recarga tu saldo en Configuración → Créditos.',
+          });
+        }
+        aiCreditsSnapshot = currentCredits;
+      }
 
       try {
         const cvars = lead.custom_vars || {};
@@ -600,6 +640,22 @@ export default async function handler(req, res) {
             unipile_response: result,
           },
         });
+      }
+
+      // ── Deduct 1 AI credit after a successful real send ────────────────────
+      // Only deduct if AI variables were used (aiCreditsSnapshot was set) and
+      // we have a valid user to charge. The WHERE ai_credits >= 1 guard prevents
+      // going negative if two jobs for the same user run in parallel.
+      if (aiCreditsSnapshot !== null && creditUserId) {
+        try {
+          await supabaseAdmin.from('users')
+            .update({ ai_credits: Math.max(0, aiCreditsSnapshot - 1) })
+            .eq('id', creditUserId)
+            .gte('ai_credits', 1);
+          console.log(`[SEND-ACTION] ✓ AI credit deducted for user ${creditUserId}. New balance: ${aiCreditsSnapshot - 1}`);
+        } catch (decrErr) {
+          console.warn('[SEND-ACTION] Could not deduct AI credit:', decrErr.message);
+        }
       }
     } else {
       console.log(`[SEND-ACTION] SIMULATE - skipped Unipile for ${linkedinId}`);

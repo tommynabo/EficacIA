@@ -116,6 +116,9 @@ export default function AccountsPage() {
   const [throttleSaving, setThrottleSaving] = React.useState(false)
   const [showRiskModal, setShowRiskModal] = React.useState(false)
 
+  // Plan limit modal state
+  const [showPlanLimitModal, setShowPlanLimitModal] = React.useState(false)
+
   // Auto-withdraw settings are now managed from Settings → Auto-Withdraw tab
 
   // Pending invitations per account (accountId → count), used to calculate health score
@@ -402,7 +405,15 @@ export default function AccountsPage() {
         body: JSON.stringify({ li_at: val }),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Error al conectar")
+      if (!response.ok) {
+        if (data.error === 'PLAN_LIMIT_REACHED') {
+          setShowCookieForm(false)
+          setCookieValue("")
+          setShowPlanLimitModal(true)
+          return
+        }
+        throw new Error(data.error || "Error al conectar")
+      }
       setSuccess(data.message || "✓ Cuenta conectada")
       setShowCookieForm(false)
       setCookieValue("")
@@ -752,6 +763,50 @@ export default function AccountsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: límite de plan alcanzado */}
+      {showPlanLimitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-amber-400" />
+                <h3 className="font-semibold text-slate-100">Límite de cuentas alcanzado</h3>
+              </div>
+              <button onClick={() => setShowPlanLimitModal(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-slate-300 text-sm leading-relaxed">
+                Has alcanzado el límite de cuentas de LinkedIn de tu plan actual.
+                Actualiza tu plan para conectar más cuentas y escalar tus campañas.
+              </p>
+              <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700/50 space-y-2 text-sm">
+                <p className="text-slate-400 font-medium">Límites por plan:</p>
+                <ul className="space-y-1.5 text-slate-400">
+                  <li className="flex items-center gap-2"><span className="w-16 text-slate-500">Free</span><span>1 cuenta</span></li>
+                  <li className="flex items-center gap-2"><span className="w-16 text-blue-400 font-medium">Pro</span><span>3 cuentas</span></li>
+                  <li className="flex items-center gap-2"><span className="w-16 text-purple-400 font-medium">Growth</span><span>5 cuentas</span></li>
+                  <li className="flex items-center gap-2"><span className="w-16 text-emerald-400 font-medium">Scale</span><span>Ilimitadas</span></li>
+                </ul>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <Button variant="ghost" size="sm" onClick={() => setShowPlanLimitModal(false)} className="flex-1">
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold gap-2"
+                  onClick={() => { setShowPlanLimitModal(false); window.location.href = '/pricing' }}
+                >
+                  🚀 Hacer Upgrade
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

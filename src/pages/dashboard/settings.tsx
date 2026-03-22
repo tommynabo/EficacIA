@@ -602,16 +602,29 @@ export default function SettingsPage() {
                 <li>Cambiar de plan (upgrade / downgrade)</li>
                 <li>Cancelar suscripción</li>
               </ul>
-              <Button
-                onClick={handleOpenPortal}
-                disabled={portalLoading}
-                className="gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full sm:w-auto"
-              >
-                {portalLoading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Abriendo portal...</>
-                  : <><CreditCard className="w-4 h-4" /> Gestionar / Cancelar Suscripción</>
-                }
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleOpenPortal}
+                  disabled={portalLoading}
+                  variant="outline"
+                  className="gap-2 border-red-500/50 text-red-400 hover:bg-red-500/10 hover:text-red-300 w-full sm:w-auto"
+                >
+                  {portalLoading
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Abriendo portal...</>
+                    : <><Ban className="w-4 h-4" /> Cancelar Suscripción</>
+                  }
+                </Button>
+                <Button
+                  onClick={handleOpenPortal}
+                  disabled={portalLoading}
+                  className="gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full sm:w-auto"
+                >
+                  {portalLoading
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Abriendo portal...</>
+                    : <>🚀 Mejorar Plan (Upgrade)</>
+                  }
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

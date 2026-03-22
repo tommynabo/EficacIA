@@ -158,10 +158,17 @@ export default async function handler(req, res) {
       }
       if (userRecord) {
         const stripeCustomerId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
+        const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
+        const planKey = normalisePlan(plan);
+        const initialCredits = PLAN_CREDITS[planKey] ?? 1000;
         await supabase.from('users')
-          .update({ subscription_status: plan, ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}) })
+          .update({
+            subscription_status: plan,
+            ai_credits: initialCredits,
+            ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
+          })
           .eq('id', userRecord.id);
-        console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}`);
+        console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}. AI credits set to ${initialCredits}`);
       }
       return res.status(200).json({ received: true });
     }
@@ -195,6 +202,38 @@ export default async function handler(req, res) {
     }
 
     await executePartnerSplit(stripe, invoice);
+
+    // ── AI Credits renewal: reset monthly credits based on the user's plan ──
+    // invoice.paid fires every billing cycle (create, cycle, update).
+    // We RESET (not add) credits so stale balances never accumulate.
+    const renewalCustomerId = typeof invoice.customer === 'string'
+      ? invoice.customer
+      : invoice.customer?.id;
+
+    if (renewalCustomerId) {
+      try {
+        const { data: renewalUser } = await supabase.from('users')
+          .select('id, subscription_status')
+          .eq('stripe_customer_id', renewalCustomerId)
+          .single();
+
+        if (renewalUser?.subscription_status) {
+          const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
+          const planKey = normalisePlan(renewalUser.subscription_status);
+          const creditsToAssign = PLAN_CREDITS[planKey];
+          if (creditsToAssign !== undefined) {
+            await supabase.from('users')
+              .update({ ai_credits: creditsToAssign })
+              .eq('id', renewalUser.id);
+            console.log(`[WEBHOOK] ✓ AI credits reset to ${creditsToAssign} for user ${renewalUser.id} (plan: ${planKey})`);
+          }
+        }
+      } catch (credErr) {
+        // Non-fatal — partner split already succeeded; log and continue
+        console.warn('[WEBHOOK] Could not reset AI credits on invoice.paid:', credErr.message);
+      }
+    }
+
     return res.status(200).json({ received: true });
   }
 
