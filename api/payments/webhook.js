@@ -344,24 +344,32 @@ async function executePartnerSplit(stripe, invoice) {
     console.warn(`[WEBHOOK] Could not retrieve Stripe fee — using estimate: ${stripeFee} ¢. Error: ${feeErr.message}`);
   }
 
-  // ── 3. Compute net revenue and the 50% split amount ──────────────────────
+  // ── 3. Compute net revenue, deduct operational costs, then 50% split ──────
   //
-  //   net    = gross − stripe_fee
-  //   split  = floor(net × 0.50)
+  //   net            = gross − stripe_fee
+  //   shareableBase  = net − OPERATIONAL_COSTS_CENTS (17€ = 1700 ¢)
+  //                    Covers: Unipile API + Anthropic AI credits
+  //   split          = floor(shareableBase × 0.50)
   //
-  // We use floor() to always round in the platform's favour, avoiding
-  // a situation where we transfer more than 50% due to rounding.
-  //
-  const netAmount   = Math.max(0, grossAmount - stripeFee);
-  const splitAmount = Math.floor(netAmount * 0.5);
+  const OPERATIONAL_COSTS_CENTS = 1700; // 17 € / month platform costs
+
+  const netAmount     = Math.max(0, grossAmount - stripeFee);
+  const shareableBase = netAmount - OPERATIONAL_COSTS_CENTS;
+
+  if (shareableBase <= 0) {
+    console.log(`[WEBHOOK] Skipping transfer — net (${netAmount} ¢) does not exceed operational costs (${OPERATIONAL_COSTS_CENTS} ¢)`);
+    return;
+  }
+
+  const splitAmount = Math.floor(shareableBase * 0.5);
 
   if (splitAmount < 1) {
-    console.log(`[WEBHOOK] Split amount < 1 cent (net=${netAmount} ¢) — skipping`);
+    console.log(`[WEBHOOK] Split amount < 1 cent (shareableBase=${shareableBase} ¢) — skipping`);
     return;
   }
 
   console.log(
-    `[WEBHOOK] Split calculation: gross=${grossAmount} ¢ − fee=${stripeFee} ¢ = net=${netAmount} ¢ → partner gets ${splitAmount} ¢`
+    `[WEBHOOK] Split: gross=${grossAmount} ¢ − fee=${stripeFee} ¢ = net=${netAmount} ¢ − costs=${OPERATIONAL_COSTS_CENTS} ¢ = base=${shareableBase} ¢ → partner gets ${splitAmount} ¢`
   );
 
   // ── 4. Execute the transfer ───────────────────────────────────────────────
@@ -381,11 +389,13 @@ async function executePartnerSplit(stripe, invoice) {
         destination:  partnerAccountId,
         description:  `EficacIA 50% revenue split — invoice ${invoice.id}`,
         metadata: {
-          invoice_id:      invoice.id,
-          gross_amount:    String(grossAmount),
-          stripe_fee:      String(stripeFee),
-          net_amount:      String(netAmount),
-          split_percent:   '50',
+          invoice_id:         invoice.id,
+          gross_amount:       String(grossAmount),
+          stripe_fee:         String(stripeFee),
+          net_amount:         String(netAmount),
+          operational_costs:  String(OPERATIONAL_COSTS_CENTS),
+          shareable_base:     String(shareableBase),
+          split_percent:      '50',
           customer_id:     typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer?.id || ''),
           subscription_id: typeof invoice.subscription === 'string' ? invoice.subscription : (invoice.subscription?.id || ''),
         },
