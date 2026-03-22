@@ -159,7 +159,7 @@ export default async function handler(req, res) {
       if (userRecord) {
         const stripeCustomerId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
         await supabase.from('users')
-          .update({ subscription_status: plan, ...(stripeCustomerId ? { stripe_id: stripeCustomerId } : {}) })
+          .update({ subscription_status: plan, ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}) })
           .eq('id', userRecord.id);
         console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}`);
       }
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
     const sub       = event.data.object;
     const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
     if (customerId) {
-      await supabase.from('users').update({ subscription_status: 'free' }).eq('stripe_id', customerId);
+      await supabase.from('users').update({ subscription_status: 'free' }).eq('stripe_customer_id', customerId);
       console.log(`[WEBHOOK] ✓ Subscription cancelled → free. customer: ${customerId}`);
     }
     return res.status(200).json({ received: true });

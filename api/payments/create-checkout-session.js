@@ -229,15 +229,15 @@ export default async function handler(req, res) {
     if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
 
     const { data: userRow, error: dbErr } = await supabase
-      .from('users').select('stripe_id').eq('id', authId).single();
-    if (dbErr || !userRow?.stripe_id) {
+      .from('users').select('stripe_customer_id').eq('id', authId).single();
+    if (dbErr || !userRow?.stripe_customer_id) {
       return res.status(200).json({ invoices: [] });
     }
 
     try {
       const stripe2 = getStripe();
       const list = await stripe2.invoices.list({
-        customer: userRow.stripe_id,
+        customer: userRow.stripe_customer_id,
         limit: 24,
         expand: ['data.charge'],
       });
@@ -265,21 +265,21 @@ export default async function handler(req, res) {
     if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
 
     const { data: userRow, error: dbErr } = await supabase
-      .from('users').select('stripe_id').eq('id', authId).single();
+      .from('users').select('stripe_customer_id').eq('id', authId).single();
     if (dbErr || !userRow) return res.status(500).json({ error: 'No se pudo recuperar el usuario' });
-    if (!userRow.stripe_id) return res.status(400).json({ error: 'No tienes ninguna suscripción activa en Stripe' });
+    if (!userRow.stripe_customer_id) return res.status(400).json({ error: 'No tienes ninguna suscripción activa en Stripe' });
 
     try {
       const stripe2 = getStripe();
       const session = await stripe2.billingPortal.sessions.create({
-        customer:   userRow.stripe_id,
+        customer:   userRow.stripe_customer_id,
         return_url: 'https://eficac-ia.vercel.app/dashboard/settings?tab=billing',
       });
-      console.log(`[PORTAL] ✓ Portal session for customer ${userRow.stripe_id} (user ${authId})`);
+      console.log(`[PORTAL] ✓ Portal session for customer ${userRow.stripe_customer_id} (user ${authId})`);
       return res.status(200).json({ url: session.url });
     } catch (err) {
       console.error('[PORTAL] Stripe error:', err.message);
-      return res.status(500).json({ error: 'No se pudo abrir el portal de facturación.' });
+      return res.status(500).json({ error: err.message || 'No se pudo abrir el portal de facturación.' });
     }
   }
 
