@@ -34,6 +34,8 @@
     { "source": "/api/linkedin/invitations/withdraw", "destination": "/api/linkedin/accounts?action=withdraw" },
     { "source": "/callback", "destination": "/api/unipile?action=webhook" },
     { "source": "/api/payments/credits-sync", "destination": "/api/payments/create-checkout-session?action=credits-sync" },
+    { "source": "/api/payments/create-portal-session", "destination": "/api/payments/create-checkout-session?action=portal" },
+    { "source": "/api/payments/invoices", "destination": "/api/payments/create-checkout-session?action=invoices" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/eficacia-extension.zip", "destination": "/eficacia-extension.zip" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

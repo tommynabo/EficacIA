@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt } from "lucide-react"
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -40,6 +40,12 @@ export default function SettingsPage() {
   const [portalLoading, setPortalLoading] = React.useState(false)
   const [portalError, setPortalError] = React.useState<string | null>(null)
 
+  // Billing history state
+  interface Invoice { id: string; number: string | null; date: number; amount_paid: number; currency: string; status: string | null; description: string | null; hosted_invoice_url: string | null; invoice_pdf: string | null }
+  const [invoices, setInvoices] = React.useState<Invoice[]>([])
+  const [invoicesLoading, setInvoicesLoading] = React.useState(false)
+  const [invoicesError, setInvoicesError] = React.useState<string | null>(null)
+
   // AI Credits state
   const [aiCredits, setAiCredits] = React.useState<number | null>(null)
   const [creditsLoading, setCreditsLoading] = React.useState(false)
@@ -65,6 +71,9 @@ export default function SettingsPage() {
     if (activeTab === "blocked") {
       loadBlockedLeads()
     }
+    if (activeTab === "billing") {
+      loadInvoices()
+    }
     if (activeTab === "ai-assistant") {
       loadAiPrompts()
     }
@@ -79,6 +88,23 @@ export default function SettingsPage() {
       }
     }
   }, [activeTab])
+
+  const loadInvoices = async () => {
+    setInvoicesLoading(true)
+    setInvoicesError(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/invoices`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error cargando facturas")
+      setInvoices(data.invoices || [])
+    } catch (e: any) {
+      setInvoicesError(e.message)
+    } finally {
+      setInvoicesLoading(false)
+    }
+  }
 
   const handleOpenPortal = async () => {
     setPortalLoading(true)
@@ -552,6 +578,7 @@ export default function SettingsPage() {
 
       {activeTab === "billing" && (
         <div className="space-y-6">
+          {/* Manage / Cancel Subscription */}
           <Card className="border-slate-800 bg-slate-900/40">
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -559,8 +586,8 @@ export default function SettingsPage() {
                   <CreditCard className="w-5 h-5 text-blue-400" />
                 </div>
                 <div>
-                  <CardTitle>Portal de Facturación</CardTitle>
-                  <CardDescription>Gestiona tu suscripción, descarga facturas o cancela tu plan desde el portal seguro de Stripe.</CardDescription>
+                  <CardTitle>Gestión de Suscripción</CardTitle>
+                  <CardDescription>Cambia tu plan, método de pago o cancela tu suscripción desde el portal seguro de Stripe.</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -571,14 +598,14 @@ export default function SettingsPage() {
                 </div>
               )}
               <ul className="text-sm text-slate-400 space-y-1.5 list-disc list-inside">
-                <li>Ver y descargar tus facturas</li>
-                <li>Cambiar método de pago</li>
-                <li>Actualizar o cancelar tu suscripción</li>
+                <li>Cambiar o actualizar método de pago</li>
+                <li>Cambiar de plan (upgrade / downgrade)</li>
+                <li>Cancelar suscripción</li>
               </ul>
               <Button
                 onClick={handleOpenPortal}
                 disabled={portalLoading}
-                className="gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-5 w-full sm:w-auto"
+                className="gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full sm:w-auto"
               >
                 {portalLoading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Abriendo portal...</>
@@ -587,6 +614,103 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Billing History */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Receipt className="w-5 h-5 text-slate-400" />
+              <h3 className="text-lg font-semibold text-slate-100">Historial de Facturación</h3>
+            </div>
+
+            {invoicesError && (
+              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
+                <AlertCircle className="w-4 h-4 shrink-0" /> {invoicesError}
+              </div>
+            )}
+
+            {invoicesLoading ? (
+              <div className="flex items-center gap-2 text-slate-500 py-8 justify-center">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Cargando facturas...</span>
+              </div>
+            ) : invoices.length === 0 ? (
+              <Card className="p-10 flex flex-col items-center gap-3 border-dashed border-slate-700 text-center">
+                <FileText className="w-10 h-10 text-slate-600" />
+                <p className="text-slate-400 text-sm">No hay facturas disponibles todavía.</p>
+              </Card>
+            ) : (
+              <Card className="border-slate-800 bg-slate-900/40 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Fecha</th>
+                        <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Número</th>
+                        <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Descripción</th>
+                        <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Importe</th>
+                        <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Estado</th>
+                        <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Factura</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {invoices.map(inv => {
+                        const date = new Date(inv.date * 1000).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })
+                        const amount = new Intl.NumberFormat("es-ES", { style: "currency", currency: inv.currency?.toUpperCase() || "EUR" }).format(inv.amount_paid / 100)
+                        return (
+                          <tr key={inv.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{date}</td>
+                            <td className="px-4 py-3 text-slate-400 font-mono text-xs whitespace-nowrap">{inv.number || inv.id.slice(-8)}</td>
+                            <td className="px-4 py-3 text-slate-400 max-w-[200px] truncate">{inv.description || "Suscripción EficacIA"}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-100 whitespace-nowrap">{amount}</td>
+                            <td className="px-4 py-3 text-center">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-2 ${
+                                  inv.status === "paid"
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                    : inv.status === "open"
+                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                    : "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                }`}
+                              >
+                                {inv.status === "paid" ? "Pagada" : inv.status === "open" ? "Pendiente" : inv.status || "—"}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                {inv.hosted_invoice_url && (
+                                  <a
+                                    href={inv.hosted_invoice_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 hover:text-blue-300 transition-colors"
+                                    title="Ver factura"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </a>
+                                )}
+                                {inv.invoice_pdf && (
+                                  <a
+                                    href={inv.invoice_pdf}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-slate-400 hover:text-slate-200 transition-colors"
+                                    title="Descargar PDF"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </div>
         </div>
       )}
 

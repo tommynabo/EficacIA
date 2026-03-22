@@ -222,6 +222,66 @@ export default async function handler(req, res) {
     return res.status(200).json({ credits: newCredits, granted: true });
   }
 
+  // ── GET ?action=invoices — billing history for authenticated user ────────
+  if (req.method === 'GET' && req.query.action === 'invoices') {
+    const { userId: authId, error: authErr } = await getAuthUser(req);
+    if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
+
+    const { data: userRow, error: dbErr } = await supabase
+      .from('users').select('stripe_id').eq('id', authId).single();
+    if (dbErr || !userRow?.stripe_id) {
+      return res.status(200).json({ invoices: [] });
+    }
+
+    try {
+      const stripe2 = getStripe();
+      const list = await stripe2.invoices.list({
+        customer: userRow.stripe_id,
+        limit: 24,
+        expand: ['data.charge'],
+      });
+      const invoices = list.data.map(inv => ({
+        id:               inv.id,
+        number:           inv.number,
+        date:             inv.created,
+        amount_paid:      inv.amount_paid,
+        currency:         inv.currency,
+        status:           inv.status,
+        description:      inv.lines?.data?.[0]?.description || null,
+        hosted_invoice_url: inv.hosted_invoice_url,
+        invoice_pdf:      inv.invoice_pdf,
+      }));
+      return res.status(200).json({ invoices });
+    } catch (err) {
+      console.error('[INVOICES]', err.message);
+      return res.status(500).json({ error: 'No se pudieron cargar las facturas' });
+    }
+  }
+
+  // ── POST ?action=portal — Stripe Customer Portal session ─────────────────
+  if (req.method === 'POST' && req.query.action === 'portal') {
+    const { userId: authId, error: authErr } = await getAuthUser(req);
+    if (!authId) return res.status(401).json({ error: authErr || 'No autenticado' });
+
+    const { data: userRow, error: dbErr } = await supabase
+      .from('users').select('stripe_id').eq('id', authId).single();
+    if (dbErr || !userRow) return res.status(500).json({ error: 'No se pudo recuperar el usuario' });
+    if (!userRow.stripe_id) return res.status(400).json({ error: 'No tienes ninguna suscripción activa en Stripe' });
+
+    try {
+      const stripe2 = getStripe();
+      const session = await stripe2.billingPortal.sessions.create({
+        customer:   userRow.stripe_id,
+        return_url: 'https://eficac-ia.vercel.app/dashboard/settings?tab=billing',
+      });
+      console.log(`[PORTAL] ✓ Portal session for customer ${userRow.stripe_id} (user ${authId})`);
+      return res.status(200).json({ url: session.url });
+    } catch (err) {
+      console.error('[PORTAL] Stripe error:', err.message);
+      return res.status(500).json({ error: 'No se pudo abrir el portal de facturación.' });
+    }
+  }
+
   try {
     const secretKey = process.env.STRIPE_SECRET_KEY;
     if (!secretKey) {
