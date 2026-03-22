@@ -53,7 +53,8 @@ export default async function handler(req, res) {
   }
 
   // GET — recuperar sesión completada por sessionId
-  if (req.method === 'GET') {
+  // (action-based GET routes are handled further below — skip this block for them)
+  if (req.method === 'GET' && !req.query.action) {
     try {
       const secretKey = process.env.STRIPE_SECRET_KEY;
       if (!secretKey) return res.status(500).json({ error: 'Stripe secret key not configured' });
