@@ -394,14 +394,16 @@ async function executePartnerSplit(stripe, invoice) {
   const operationalCosts = PLAN_OPERATIONAL_COSTS[planKey] ?? 1700;
 
   // ── Step 4: Affiliate Commission (Rewardful) ──────────────────────────────
-  // Rewardful can tag via several metadata keys — check all common variants.
+  // Rewardful injects a `referral` key (UUID) into the Stripe Customer metadata.
+  // Confirmed by inspecting live customer ceo@thegrowthcrafter.com on 2026-03-22.
+  // Also check common legacy/variant keys as a safety net.
   const isAffiliate = !!(
-    subMeta.rewardful             ||
-    subMeta.rewardful_referral_id ||
-    subMeta.rewardful_id          ||
+    custMeta.referral             ||   // ← confirmed Rewardful key
     custMeta.rewardful            ||
-    custMeta.rewardful_referral_id ||
-    custMeta.rewardful_id
+    custMeta.rewardful_referral   ||
+    subMeta.referral              ||
+    subMeta.rewardful             ||
+    subMeta.rewardful_referral
   );
   const affiliateCut = isAffiliate ? (PLAN_AFFILIATE_CUTS[planKey] ?? 0) : 0;
 

@@ -36,6 +36,10 @@ export default function SettingsPage() {
   const [aiPromptsSaving, setAiPromptsSaving] = React.useState(false)
   const [aiPromptsMsg, setAiPromptsMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
+  // Billing portal state
+  const [portalLoading, setPortalLoading] = React.useState(false)
+  const [portalError, setPortalError] = React.useState<string | null>(null)
+
   // AI Credits state
   const [aiCredits, setAiCredits] = React.useState<number | null>(null)
   const [creditsLoading, setCreditsLoading] = React.useState(false)
@@ -75,6 +79,25 @@ export default function SettingsPage() {
       }
     }
   }, [activeTab])
+
+  const handleOpenPortal = async () => {
+    setPortalLoading(true)
+    setPortalError(null)
+    try {
+      const res = await fetch(`${envUrl}/api/payments/create-portal-session`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error al abrir el portal")
+      window.location.href = data.url
+    } catch (e: any) {
+      setPortalError(e.message)
+      setTimeout(() => setPortalError(null), 6000)
+    } finally {
+      setPortalLoading(false)
+    }
+  }
 
   const loadAiCredits = async () => {
     try {
@@ -528,9 +551,43 @@ export default function SettingsPage() {
       )}
 
       {activeTab === "billing" && (
-        <Card className="p-8 flex flex-col items-center justify-center gap-4 border-dashed border-slate-700 bg-slate-900/20">
-          <p className="text-slate-400">Gestión de facturación próximamente.</p>
-        </Card>
+        <div className="space-y-6">
+          <Card className="border-slate-800 bg-slate-900/40">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <CreditCard className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <CardTitle>Portal de Facturación</CardTitle>
+                  <CardDescription>Gestiona tu suscripción, descarga facturas o cancela tu plan desde el portal seguro de Stripe.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {portalError && (
+                <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {portalError}
+                </div>
+              )}
+              <ul className="text-sm text-slate-400 space-y-1.5 list-disc list-inside">
+                <li>Ver y descargar tus facturas</li>
+                <li>Cambiar método de pago</li>
+                <li>Actualizar o cancelar tu suscripción</li>
+              </ul>
+              <Button
+                onClick={handleOpenPortal}
+                disabled={portalLoading}
+                className="gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-5 w-full sm:w-auto"
+              >
+                {portalLoading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Abriendo portal...</>
+                  : <><CreditCard className="w-4 h-4" /> Gestionar / Cancelar Suscripción</>
+                }
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ─── AUTO-WITHDRAW TAB ────────────────────────────────────── */}
