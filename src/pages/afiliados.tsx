@@ -125,12 +125,14 @@ export default function AfiliadosPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button
+              asChild
               size="lg"
-              onClick={handleJoinClick}
               className="group w-full sm:w-auto text-base h-12 px-8 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/20"
             >
-              Convertirse en Afiliado
-              <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <a href="https://eficacia.getrewardful.com/signup" target="_blank" rel="noopener noreferrer">
+                Convertirse en Afiliado
+                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </a>
             </Button>
             <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8 border-slate-700 text-slate-300 hover:bg-slate-800/60 hover:text-white">
               Conocer más
@@ -324,12 +326,14 @@ export default function AfiliadosPage() {
               Únete a nuestra red de afiliados y construye un ingreso recurrente recomendando la herramienta que ya usan cientos de equipos de ventas.
             </p>
             <Button
+              asChild
               size="lg"
-              onClick={handleJoinClick}
               className="group bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border-0 shadow-xl shadow-indigo-500/30 h-12 px-10 text-base font-semibold"
             >
-              Convertirse en Afiliado
-              <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <a href="https://eficacia.getrewardful.com/signup" target="_blank" rel="noopener noreferrer">
+                Convertirse en Afiliado
+                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </a>
             </Button>
             <p className="text-slate-600 text-xs mt-4">Es completamente gratuito unirse. Sin compromisos.</p>
           </div>

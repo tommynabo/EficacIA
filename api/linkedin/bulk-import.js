@@ -72,18 +72,23 @@ function parseCsvToLeads(csvText) {
 
   const rawHeaders = parseLine(lines[0]);
   const headers = rawHeaders.map(h => h.toLowerCase().replace(/['"]/g, '').trim());
-  const fieldMapping = headers.map(h => FIELD_MAP[h] || null);
+  const fieldMapping = headers.map((h, i) => FIELD_MAP[h] || { isCustom: true, name: rawHeaders[i].trim().replace(/\s+/g, '_') });
 
   const leads = lines.slice(1).map(line => {
     const values = parseLine(line);
-    const row = {};
+    const row = { custom_vars: {} };
     fieldMapping.forEach((field, i) => {
-      if (field && values[i] !== undefined && values[i] !== '') {
+      if (field && typeof field === 'string' && values[i] !== undefined && values[i] !== '') {
         row[field] = values[i];
+      } else if (field && field.isCustom && values[i] !== undefined && values[i] !== '') {
+        row.custom_vars[field.name] = values[i];
       }
     });
+    if (Object.keys(row.custom_vars).length === 0) {
+      delete row.custom_vars;
+    }
     return row;
-  }).filter(row => Object.keys(row).length > 0);
+  }).filter(row => Object.keys(row).length > 0 && Object.keys(row).some(k => k !== 'custom_vars'));
 
   if (leads.length === 0) throw new Error('No se encontraron columnas reconocidas. Asegúrate de que las cabeceras incluyan: first_name, last_name, email, company, linkedin_url, etc.');
   return leads;

@@ -433,7 +433,7 @@ export function LeadImportModal({ campaignId, onClose, onImported }: LeadImportM
     setCsvRawData(raw)
     const auto = raw.headers.map(h => {
       const key = h.toLowerCase().trim()
-      const ft = AUTO_FIELD_MAP[key] || 'skip'
+      const ft = AUTO_FIELD_MAP[key] || 'custom_var'
       return { fieldType: ft, varName: h }
     })
     setColMappings(auto)
@@ -964,7 +964,7 @@ function buildLeadsFromMappings(
       const val = (row[i] || '').trim()
       if (!val || m.fieldType === 'skip') return
       if (m.fieldType === 'custom_var') {
-        const slug = m.varName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `var_${i}`
+        const slug = m.varName.trim().replace(/\s+/g, '_') || `var_${i}`
         customVars[slug] = val
       } else {
         lead[m.fieldType] = val

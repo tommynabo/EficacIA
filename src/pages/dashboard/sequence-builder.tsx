@@ -216,6 +216,10 @@ export default function SequenceBuilderPage() {
                           </div>
                         )}
                       </div>
+
+                      <p className="text-xs text-slate-500 italic">
+                        💡 Tip: Si importaste un CSV con columnas extra (ej. 'mensaje_1'), puedes usarlas como variables escribiendo <code className="bg-slate-950 px-1 py-0.5 rounded text-blue-400">{"{{mensaje_1}}"}</code>.
+                      </p>
                       
                       <div className="flex items-center justify-between bg-slate-950/50 p-3 rounded-lg border border-slate-800/50">
                         <div className="flex items-center gap-2">

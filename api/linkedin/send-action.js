@@ -79,17 +79,25 @@ async function fetchApifyDataset(datasetId) {
 function resolveTemplate(template, lead) {
   const vars = {
     nombre: lead.first_name || '',
+    first_name: lead.first_name || '',
     apellido: lead.last_name || '',
+    last_name: lead.last_name || '',
     empresa: lead.company || '',
+    company: lead.company || '',
     cargo: lead.job_title || lead.position || '',
+    job_title: lead.job_title || lead.position || '',
     email: lead.email || '',
     linkedin_url: lead.linkedin_url || '',
     nombre_completo: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
     ...(lead.custom_vars || {}),
   };
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    const val = vars[key];
-    return (val && val.trim() !== '') ? val : match;
+  return template.replace(/\{\{([\w\s-]+)\}\}/g, (match, key) => {
+    const cleanKey = key.trim();
+    if (vars[cleanKey] !== undefined) {
+      return vars[cleanKey].trim() !== '' ? vars[cleanKey] : '';
+    }
+    // Fallback: If not found, replace with empty string
+    return '';
   });
 }
 
@@ -599,7 +607,7 @@ export default async function handler(req, res) {
       );
     }
 
-    finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
+    finalMessage = finalMessage.replace(/\{\{([\w\s-]+)\}\}/g, '');
 
     // Execute the action (skip if simulate)
     let result = { simulated: true };
