@@ -255,55 +255,33 @@ async function scrollToBottom(): Promise<void> {
 function extractLinkedInLeadsFromPage(): Lead[] {
   const leads: Lead[] = [];
   const listItems = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
-  console.log(`[EficacIA MegaFix] LinkedIn: scanning ${listItems.length} list items`);
+  console.log(`[EficacIA MegaFix PURE] LinkedIn: scanning ${listItems.length} list items`);
 
   listItems.forEach((item, itemIdx) => {
     try {
-      // ── STEP 1: Find profile link via robust href heuristic ──────────────
-      // LinkedIn Sales Navigator may use /sales/lead/ or classic /in/ paths.
-      // We NO LONGER rely on data-control-name or .result-lockup__name.
+      // ── 1. URL y Nombre ────────────────────────────────────────────────────
       const profileLink = (
         item.querySelector<HTMLAnchorElement>('a[href*="/sales/lead/"]') ||
         item.querySelector<HTMLAnchorElement>('a[href*="/in/"]')
       );
 
       if (!profileLink) {
-        console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: no profile link found — skipping. HTML snippet: ${item.innerHTML.slice(0, 300)}`);
+        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No anchor with /sales/lead/ or /in/ found. Skipping.`);
         return;
       }
 
-      // ── STEP 2: Extract clean URL (strip query params) ───────────────────
       let linkedin_url = profileLink.href;
       if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
-      // Ensure trailing slash for consistency
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
-      // ── STEP 3: Extract name from the profile link text or its first span ──
-      // Avoid multi-line noise: take only the first non-empty line of text.
-      const cleanText = (el: Element | null): string => {
-        if (!el) return '';
-        return (el.textContent || '')
-          .split('\n')
-          .map(s => s.trim())
-          .filter(Boolean)[0] || '';
-      };
-
-      let fullName = cleanText(profileLink);
-
-      // Fallback: look for a direct child span inside the anchor
-      if (!fullName) {
-        const nameSpan = profileLink.querySelector('span');
-        fullName = cleanText(nameSpan);
-      }
-
-      // Fallback: look for [data-anonymize="person-name"] anywhere in the item
-      if (!fullName) {
-        const legacyEl = item.querySelector('[data-anonymize="person-name"]');
-        fullName = cleanText(legacyEl);
-      }
+      // Tomamos la primera línea limpia de texto del enlace (evita "2nd degree connection")
+      const fullName = (profileLink.textContent || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)[0] || '';
 
       if (!fullName) {
-        console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: could not extract name for ${linkedin_url}. HTML: ${item.innerHTML.slice(0, 400)}`);
+        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: Could not extract name. Skipping.`);
         return;
       }
 
@@ -311,32 +289,48 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       const first_name = nameParts[0] || '';
       const last_name = nameParts.slice(1).join(' ') || '';
 
-      // ── STEP 4: Job title — new artdeco classes + legacy fallback ─────────
-      const titleEl =
-        item.querySelector('.artdeco-entity-lockup__subtitle') ||
-        item.querySelector('[data-anonymize="job-title"]') ||
-        item.querySelector('.result-lockup__highlight-keyword');
-      const job_title = cleanText(titleEl);
+      // ── 2. Cargo, Empresa y Ubicación (Cascada Visual Pura) ────────────────
+      const allText = (item as HTMLElement).innerText || item.textContent || '';
+      const lines = allText
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
 
-      // ── STEP 5: Company — caption or position-company ────────────────────
-      const companyEl =
-        item.querySelector('.artdeco-entity-lockup__caption') ||
-        item.querySelector('[data-anonymize="company-name"]') ||
-        item.querySelector('.result-lockup__position-company');
-      const company = cleanText(companyEl);
+      const garbageWords = [
+        'conectar', 'mensaje', 'guardar', 'connect', 'message', 'save', 
+        'ver perfil', 'view profile', 'seguir', 'follow', 'invite', 'invitar',
+        'enviar mensaje', 'send message', 'más', 'more'
+      ];
 
-      // ── STEP 6: Location — metadata class or legacy selector ─────────────
-      const locationEl =
-        item.querySelector('.artdeco-entity-lockup__metadata') ||
-        item.querySelector('[data-anonymize="location"]') ||
-        item.querySelector('.result-lockup__location');
-      const location = cleanText(locationEl);
+      const usefulLines = lines.filter(line => {
+        const lower = line.trim().toLowerCase();
+        
+        // Excluir la línea si contiene el Nombre extraído
+        if (lower.includes(fullName.toLowerCase())) return false;
+        
+        // Excluir grados de conexión (1st, 2nd, 3rd, grado) y cosas similares
+        if (/(1st|2nd|3rd|degree|grado|out of network|fuera de la red|conexión|connection)/i.test(lower)) return false;
+        
+        // Excluir basura de botones de LinkedIn
+        if (garbageWords.includes(lower)) return false;
+        
+        // Excluir líneas muy cortas que sean artefactos visuales (ej: "•", "-")
+        if (line.length < 2) return false;
+        
+        return true;
+      });
 
-      console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
+      // Asignación estricta por índice visual
+      const job_title = usefulLines[0] || '';
+      const company = usefulLines[1] || '';
+      const location = usefulLines[2] || '';
 
+      console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
+
+      // ── 3. Asignación Segura ───────────────────────────────────────────────
       leads.push({ first_name, last_name, job_title, company, linkedin_url, location });
     } catch (e) {
-      console.warn(`[EficacIA MegaFix] LinkedIn item[${itemIdx}] parse error:`, e);
+      console.warn(`[EficacIA MegaFix PURE] LinkedIn item[${itemIdx}] parse error:`, e);
     }
   });
 
