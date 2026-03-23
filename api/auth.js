@@ -17,6 +17,7 @@ export default async function handler(req, res) {
   if (action === 'reset-password') return handleResetPassword(req, res);
   if (action === 'change-password') return handleChangePassword(req, res);
   if (action === 'api-key') return handleApiKey(req, res);
+  if (action === 'provision') return handleProvision(req, res);
 
   return res.status(400).json({ error: 'Acción no válida' });
 }
@@ -344,5 +345,170 @@ async function handleApiKey(req, res) {
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
+  }
+}
+
+// ─── PROVISION (TalentScope → EficacIA Shadow Account) ───────────────────────
+// Endpoint interno — solo accesible con TALENTSCOPE_MASTER_SECRET
+// POST /api/auth?action=provision
+// Body: { email, userId, name }
+
+async function handleProvision(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método no permitido' });
+  }
+
+  // ── 1. Autenticación del sistema llamante ────────────────────────────────
+  const masterSecret = process.env.TALENTSCOPE_MASTER_SECRET;
+  if (!masterSecret) {
+    console.error('[PROVISION] TALENTSCOPE_MASTER_SECRET no configurado.');
+    return res.status(500).json({ error: 'Error de configuración del servidor.' });
+  }
+
+  const authHeader = req.headers.authorization || '';
+  const receivedSecret = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : authHeader.trim();
+
+  // Comparación en tiempo constante (evita timing attacks)
+  const masterBuf   = Buffer.from(masterSecret);
+  const receivedBuf = Buffer.from(receivedSecret);
+  const secretsMatch =
+    masterBuf.length === receivedBuf.length &&
+    crypto.timingSafeEqual(masterBuf, receivedBuf);
+
+  if (!secretsMatch) {
+    console.warn('[PROVISION] Intento de acceso con secreto inválido.');
+    return res.status(401).json({ error: 'No autorizado.' });
+  }
+
+  // ── 2. Validación del body ───────────────────────────────────────────────
+  const { email, userId: talentscopeUserId, name } = req.body || {};
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'El campo "email" es requerido y debe ser válido.' });
+  }
+  if (!talentscopeUserId || typeof talentscopeUserId !== 'string') {
+    return res.status(400).json({ error: 'El campo "userId" es requerido.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const displayName     = (name || normalizedEmail.split('@')[0]).trim();
+
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+
+  try {
+    // ── 3. Buscar usuario existente por email ────────────────────────────
+    const { data: existingUser } = await supabaseAdmin
+      .from('users')
+      .select('id, email')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    let userId;
+    const isNewUser = !existingUser;
+
+    if (existingUser) {
+      userId = existingUser.id;
+      console.log(`[PROVISION] Usuario existente: ${userId} (${normalizedEmail})`);
+    } else {
+      // ── 4. Crear usuario en Supabase Auth + tabla users ────────────────
+      const randomPassword = `efi_${crypto.randomUUID()}`;
+
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: randomPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: displayName,
+          provisioned_by: 'talentscope',
+          talentscope_user_id: talentscopeUserId,
+        },
+      });
+
+      if (authError) {
+        // Edge case: existe en auth pero no en tabla users
+        if (authError.message?.toLowerCase().includes('already registered') ||
+            authError.code === 'email_exists') {
+          const { data: { users: authUsers } } = await supabaseAdmin.auth.admin.listUsers();
+          const found = authUsers?.find(u => u.email === normalizedEmail);
+          if (found) {
+            userId = found.id;
+          } else {
+            console.error('[PROVISION] Error Auth:', authError.message);
+            return res.status(500).json({ error: `Error creando usuario: ${authError.message}` });
+          }
+        } else {
+          console.error('[PROVISION] Error Auth:', authError.message);
+          return res.status(500).json({ error: `Error creando usuario: ${authError.message}` });
+        }
+      } else {
+        userId = authData.user.id;
+      }
+
+      const { error: dbError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: userId,
+          email: normalizedEmail,
+          full_name: displayName,
+          subscription_status: 'free',
+          subscription_plan: 'free',
+        });
+
+      if (dbError && dbError.code !== '23505') {
+        console.error('[PROVISION] Error tabla users:', dbError.message);
+        return res.status(500).json({ error: `Error creando perfil: ${dbError.message}` });
+      }
+
+      console.log(`[PROVISION] ✓ Nuevo usuario: ${userId} (${normalizedEmail})`);
+    }
+
+    // ── 5. Generar o recuperar API Key ────────────────────────────────────
+    const { data: existingKey } = await supabaseAdmin
+      .from('api_keys')
+      .select('key_value')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    let apiKey;
+
+    if (existingKey?.key_value) {
+      apiKey = existingKey.key_value;
+      console.log(`[PROVISION] API Key existente para ${userId}`);
+    } else {
+      const newKey = `efi_${crypto.randomUUID().replace(/-/g, '')}`;
+      const { data: insertedKey, error: keyError } = await supabaseAdmin
+        .from('api_keys')
+        .insert({ user_id: userId, key_value: newKey })
+        .select('key_value')
+        .single();
+
+      if (keyError) {
+        if (keyError.code === '23505') {
+          // Race condition — recuperar la existente
+          const { data: retryKey } = await supabaseAdmin
+            .from('api_keys').select('key_value').eq('user_id', userId).single();
+          apiKey = retryKey?.key_value;
+        } else {
+          console.error('[PROVISION] Error API Key:', keyError.message);
+          return res.status(500).json({ error: `Error generando API Key: ${keyError.message}` });
+        }
+      } else {
+        apiKey = insertedKey.key_value;
+      }
+
+      console.log(`[PROVISION] ✓ Nueva API Key para ${userId}`);
+    }
+
+    // ── 6. Respuesta ──────────────────────────────────────────────────────
+    return res.status(200).json({ success: true, apiKey, userId, isNewUser });
+
+  } catch (err) {
+    console.error('[PROVISION] Error inesperado:', err);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 }
