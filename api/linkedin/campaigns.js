@@ -25,6 +25,10 @@ async function getOrCreateTeam(userId) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   const origin = req.headers.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
