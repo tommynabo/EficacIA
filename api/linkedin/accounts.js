@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
+import { getAuthUser } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -57,17 +57,6 @@ function parseSentDate(dateStr) {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return null;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
 
 async function getOrCreateTeam(userId) {
   const { data: teams } = await supabaseAdmin
@@ -260,7 +249,7 @@ export default async function handler(req, res) {
     const cronSecret = req.headers['x-cron-secret']
       || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
     const isValidCron = cronSecret && cronSecret === process.env.CRON_SECRET;
-    const userId = getUserId(req);
+    const { userId } = await getAuthUser(req);
     if (!isValidCron && !userId) return res.status(401).json({ error: 'No autenticado' });
 
     const dsn = (process.env.UNIPILE_DSN || '').trim();
@@ -391,7 +380,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const userId = getUserId(req);
+  const { userId } = await getAuthUser(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   // GET - listar cuentas LinkedIn del usuario

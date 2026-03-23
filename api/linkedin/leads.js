@@ -1,22 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
+import { getAuthUser } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return null;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -29,7 +18,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const userId = getUserId(req);
+  const { userId } = await getAuthUser(req);
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   if (req.method === 'GET') {

@@ -15,21 +15,13 @@
  * El frontend advierte al usuario antes de guardar ese valor.
  */
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
+
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return null;
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET || 'dev-secret').userId;
-  } catch { return null; }
-}
 
 /**
  * Solo acepta peticiones que vengan con el header:

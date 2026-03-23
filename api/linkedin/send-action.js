@@ -9,7 +9,7 @@
  * Also used internally by the campaign engine.
  */
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
+import { getAuthUser } from '../_lib/auth.js';
 
 const ACTOR_PROFILE_SCRAPER = 'supreme_coder~linkedin-profile-scraper';
 
@@ -18,14 +18,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-function getUserId(req) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return null;
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET || 'dev-secret').userId;
-  } catch { return null; }
-}
 
 function unipileHeaders() {
   return {
@@ -448,7 +440,15 @@ export default async function handler(req, res) {
 
   const internalKey = req.headers['x-engine-key'];
   const isInternal = internalKey && internalKey === (process.env.JWT_SECRET || 'dev-secret');
-  const userId = isInternal ? 'engine' : getUserId(req);
+  
+  let userId;
+  if (isInternal) {
+    userId = 'engine';
+  } else {
+    const { userId: authUserId } = await getAuthUser(req);
+    userId = authUserId;
+  }
+
   if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
   const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
