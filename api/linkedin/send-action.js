@@ -428,7 +428,7 @@ async function registerUnipileAccount(liAt) {
 }
 
 export default async function handler(req, res) {
-  // 1. Inyectar CORS forzosamente
+  // 1. CORS obligatorio siempre
   setCors(res);
 
   // 2. Manejar preflight
@@ -436,37 +436,37 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
-
-  const internalKey = req.headers['x-engine-key'];
-  const isInternal = internalKey && internalKey === (process.env.JWT_SECRET || 'dev-secret');
-  
-  let userId;
-  if (isInternal) {
-    userId = 'engine';
-  } else {
-    // 3. Autenticación centralizada
-    const user = await getAuthUser(req);
-    if (!user) {
-      return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
-    }
-    userId = user.userId;
-  }
-
-  if (!userId) return res.status(401).json({ error: 'No autenticado' });
-
-  const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
-  
-  if (!leadId || !accountId || !actionType) {
-    const missing = [];
-    if (!leadId) missing.push('leadId');
-    if (!accountId) missing.push('accountId');
-    if (!actionType) missing.push('actionType');
-    console.error(`[SEND-ACTION] Missing payload fields: ${missing.join(', ')}`);
-    return res.status(400).json({ error: `Faltan campos requeridos: ${missing.join(', ')}` });
-  }
-
   try {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+
+    const internalKey = req.headers['x-engine-key'];
+    const isInternal = internalKey && internalKey === (process.env.JWT_SECRET || 'dev-secret');
+    
+    let userId;
+    if (isInternal) {
+      userId = 'engine';
+    } else {
+      // 3. Autenticación centralizada
+      const user = await getAuthUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+      }
+      userId = user.userId;
+    }
+
+    if (!userId) return res.status(401).json({ error: 'No autenticado' });
+
+    const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
+    
+    if (!leadId || !accountId || !actionType) {
+      const missing = [];
+      if (!leadId) missing.push('leadId');
+      if (!accountId) missing.push('accountId');
+      if (!actionType) missing.push('actionType');
+      console.error(`[SEND-ACTION] Missing payload fields: ${missing.join(', ')}`);
+      return res.status(400).json({ error: `Faltan campos requeridos: ${missing.join(', ')}` });
+    }
+
     // Fetch the lead
     const { data: lead, error: leadErr } = await supabaseAdmin
       .from('leads')
@@ -509,8 +509,6 @@ export default async function handler(req, res) {
     }
 
     // ─── Determine userId for AI credit operations ───────────────────────────
-    // When called from the campaign engine, userId = 'engine'; resolve the real
-    // owner from the campaign team so we can check and deduct AI credits.
     let creditUserId = (userId !== 'engine') ? userId : null;
     if (!creditUserId && campaignId) {
       try {
@@ -537,8 +535,6 @@ export default async function handler(req, res) {
     const remainingTags = finalMessage.match(/\{\{(\w+)\}\}/g);
     const needsAdvancedAI = !!remainingTags && remainingTags.length > 0;
 
-    // Snapshot of user's credit balance at the time of the check (used for
-    // deduction after a successful send — avoids a second DB fetch).
     let aiCreditsSnapshot = null;
 
     if (needsAdvancedAI) {
@@ -564,56 +560,45 @@ export default async function handler(req, res) {
         aiCreditsSnapshot = currentCredits;
       }
 
-      try {
-        const cvars = lead.custom_vars || {};
+      const cvars = lead.custom_vars || {};
 
-        // ─── Step 2a: Try Apify scraping (best-effort) ─────────────────────
-        const apifyResult = await tryApifyScrape(lead, cvars);
+      // ─── Step 2a: Try Apify scraping (best-effort) ─────────────────────
+      const apifyResult = await tryApifyScrape(lead, cvars);
 
-        if (apifyResult === 'PENDING') {
-          // Apify is still working — return 202 so frontend retries
-          return res.status(202).json({ 
-            success: true, 
-            status: 'processing', 
-            message: 'Analizando perfil de LinkedIn (Apify)... Reintentando automáticamente.',
-            message_sent: finalMessage 
-          });
-        }
-
-        // ─── Step 2b: ALWAYS call Claude — with scraped data OR DB info ────
-        // Re-read lead to get any updates from Apify
-        const { data: freshLead } = await supabaseAdmin
-          .from('leads')
-          .select('*')
-          .eq('id', leadId)
-          .single();
-
-        let aiPrompt = '';
-        if (campaignId) {
-          const { data: camp } = await supabaseAdmin
-            .from('campaigns')
-            .select('settings')
-            .eq('id', campaignId)
-            .single();
-          aiPrompt = camp?.settings?.ai_prompt || '';
-        }
-
-        console.log(`[SEND-ACTION] Calling Claude with AI prompt: "${(aiPrompt || 'default').slice(0, 100)}"`);
-        finalMessage = await generateAdvancedAIVariables(
-          finalMessage, 
-          freshLead || lead, 
-          aiPrompt, 
-          actionType
-        );
-      } catch (advErr) {
-        console.error(`[SEND-ACTION] AI flow error: ${advErr.message}`);
+      if (apifyResult === 'PENDING') {
+        return res.status(202).json({ 
+          success: true, 
+          status: 'processing', 
+          message: 'Analizando perfil de LinkedIn (Apify)... Reintentando automáticamente.',
+          message_sent: finalMessage 
+        });
       }
 
-      // Strip any remaining unresolved tags as last resort
-      finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
+      // ─── Step 2b: ALWAYS call Claude ────
+      const { data: freshLead } = await supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .single();
+
+      let aiPrompt = '';
+      if (campaignId) {
+        const { data: camp } = await supabaseAdmin
+          .from('campaigns')
+          .select('settings')
+          .eq('id', campaignId)
+          .single();
+        aiPrompt = camp?.settings?.ai_prompt || '';
+      }
+
+      finalMessage = await generateAdvancedAIVariables(
+        finalMessage, 
+        freshLead || lead, 
+        aiPrompt, 
+        actionType
+      );
     }
 
-    // Fallback: ALWAYS strip lingering {{tags}} across the whole code path before Unipile
     finalMessage = finalMessage.replace(/\{\{\w+\}\}/g, '');
 
     // Execute the action (skip if simulate)
@@ -650,26 +635,17 @@ export default async function handler(req, res) {
         });
       }
 
-      // ── Deduct 1 AI credit after a successful real send ────────────────────
-      // Only deduct if AI variables were used (aiCreditsSnapshot was set) and
-      // we have a valid user to charge. The WHERE ai_credits >= 1 guard prevents
-      // going negative if two jobs for the same user run in parallel.
+      // ── Deduct 1 AI credit
       if (aiCreditsSnapshot !== null && creditUserId) {
         try {
           await supabaseAdmin.from('users')
             .update({ ai_credits: Math.max(0, aiCreditsSnapshot - 1) })
             .eq('id', creditUserId)
             .gte('ai_credits', 1);
-          console.log(`[SEND-ACTION] ✓ AI credit deducted for user ${creditUserId}. New balance: ${aiCreditsSnapshot - 1}`);
-        } catch (decrErr) {
-          console.warn('[SEND-ACTION] Could not deduct AI credit:', decrErr.message);
-        }
+        } catch {}
       }
-    } else {
-      console.log(`[SEND-ACTION] SIMULATE - skipped Unipile for ${linkedinId}`);
     }
 
-    console.log(`[SEND-ACTION] ✓ ${simulate ? '(SIMULATED) ' : ''}${actionType} sent to ${linkedinId} via ${account.profile_name}`);
     return res.status(200).json({
       success: true,
       action: actionType,
@@ -677,12 +653,15 @@ export default async function handler(req, res) {
       message_sent: finalMessage,
       message: `✓ ${simulate ? '[Simulacro] ' : ''}${actionType === 'invitation' ? 'Invitación' : 'Mensaje'} ${simulate ? 'generado' : 'enviado'} para ${lead.first_name}`,
     });
-  } catch (err) {
-    console.error('[SEND-ACTION] Error:', err.message);
+
+  } catch (error) {
+    console.error("[CRASH INTERNO EN ENDPOINT]:", error);
     // Update lead with error
-    await supabaseAdmin.from('leads').update({
-      sequence_status: 'failed',
-    }).eq('id', leadId);
-    return res.status(500).json({ error: err.message });
+    if (leadId) {
+      await supabaseAdmin.from('leads').update({
+        sequence_status: 'failed',
+      }).eq('id', leadId).catch(() => {});
+    }
+    return res.status(500).json({ error: error.message || 'Error interno del servidor' });
   }
 }

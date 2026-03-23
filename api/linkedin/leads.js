@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 
 
 export default async function handler(req, res) {
-  // 1. Inyectar CORS forzosamente
+  // 1. CORS obligatorio siempre
   setCors(res);
 
   // 2. Manejar preflight
@@ -16,119 +16,119 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 3. Autenticación centralizada
-  const user = await getAuthUser(req);
-  if (!user) {
-    return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
-  }
-  const userId = user.userId;
+  try {
+    // 3. Autenticación centralizada
+    const user = await getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+    }
+    const userId = user.userId;
 
-  if (req.method === 'GET') {
-    const { status, search, limit = 50, offset = 0, campaign_id } = req.query;
+    if (req.method === 'GET') {
+      const { status, search, limit = 50, offset = 0, campaign_id } = req.query;
 
-    // Obtener teamId del usuario
-    const { data: teams } = await supabaseAdmin
-      .from('teams')
-      .select('id')
-      .eq('owner_id', userId)
-      .limit(1);
+      // Obtener teamId del usuario
+      const { data: teams } = await supabaseAdmin
+        .from('teams')
+        .select('id')
+        .eq('owner_id', userId)
+        .limit(1);
 
-    if (!teams || teams.length === 0) return res.status(200).json({ leads: [] });
-    const teamId = teams[0].id;
+      if (!teams || teams.length === 0) return res.status(200).json({ leads: [] });
+      const teamId = teams[0].id;
 
-    let query = supabaseAdmin
-      .from('leads')
-      .select('*')
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: false })
-      .range(Number(offset), Number(offset) + Number(limit) - 1);
+      let query = supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false })
+        .range(Number(offset), Number(offset) + Number(limit) - 1);
 
-    if (status) query = query.eq('status', status);
-    if (campaign_id) query = query.eq('campaign_id', campaign_id);
-    if (search) {
-      query = query.or(
-        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,company.ilike.%${search}%,linkedin_url.ilike.%${search}%`
-      );
+      if (status) query = query.eq('status', status);
+      if (campaign_id) query = query.eq('campaign_id', campaign_id);
+      if (search) {
+        query = query.or(
+          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,company.ilike.%${search}%,linkedin_url.ilike.%${search}%`
+        );
+      }
+
+      const { data: leads, error } = await query;
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.status(200).json({ success: true, leads: leads || [] });
     }
 
-    const { data: leads, error } = await query;
+    if (req.method === 'DELETE') {
+      const { id } = req.query;
+      if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
 
-    if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json({ success: true, leads: leads || [] });
-  }
-
-  if (req.method === 'DELETE') {
-    const { id } = req.query;
-    if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
-
-    // Verificar que el lead pertenece al usuario
-    const { data: teams } = await supabaseAdmin
-      .from('teams')
-      .select('id')
-      .eq('owner_id', userId);
-
-    const teamIds = (teams || []).map((t) => t.id);
-    if (teamIds.length === 0)
-      return res.status(404).json({ error: 'Lead no encontrado' });
-
-    const { error } = await supabaseAdmin
-      .from('leads')
-      .delete()
-      .eq('id', id)
-      .in('team_id', teamIds);
-
-    if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json({ success: true, message: 'Lead eliminado' });
-  }
-
-  if (req.method === 'POST') {
-    const { id, action } = req.query;
-    if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
-
-    if (action === 'send') {
-      const { accountId, actionType = 'invitation', content } = req.body || {};
-
-      // Obtener lead y verificar propiedad
+      // Verificar que el lead pertenece al usuario
       const { data: teams } = await supabaseAdmin
         .from('teams')
         .select('id')
         .eq('owner_id', userId);
 
       const teamIds = (teams || []).map((t) => t.id);
-      if (teamIds.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+      if (teamIds.length === 0)
+        return res.status(404).json({ error: 'Lead no encontrado' });
 
-      const { data: lead, error: leadError } = await supabaseAdmin
+      const { error } = await supabaseAdmin
         .from('leads')
-        .select('*, campaigns(name)')
+        .delete()
         .eq('id', id)
-        .in('team_id', teamIds)
-        .single();
+        .in('team_id', teamIds);
 
-      if (leadError || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
-      if (lead.sent_message) return res.status(400).json({ error: 'Ya se envió un mensaje a este lead' });
+      if (error) return res.status(400).json({ error: error.message });
+      return res.status(200).json({ success: true, message: 'Lead eliminado' });
+    }
 
-      // If no accountId provided, find the first valid LinkedIn account for this team
-      let resolvedAccountId = accountId;
-      if (!resolvedAccountId) {
-        const { data: accounts } = await supabaseAdmin
-          .from('linkedin_accounts')
+    if (req.method === 'POST') {
+      const { id, action } = req.query;
+      if (!id) return res.status(400).json({ error: 'ID de lead requerido' });
+
+      if (action === 'send') {
+        const { accountId, actionType = 'invitation', content } = req.body || {};
+
+        // Obtener lead y verificar propiedad
+        const { data: teams } = await supabaseAdmin
+          .from('teams')
           .select('id')
+          .eq('owner_id', userId);
+
+        const teamIds = (teams || []).map((t) => t.id);
+        if (teamIds.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+
+        const { data: lead, error: leadError } = await supabaseAdmin
+          .from('leads')
+          .select('*, campaigns(name)')
+          .eq('id', id)
           .in('team_id', teamIds)
-          .eq('is_valid', true)
-          .limit(1);
-        resolvedAccountId = accounts?.[0]?.id;
-      }
-      if (!resolvedAccountId) {
-        return res.status(400).json({ error: 'No hay cuenta de LinkedIn conectada. Ve a Cuentas para agregar una.' });
-      }
+          .single();
 
-      // Call the send-action endpoint to actually send via Unipile
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const host = req.headers.host;
-      const campaignName = lead.campaigns?.name || '';
-      const finalContent = content || `Hola {{nombre}}, vi tu perfil y me gustaría conectar contigo.`;
+        if (leadError || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
+        if (lead.sent_message) return res.status(400).json({ error: 'Ya se envió un mensaje a este lead' });
 
-      try {
+        // If no accountId provided, find the first valid LinkedIn account for this team
+        let resolvedAccountId = accountId;
+        if (!resolvedAccountId) {
+          const { data: accounts } = await supabaseAdmin
+            .from('linkedin_accounts')
+            .select('id')
+            .in('team_id', teamIds)
+            .eq('is_valid', true)
+            .limit(1);
+          resolvedAccountId = accounts?.[0]?.id;
+        }
+        if (!resolvedAccountId) {
+          return res.status(400).json({ error: 'No hay cuenta de LinkedIn conectada. Ve a Cuentas para agregar una.' });
+        }
+
+        // Call the send-action endpoint to actually send via Unipile
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const host = req.headers.host;
+        const campaignName = lead.campaigns?.name || '';
+        const finalContent = content || `Hola {{nombre}}, vi tu perfil y me gustaría conectar contigo.`;
+
         const sendRes = await fetch(`${protocol}://${host}/api/linkedin/send-action`, {
           method: 'POST',
           headers: {
@@ -151,14 +151,15 @@ export default async function handler(req, res) {
         }
 
         return res.status(200).json(result);
-      } catch (err) {
-        console.error('[SEND] Error:', err.message);
-        return res.status(500).json({ error: err.message });
       }
+
+      return res.status(400).json({ error: 'Acción no válida' });
     }
 
-    return res.status(400).json({ error: 'Acción no válida' });
-  }
+    return res.status(405).json({ error: 'Método no permitido' });
 
-  return res.status(405).json({ error: 'Método no permitido' });
+  } catch (error) {
+    console.error("[CRASH INTERNO EN ENDPOINT]:", error);
+    return res.status(500).json({ error: error.message || 'Error interno del servidor' });
+  }
 }
