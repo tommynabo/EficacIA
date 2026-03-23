@@ -231,25 +231,41 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
 
 async function scrollToBottom(): Promise<void> {
   const scrollEl =
+    document.querySelector('#search-results-container') ||
     document.querySelector('.search-results__result-list') ||
     document.scrollingElement ||
     document.documentElement;
 
-  let previousHeight = -1;
-  let stableRounds = 0;
+  // Scroll Progresivo Automático (Solución a Lazy Loading)
+  let maxScrolls = 50; 
+  let scrolls = 0;
 
-  while (stableRounds < 3) {
-    const currentHeight = (scrollEl as HTMLElement).scrollHeight;
-    window.scrollTo(0, currentHeight);
-    if (currentHeight === previousHeight) {
-      stableRounds++;
+  while (scrolls < maxScrolls) {
+    const currentScrollTop = scrollEl.scrollTop || window.scrollY;
+    
+    if (scrollEl !== document.scrollingElement && scrollEl !== document.documentElement) {
+      scrollEl.scrollBy(0, 500);
     } else {
-      stableRounds = 0;
-      previousHeight = currentHeight;
+      window.scrollBy(0, 500);
     }
-    await sleep(stableRounds === 0 ? 800 : 400);
+    
+    await sleep(200); // Pausa para permitir que los esqueletos de LinkedIn rendericen
+    
+    const newScrollTop = scrollEl.scrollTop || window.scrollY;
+    if (newScrollTop === currentScrollTop && newScrollTop > 0) {
+      break; // Hemos llegado al final de la página
+    }
+    scrolls++;
   }
-  await sleep(1200);
+  
+  // Scroll de vuelta arriba antes de empezar la extracción
+  if (scrollEl !== document.scrollingElement && scrollEl !== document.documentElement) {
+    scrollEl.scrollTo(0, 0);
+  } else {
+    window.scrollTo(0, 0);
+  }
+  
+  await sleep(600);
 }
 
 function extractLinkedInLeadsFromPage(): Lead[] {
@@ -274,8 +290,12 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
-      // Tomamos la primera línea limpia de texto del enlace (evita "2nd degree connection")
-      const fullName = (profileLink.textContent || '')
+      // Usamos innerText para no capturar etiquetas ARIA ocultas y limpiamos basura visual
+      let rawName = profileLink.innerText || '';
+      rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '');
+
+      // Tomamos la primera línea limpia de texto del enlace
+      const fullName = rawName
         .split('\n')
         .map(s => s.trim())
         .filter(Boolean)[0] || '';
@@ -327,8 +347,17 @@ function extractLinkedInLeadsFromPage(): Lead[] {
 
       console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
 
-      // ── 3. Asignación Segura ───────────────────────────────────────────────
-      leads.push({ first_name, last_name, job_title, company, linkedin_url, location });
+      // ── 3. Asignación Segura (Truncamiento a 200 chars para prevenir Error 400) ──
+      const safeTruncate = (str: string) => str ? str.substring(0, 200).trim() : '';
+
+      leads.push({ 
+        first_name: safeTruncate(first_name), 
+        last_name: safeTruncate(last_name), 
+        job_title: safeTruncate(job_title), 
+        company: safeTruncate(company), 
+        linkedin_url, 
+        location: safeTruncate(location) 
+      });
     } catch (e) {
       console.warn(`[EficacIA MegaFix PURE] LinkedIn item[${itemIdx}] parse error:`, e);
     }
