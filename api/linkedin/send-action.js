@@ -446,6 +446,9 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Garantizar el Scope de leadId al nivel superior para el bloque catch
+  let leadId = req.body && req.body.leadId ? req.body.leadId : undefined;
+
   try {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
@@ -466,7 +469,8 @@ export default async function handler(req, res) {
 
     if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
-    const { leadId, accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
+    const { accountId, actionType, content, campaignId, campaignName, simulate } = req.body || {};
+    if (!leadId && req.body && req.body.leadId) leadId = req.body.leadId;
     
     if (!leadId || !accountId || !actionType) {
       const missing = [];
@@ -664,14 +668,37 @@ export default async function handler(req, res) {
       message: `✓ ${simulate ? '[Simulacro] ' : ''}${actionType === 'invitation' ? 'Invitación' : 'Mensaje'} ${simulate ? 'generado' : 'enviado'} para ${lead.first_name}`,
     });
 
-  } catch (error) {
-    console.error("[CRASH INTERNO EN ENDPOINT]:", error);
-    // Update lead with error
-    if (leadId) {
-      await supabaseAdmin.from('leads').update({
-        sequence_status: 'failed',
-      }).eq('id', leadId).catch(() => {});
-    }
-    return res.status(500).json({ error: error.message || 'Error interno del servidor' });
-  }
+  } catch (err) {
+     console.error('[CRASH INTERNO EN ENDPOINT]:', err.message);
+     
+     // 1. Recuperar el leadId de forma ultra-segura
+     const safeLeadId = typeof leadId !== 'undefined' ? leadId : (req.body && req.body.leadId);
+     
+     // 2. Extraer el mensaje real de Unipile si es un JSON oculto
+     let cleanErrorMsg = err.message;
+     try {
+       // Buscar si hay un JSON dentro del string de error
+       const jsonMatch = err.message.match(/\{.*\}/);
+       if (jsonMatch) {
+         const parsed = JSON.parse(jsonMatch[0]);
+         cleanErrorMsg = parsed.detail || parsed.title || cleanErrorMsg;
+       }
+     } catch (e) { /* ignorar fallo de parseo */ }
+
+     // 3. Actualizar la base de datos solo si tenemos un ID válido
+     if (safeLeadId) {
+       try {
+         await supabaseAdmin.from('leads').update({
+           sequence_status: 'failed',
+           error_message: cleanErrorMsg,
+           next_action_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() // Pausa de 1h
+         }).eq('id', safeLeadId);
+       } catch (dbErr) {
+         console.error('[SEND-ACTION] Error actualizando DB:', dbErr.message);
+       }
+     }
+
+     // 4. Devolver SIEMPRE un JSON válido al frontend
+     return res.status(500).json({ error: cleanErrorMsg });
+   }
 }
