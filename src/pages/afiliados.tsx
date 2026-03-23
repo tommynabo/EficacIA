@@ -131,7 +131,6 @@ export default function AfiliadosPage() {
             >
               <a href="https://eficacia.getrewardful.com/signup" target="_blank" rel="noopener noreferrer">
                 Convertirse en Afiliado
-                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </a>
             </Button>
             <Button size="lg" variant="outline" className="w-full sm:w-auto text-base h-12 px-8 border-slate-700 text-slate-300 hover:bg-slate-800/60 hover:text-white">
@@ -332,7 +331,6 @@ export default function AfiliadosPage() {
             >
               <a href="https://eficacia.getrewardful.com/signup" target="_blank" rel="noopener noreferrer">
                 Convertirse en Afiliado
-                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </a>
             </Button>
             <p className="text-slate-600 text-xs mt-4">Es completamente gratuito unirse. Sin compromisos.</p>
