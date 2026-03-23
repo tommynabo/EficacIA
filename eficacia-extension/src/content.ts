@@ -237,13 +237,16 @@ function extractLinkedInLeadsFromPage(): Lead[] {
   listItems.forEach((item, itemIdx) => {
     try {
       // ── 1. URL y Nombre ────────────────────────────────────────────────────
-      const profileLink = (
-        item.querySelector<HTMLAnchorElement>('a[href*="/sales/lead/"]') ||
-        item.querySelector<HTMLAnchorElement>('a[href*="/in/"]')
-      );
+      const anchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
+      
+      let profileLink = anchors.find(a => (a.innerText || '').trim().length > 0 && !a.querySelector('img'));
+      
+      if (!profileLink && anchors.length > 0) {
+        profileLink = anchors[0];
+      }
 
       if (!profileLink) {
-        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No anchor with /sales/lead/ or /in/ found. Skipping.`);
+        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No valid text anchor with /sales/lead/ or /in/ found. Skipping.`);
         return;
       }
 

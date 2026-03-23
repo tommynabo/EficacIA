@@ -302,8 +302,60 @@ router.delete('/leads/:leadId', authMiddleware, async (req: Request, res: Respon
 router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
-    const { csvData } = req.body
+    const { csvData, type, leads, source } = req.body
 
+    // 1. Manejo para la Extensión de Chrome (JSON array)
+    if (type === 'extension') {
+      if (!Array.isArray(leads)) {
+        return res.status(400).json({ error: 'Array de leads requerido' })
+      }
+      
+      // Prevención Error 400: array vacío es un 200 OK
+      if (leads.length === 0) {
+         return res.json({ success: true, count: 0, leads: [], message: 'No se encontraron prospectos (0 leads).' })
+      }
+
+      // Obtiene equipo del usuario
+      const { data: teams, error: teamsError } = await db
+        .from('teams')
+        .select('id')
+        .eq('owner_id', userId)
+        .limit(1)
+
+      if (teamsError || !teams || teams.length === 0) {
+        return res.status(400).json({ error: 'No hay equipo configurado' })
+      }
+      const teamId = teams[0].id
+
+      const leadsToInsert = leads.map((lead: any) => ({
+        team_id: teamId,
+        source: source || 'extension',
+        first_name: lead.first_name || '',
+        last_name: lead.last_name || '',
+        company: lead.company || '',
+        position: lead.job_title || lead.position || '',
+        location: lead.location || '',
+        linkedin_url: lead.linkedin_url || null,
+        status: 'new'
+      }))
+
+      const { data: insertedLeads, error: insertError } = await db
+        .from('leads')
+        .insert(leadsToInsert)
+        .select()
+
+      if (insertError) {
+        return res.status(400).json({ error: insertError.message })
+      }
+
+      return res.json({
+        success: true,
+        count: insertedLeads?.length || 0,
+        leads: insertedLeads,
+      })
+    }
+
+    // 2. Manejo clásico CSV
     if (!csvData) {
       return res.status(400).json({ error: 'CSV data requerido' })
     }
