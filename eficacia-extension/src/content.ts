@@ -257,35 +257,86 @@ function extractLinkedInLeadsFromPage(): Lead[] {
   const listItems = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
   console.log(`[EficacIA MegaFix] LinkedIn: scanning ${listItems.length} list items`);
 
-  listItems.forEach(item => {
+  listItems.forEach((item, itemIdx) => {
     try {
-      const nameEl = item.querySelector('[data-anonymize="person-name"], .result-lockup__name a');
-      const profileLink = item.querySelector('a[data-control-name="view_profile"], .result-lockup__name a') as HTMLAnchorElement;
+      // ── STEP 1: Find profile link via robust href heuristic ──────────────
+      // LinkedIn Sales Navigator may use /sales/lead/ or classic /in/ paths.
+      // We NO LONGER rely on data-control-name or .result-lockup__name.
+      const profileLink = (
+        item.querySelector<HTMLAnchorElement>('a[href*="/sales/lead/"]') ||
+        item.querySelector<HTMLAnchorElement>('a[href*="/in/"]')
+      );
 
-      if (nameEl && profileLink) {
-        const fullName = nameEl.textContent?.trim() || '';
-        const parts = fullName.split(' ');
-        const first_name = parts[0] || '';
-        const last_name = parts.slice(1).join(' ') || '';
-
-        const titleEl = item.querySelector('[data-anonymize="job-title"], .result-lockup__highlight-keyword');
-        const companyEl = item.querySelector('[data-anonymize="company-name"], .result-lockup__position-company');
-        const locationEl = item.querySelector('[data-anonymize="location"], .result-lockup__location');
-
-        let linkedin_url = profileLink.href;
-        if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
-
-        leads.push({
-          first_name,
-          last_name,
-          job_title: titleEl?.textContent?.trim() || '',
-          company: companyEl?.textContent?.trim() || '',
-          linkedin_url,
-          location: locationEl?.textContent?.trim() || '',
-        });
+      if (!profileLink) {
+        console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: no profile link found — skipping. HTML snippet: ${item.innerHTML.slice(0, 300)}`);
+        return;
       }
+
+      // ── STEP 2: Extract clean URL (strip query params) ───────────────────
+      let linkedin_url = profileLink.href;
+      if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
+      // Ensure trailing slash for consistency
+      if (!linkedin_url.endsWith('/')) linkedin_url += '/';
+
+      // ── STEP 3: Extract name from the profile link text or its first span ──
+      // Avoid multi-line noise: take only the first non-empty line of text.
+      const cleanText = (el: Element | null): string => {
+        if (!el) return '';
+        return (el.textContent || '')
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)[0] || '';
+      };
+
+      let fullName = cleanText(profileLink);
+
+      // Fallback: look for a direct child span inside the anchor
+      if (!fullName) {
+        const nameSpan = profileLink.querySelector('span');
+        fullName = cleanText(nameSpan);
+      }
+
+      // Fallback: look for [data-anonymize="person-name"] anywhere in the item
+      if (!fullName) {
+        const legacyEl = item.querySelector('[data-anonymize="person-name"]');
+        fullName = cleanText(legacyEl);
+      }
+
+      if (!fullName) {
+        console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: could not extract name for ${linkedin_url}. HTML: ${item.innerHTML.slice(0, 400)}`);
+        return;
+      }
+
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const first_name = nameParts[0] || '';
+      const last_name = nameParts.slice(1).join(' ') || '';
+
+      // ── STEP 4: Job title — new artdeco classes + legacy fallback ─────────
+      const titleEl =
+        item.querySelector('.artdeco-entity-lockup__subtitle') ||
+        item.querySelector('[data-anonymize="job-title"]') ||
+        item.querySelector('.result-lockup__highlight-keyword');
+      const job_title = cleanText(titleEl);
+
+      // ── STEP 5: Company — caption or position-company ────────────────────
+      const companyEl =
+        item.querySelector('.artdeco-entity-lockup__caption') ||
+        item.querySelector('[data-anonymize="company-name"]') ||
+        item.querySelector('.result-lockup__position-company');
+      const company = cleanText(companyEl);
+
+      // ── STEP 6: Location — metadata class or legacy selector ─────────────
+      const locationEl =
+        item.querySelector('.artdeco-entity-lockup__metadata') ||
+        item.querySelector('[data-anonymize="location"]') ||
+        item.querySelector('.result-lockup__location');
+      const location = cleanText(locationEl);
+
+      console.log(`[EficacIA MegaFix] LinkedIn item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
+
+      leads.push({ first_name, last_name, job_title, company, linkedin_url, location });
     } catch (e) {
-      console.warn('[EficacIA MegaFix] LinkedIn parse error:', e);
+      console.warn(`[EficacIA MegaFix] LinkedIn item[${itemIdx}] parse error:`, e);
     }
   });
 

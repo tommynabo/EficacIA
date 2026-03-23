@@ -584,22 +584,10 @@ export default async function handler(req, res) {
     // ── Resolve accountId: account_id is OPTIONAL when campaign_id is present ──
     let resolvedAccountId = account_id || null;
     if (!resolvedAccountId && campaign_id) {
-      try {
-        const { data: camp, error: campError } = await supabaseAdmin
-          .from('campaigns')
-          .select('account_id')
-          .eq('id', campaign_id)
-          .single();
-        if (campError) {
-          console.warn('[BULK-IMPORT] Campaign lookup warning:', campError.message);
-        }
-        if (camp?.account_id) {
-          resolvedAccountId = camp.account_id;
-          console.log('[BULK-IMPORT] Auto-resolved account_id from campaign:', resolvedAccountId);
-        }
-      } catch (e) {
-        console.warn('[BULK-IMPORT] Campaign lookup exception:', e.message);
-      }
+      // NOTE: campaigns table does NOT have an account_id column — selecting it
+      // caused a Supabase warning. We skip this lookup; resolvedAccountId stays
+      // null and the fallback path below is perfectly fine for csv/extension imports.
+      // If this column is added in the future, restore the select here.
     }
     // account_id can stay null for csv/extension imports — only sales_navigator needs it
     console.log('[BULK-IMPORT] resolvedAccountId:', resolvedAccountId || '(none — OK for csv/extension)');
