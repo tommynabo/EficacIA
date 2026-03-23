@@ -312,7 +312,7 @@ export default function CampaignDetailPage() {
       const res = await fetch(`/api/linkedin/campaigns?id=${id}`, {
         method: "PUT",
         headers: apiHeaders(),
-        body: JSON.stringify({ sequence: steps, settings, schedule, ...extraUpdates }),
+        body: JSON.stringify({ name: campaign.name, description: campaign.description, sequence: steps, settings, schedule, ...extraUpdates }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error guardando")
@@ -552,9 +552,18 @@ export default function CampaignDetailPage() {
           <Button variant="ghost" size="icon" asChild>
             <Link to="/dashboard/campaigns"><ArrowLeft className="w-5 h-5" /></Link>
           </Button>
-          <div>
-            <h2 className="text-xl font-bold tracking-tight">{campaign.name}</h2>
-            <p className="text-sm text-slate-400">{campaign.description || "Sin descripción"}</p>
+          <div className="flex flex-col w-[300px] md:w-[400px]">
+            <Input 
+              value={campaign.name || ""} 
+              onChange={(e) => setCampaign({ ...campaign, name: e.target.value } as Campaign)} 
+              className="h-9 text-xl font-bold tracking-tight bg-transparent border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 px-2 shadow-none focus-visible:ring-1"
+            />
+            <Input 
+              value={campaign.description || ""} 
+              onChange={(e) => setCampaign({ ...campaign, description: e.target.value } as Campaign)} 
+              placeholder="Añadir descripción..."
+              className="h-7 text-sm text-slate-400 bg-transparent border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 px-2 shadow-none focus-visible:ring-1"
+            />
           </div>
         </div>
         <div className="flex items-center gap-3">
