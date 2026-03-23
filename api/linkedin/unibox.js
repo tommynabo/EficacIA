@@ -8,7 +8,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { getAuthUser } from '../_lib/auth.js';
+import { getAuthUser, setCors } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -38,17 +38,20 @@ function unipileBase() {
 }
 
 export default async function handler(req, res) {
+  // 1. Inyectar CORS forzosamente
+  setCors(res);
+
+  // 2. Manejar preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
-  const { userId } = await getAuthUser(req);
-  if (!userId) return res.status(401).json({ error: 'No autenticado' });
+  // 3. Autenticación centralizada
+  const user = await getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+  }
+  const userId = user.userId;
 
   const teamId = await getTeamId(userId);
   if (!teamId) return res.status(403).json({ error: 'Equipo no encontrado' });

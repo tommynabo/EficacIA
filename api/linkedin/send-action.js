@@ -9,7 +9,7 @@
  * Also used internally by the campaign engine.
  */
 import { createClient } from '@supabase/supabase-js';
-import { getAuthUser } from '../_lib/auth.js';
+import { getAuthUser, setCors } from '../_lib/auth.js';
 
 const ACTOR_PROFILE_SCRAPER = 'supreme_coder~linkedin-profile-scraper';
 
@@ -428,14 +428,14 @@ async function registerUnipileAccount(liAt) {
 }
 
 export default async function handler(req, res) {
+  // 1. Inyectar CORS forzosamente
+  setCors(res);
+
+  // 2. Manejar preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
   const internalKey = req.headers['x-engine-key'];
@@ -445,8 +445,12 @@ export default async function handler(req, res) {
   if (isInternal) {
     userId = 'engine';
   } else {
-    const { userId: authUserId } = await getAuthUser(req);
-    userId = authUserId;
+    // 3. Autenticación centralizada
+    const user = await getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+    }
+    userId = user.userId;
   }
 
   if (!userId) return res.status(401).json({ error: 'No autenticado' });

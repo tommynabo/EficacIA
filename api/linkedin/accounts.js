@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getAuthUser } from '../_lib/auth.js';
+import { getAuthUser, setCors } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -229,28 +229,28 @@ async function registerUnipileAccount(liAt) {
 }
 
 export default async function handler(req, res) {
+  // 1. Inyectar CORS forzosamente
+  setCors(res);
+
+  // 2. Manejar preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
   // ── WITHDRAW action (cron or manual) ───────────────────────────────
   if (req.query.action === 'withdraw') {
-    // Vercel native cron sends GET; manual/frontend calls send POST — accept both
     if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido' });
-
-    console.log(`[WITHDRAW] ▶ triggered via ${req.method} | force=${req.query.force ?? 'false'} | accountId=${req.query.accountId ?? 'all'} | time=${new Date().toISOString()}`);
 
     const cronSecret = req.headers['x-cron-secret']
       || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
     const isValidCron = cronSecret && cronSecret === process.env.CRON_SECRET;
-    const { userId } = await getAuthUser(req);
-    if (!isValidCron && !userId) return res.status(401).json({ error: 'No autenticado' });
+    
+    const user = await getAuthUser(req);
+    const userId = user?.userId;
+
+    if (!isValidCron && !user) {
+      return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+    }
 
     const dsn = (process.env.UNIPILE_DSN || '').trim();
     const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
@@ -380,8 +380,12 @@ export default async function handler(req, res) {
     }
   }
 
-  const { userId } = await getAuthUser(req);
-  if (!userId) return res.status(401).json({ error: 'No autenticado' });
+  // Autenticación centralizada para el resto de acciones
+  const user = await getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
+  }
+  const userId = user.userId;
 
   // GET - listar cuentas LinkedIn del usuario
   if (req.method === 'GET') {

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
-import { getAuthUser } from '../_lib/auth.js';
+import { getAuthUser, setCors } from '../_lib/auth.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -518,24 +518,20 @@ async function insertLeadsIntoDB(teamId, campaignId, rawLeads) {
 }
 
 export default async function handler(req, res) {
+  // 1. Inyectar CORS forzosamente
+  setCors(res);
+
+  // 2. Manejar preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  const origin = req.headers.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
-  console.log('[BULK-IMPORT]', req.method, req.query?.poll_token ? '(poll)' : '');
-
-  const { userId, error: authError } = await getAuthUser(req);
-  if (!userId) {
-    console.error('[BULK-IMPORT] Auth error:', authError);
-    return res.status(401).json({ error: authError || 'No autenticado' });
+  // 3. Autenticación centralizada
+  const user = await getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
   }
+  const userId = user.userId;
 
   // ── GET: poll Apify job status ──────────────────────────────────────────
   if (req.method === 'GET') {
