@@ -3,10 +3,16 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
+  // ─── CORS — must be set before ANY early return ───────────────────────────
+  // Allows cross-origin calls from TalentScope (or any other trusted caller).
+  // For tighter security replace '*' with process.env.TALENTSCOPE_ORIGIN.
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400'); // cache preflight 24 h
 
+  // Preflight — browser sends OPTIONS first; respond immediately so it
+  // doesn't block the actual POST/GET that follows.
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const action = req.query.action;
@@ -21,6 +27,7 @@ export default async function handler(req, res) {
 
   return res.status(400).json({ error: 'Acción no válida' });
 }
+
 
 // ─── LOGIN ────────────────────────────────────────────────────────
 
