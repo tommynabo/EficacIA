@@ -7,15 +7,15 @@
         "@stripe/mcp",
         "--api-key",
         "${input:stripeApiKey}"
-      ],
-      "inputs": [
-        {
-          "id": "stripeApiKey",
-          "type": "promptString",
-          "description": "Stripe secret key (sk_live_...)",
-          "password": true
-        }
       ]
     }
-  }
+  },
+  "inputs": [
+    {
+      "id": "stripeApiKey",
+      "type": "promptString",
+      "description": "Stripe secret key (sk_live_...)",
+      "password": true
+    }
+  ]
 }

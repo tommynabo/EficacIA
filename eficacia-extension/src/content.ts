@@ -201,8 +201,6 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
   while (task.leads.length < task.limit) {
     if (_stopped) { console.log('[EficacIA MegaFix] LinkedIn: stop requested, exiting loop'); break; }
 
-    await scrollToBottom();
-
     const pageLeads = extractLinkedInLeadsFromPage();
     console.log(`[EficacIA MegaFix] LinkedIn: found ${pageLeads.length} leads on current page`);
 
@@ -229,44 +227,7 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
   }
 }
 
-async function scrollToBottom(): Promise<void> {
-  const scrollEl =
-    document.querySelector('#search-results-container') ||
-    document.querySelector('.search-results__result-list') ||
-    document.scrollingElement ||
-    document.documentElement;
 
-  // Scroll Progresivo Automático (Solución a Lazy Loading)
-  let maxScrolls = 50; 
-  let scrolls = 0;
-
-  while (scrolls < maxScrolls) {
-    const currentScrollTop = scrollEl.scrollTop || window.scrollY;
-    
-    if (scrollEl !== document.scrollingElement && scrollEl !== document.documentElement) {
-      scrollEl.scrollBy(0, 500);
-    } else {
-      window.scrollBy(0, 500);
-    }
-    
-    await sleep(200); // Pausa para permitir que los esqueletos de LinkedIn rendericen
-    
-    const newScrollTop = scrollEl.scrollTop || window.scrollY;
-    if (newScrollTop === currentScrollTop && newScrollTop > 0) {
-      break; // Hemos llegado al final de la página
-    }
-    scrolls++;
-  }
-  
-  // Scroll de vuelta arriba antes de empezar la extracción
-  if (scrollEl !== document.scrollingElement && scrollEl !== document.documentElement) {
-    scrollEl.scrollTo(0, 0);
-  } else {
-    window.scrollTo(0, 0);
-  }
-  
-  await sleep(600);
-}
 
 function extractLinkedInLeadsFromPage(): Lead[] {
   const leads: Lead[] = [];
@@ -291,14 +252,7 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
       // Usamos innerText para no capturar etiquetas ARIA ocultas y limpiamos basura visual
-      let rawName = profileLink.innerText || '';
-      rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '');
-
-      // Tomamos la primera línea limpia de texto del enlace
-      const fullName = rawName
-        .split('\n')
-        .map(s => s.trim())
-        .filter(Boolean)[0] || '';
+      const fullName = (profileLink.innerText || '').split('\n')[0]?.trim() || '';
 
       if (!fullName) {
         console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: Could not extract name. Skipping.`);
@@ -306,11 +260,11 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       }
 
       const nameParts = fullName.split(/\s+/).filter(Boolean);
-      const first_name = nameParts[0] || '';
-      const last_name = nameParts.slice(1).join(' ') || '';
+      let first_name = nameParts[0] || '';
+      let last_name = nameParts.slice(1).join(' ') || '';
 
       // ── 2. Cargo, Empresa y Ubicación (Cascada Visual Pura) ────────────────
-      const allText = (item as HTMLElement).innerText || item.textContent || '';
+      const allText = (item as HTMLElement).innerText || '';
       const lines = allText
         .split('\n')
         .map(s => s.trim())
@@ -341,22 +295,26 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       });
 
       // Asignación estricta por índice visual
-      const job_title = usefulLines[0] || '';
-      const company = usefulLines[1] || '';
-      const location = usefulLines[2] || '';
+      let job_title = usefulLines[0] || '';
+      let company = usefulLines[1] || '';
+      let location = usefulLines[2] || '';
+
+      first_name = first_name.substring(0, 200).trim();
+      last_name = last_name.substring(0, 200).trim();
+      job_title = job_title.substring(0, 200).trim();
+      company = company.substring(0, 200).trim();
+      location = location.substring(0, 200).trim();
 
       console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
 
       // ── 3. Asignación Segura (Truncamiento a 200 chars para prevenir Error 400) ──
-      const safeTruncate = (str: string) => str ? str.substring(0, 200).trim() : '';
-
       leads.push({ 
-        first_name: safeTruncate(first_name), 
-        last_name: safeTruncate(last_name), 
-        job_title: safeTruncate(job_title), 
-        company: safeTruncate(company), 
+        first_name, 
+        last_name, 
+        job_title, 
+        company, 
         linkedin_url, 
-        location: safeTruncate(location) 
+        location 
       });
     } catch (e) {
       console.warn(`[EficacIA MegaFix PURE] LinkedIn item[${itemIdx}] parse error:`, e);

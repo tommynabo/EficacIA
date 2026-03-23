@@ -1,0 +1,11 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["/.vscode/mcp.json"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  ]
+}
