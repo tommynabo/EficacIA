@@ -328,7 +328,9 @@ async function tryApifyScrape(lead, cvars) {
  */
 function extractLinkedInId(url) {
   if (!url) return null;
-  const m = url.match(/linkedin\.com\/in\/([^/?#]+)/);
+  // Soporta perfiles estándar (/in/...) y Sales Navigator (/sales/lead/...)
+  // El [^/?#,] asegura que nos detenemos si encontramos una barra, un query param, un hash o una coma (típico en Sales Nav)
+  const m = url.match(/linkedin\.com\/(?:in|sales\/lead)\/([^/?#,]+)/);
   return m ? m[1] : null;
 }
 
