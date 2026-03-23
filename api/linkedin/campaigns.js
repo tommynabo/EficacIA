@@ -246,7 +246,7 @@ export default async function handler(req, res) {
             company: lead.company || '',
             position: lead.position || '',
             linkedin_url: lead.linkedin_url || '',
-            status: 'new',
+            status: 'pending',
           })
           .select()
           .single();

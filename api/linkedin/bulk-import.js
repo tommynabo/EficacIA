@@ -491,7 +491,7 @@ async function insertLeadsIntoDB(teamId, campaignId, rawLeads) {
       linkedin_url: lead.linkedin_url || lead.linkedinUrl || lead.url || '',
       email: lead.email || null,
       custom_vars: lead.custom_vars || {},
-      status: 'new',
+      status: 'pending',
       sent_message: false,
     };
   });

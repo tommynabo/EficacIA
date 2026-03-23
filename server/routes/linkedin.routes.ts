@@ -109,7 +109,7 @@ router.post('/import-leads', authMiddleware, async (req: Request, res: Response)
       company: lead.company || '',
       position: lead.position || lead.title || '',
       linkedin_url: lead.linkedin_url || lead.linkedinUrl || null,
-      status: 'new',
+      status: 'pending',
       notes: lead.notes || '',
     }))
 
@@ -216,7 +216,7 @@ router.post('/search-leads', authMiddleware, async (req: Request, res: Response)
       company: lead.company,
       position: lead.position,
       linkedin_url: lead.linkedin_url,
-      status: 'new',
+      status: 'pending',
     }))
 
     // Inserta los leads
@@ -336,7 +336,7 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
         position: lead.job_title || lead.position || '',
         location: lead.location || '',
         linkedin_url: lead.linkedin_url || null,
-        status: 'new'
+        status: 'pending'
       }))
 
       const { data: insertedLeads, error: insertError } = await db
@@ -379,7 +379,7 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
 
     const leadsToInsert = lines.slice(1).map((line: string) => {
       const values = line.split(',').map((v: string) => v.trim())
-      const lead: any = { team_id: teamId, source: 'csv_import', status: 'new' }
+      const lead: any = { team_id: teamId, source: 'csv_import', status: 'pending' }
 
       headers.forEach((header: string, index: number) => {
         if (header === 'first_name' || header === 'firstname')
