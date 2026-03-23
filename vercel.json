@@ -16,6 +16,14 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
     }
   ],
   "crons": [
@@ -25,6 +33,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/internal/provision", "destination": "/api/internal/provision" },
     { "source": "/api/auth/login", "destination": "/api/auth?action=login" },
     { "source": "/api/auth/register", "destination": "/api/auth?action=register" },
     { "source": "/api/auth/me", "destination": "/api/auth?action=me" },
