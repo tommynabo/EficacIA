@@ -205,6 +205,9 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
 
     await humanScrollDown();
 
+    console.log('[EficacIA] ⏳ Esperando a que LinkedIn cargue los datos reales de las tarjetas...');
+    await randomSleep(4000, 6000);
+
     const pageLeads = extractLinkedInLeadsFromPage();
     console.log(`[EficacIA MegaFix] LinkedIn: found ${pageLeads.length} leads on current page`);
 
@@ -249,13 +252,11 @@ function extractLinkedInLeadsFromPage(): Lead[] {
   listItems.forEach((item, itemIdx) => {
     try {
       // ── 1. URL y Nombre ────────────────────────────────────────────────────
-      const anchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
-      
-      let profileLink = anchors.find(a => (a.innerText || '').trim().length > 0 && !a.querySelector('img'));
-      
-      if (!profileLink && anchors.length > 0) {
-        profileLink = anchors[0];
-      }
+      // Deep search: busca en cualquier nivel de profundidad del item
+      const profileLink = Array.from(item.querySelectorAll<HTMLAnchorElement>('a')).find(
+        a => (a.href.includes('/sales/lead/') || a.href.includes('/in/')) &&
+             (a.innerText || '').trim().length > 0
+      ) ?? null;
 
       if (!profileLink) {
         console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No valid text anchor with /sales/lead/ or /in/ found. Skipping.`);
