@@ -4,6 +4,30 @@
 // ║  State persisted in chrome.storage.local — survives page reloads       ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
+// ─── Page Visibility Spoofing ─────────────────────────────────────────────────
+// Overrides document.visibilityState and document.hidden in the MAIN world so
+// LinkedIn's React frontend never pauses rendering when the tab goes to background.
+(function injectVisibilitySpoofer() {
+  const script = document.createElement('script');
+  script.textContent = `
+    try {
+      Object.defineProperty(document, 'visibilityState', {
+        get: function() { return 'visible'; },
+        configurable: true
+      });
+      Object.defineProperty(document, 'hidden', {
+        get: function() { return false; },
+        configurable: true
+      });
+      document.addEventListener('visibilitychange', function(e) {
+        e.stopImmediatePropagation();
+      }, true);
+    } catch(e) {}
+  `;
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
+})();
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TASK_KEY = 'eficacia_active_task';
