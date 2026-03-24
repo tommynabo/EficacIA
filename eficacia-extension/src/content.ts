@@ -263,37 +263,55 @@ function extractLinkedInLeadsFromPage(): Lead[] {
 
   listItems.forEach((item, itemIdx) => {
     try {
-      // ── 1. URL y Nombre ────────────────────────────────────────────────────
-      // 1. Obtener TODOS los enlaces de perfil de la tarjeta (foto y texto)
-      const profileAnchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
+      // ── 1. URL ────────────────────────────────────────────────────────────
+      // Priority 1: explicit anchor href (works both foreground & background)
+      let linkedin_url =
+        item.querySelector<HTMLAnchorElement>('a[href*="/sales/lead/"]')?.href ||
+        item.querySelector('[data-anonymize="person-name"]')?.closest('a')?.href ||
+        item.querySelector<HTMLAnchorElement>('a[href*="/in/"]')?.href ||
+        '';
 
-      if (profileAnchors.length === 0) {
-        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No anchor found. Skipping.`);
+      // Priority 2: reconstruct from data-id / data-p-id attributes (persists when DOM is pruned)
+      if (!linkedin_url) {
+        const dataId = item.getAttribute('data-id') || item.getAttribute('data-p-id') ||
+          item.querySelector('[data-id]')?.getAttribute('data-id') ||
+          item.querySelector('[data-p-id]')?.getAttribute('data-p-id') || '';
+        if (dataId) linkedin_url = `https://www.linkedin.com/sales/lead/${dataId}/`;
+      }
+
+      if (!linkedin_url) {
+        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No URL found. Skipping.`);
         return;
       }
 
-      // 2. La URL es la misma para todos, cogemos la del primero
-      let linkedin_url = profileAnchors[0].href;
       if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
-      // 3. Buscar el primer enlace que SÍ tenga texto para extraer el nombre
-      let rawName = '';
-      for (const a of profileAnchors) {
-        const text = (a.innerText || a.textContent || '').trim();
-        if (text.length > 0) {
-          rawName = text;
-          break;
+      // ── 2. Nombre ─────────────────────────────────────────────────────────
+      // Priority 1: data-anonymize="person-name" — survives background pruning
+      const personNameEl = item.querySelector('[data-anonymize="person-name"]');
+      let rawName =
+        personNameEl?.getAttribute('data-anonymize-name') ||   // custom attr some themes use
+        personNameEl?.textContent ||                            // textContent persists when hidden
+        item.getAttribute('data-name') ||
+        '';
+
+      // Priority 2: any anchor that had visible text (foreground case)
+      if (!rawName) {
+        const profileAnchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
+        for (const a of profileAnchors) {
+          const text = (a.textContent || a.innerText || '').trim();
+          if (text.length > 0) { rawName = text; break; }
         }
       }
 
-      // Si no encontramos texto en los enlaces, intentamos extraer de la tarjeta general
+      // Priority 3: first line of card textContent (textContent doesn't go blank in background)
       if (!rawName) {
-        rawName = (item as HTMLElement).innerText?.split('\n')[0] || '';
+        rawName = (item.textContent || (item as HTMLElement).innerText || '').split('\n')[0] || '';
       }
 
-      // Limpieza de basura (ARIA labels ocultos, botones)
-      rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '');
+      // Clean ARIA / button noise
+      rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '').trim();
 
       const fullName = rawName.split('\n')[0]?.trim() || '';
 
@@ -307,7 +325,8 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       let last_name = nameParts.slice(1).join(' ') || '';
 
       // ── 2. Cargo, Empresa y Ubicación (Cascada Visual Pura) ────────────────
-      const allText = (item as HTMLElement).innerText || '';
+      // Use textContent (persists in background) with fallback to innerText
+      const allText = item.textContent || (item as HTMLElement).innerText || '';
       const lines = allText
         .split('\n')
         .map(s => s.trim())
