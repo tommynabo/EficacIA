@@ -405,14 +405,41 @@ export default function SettingsPage() {
                   <ShieldAlert className="w-5 h-5 text-violet-500" />
                 </div>
                 <div>
-                  <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator y Apollo</CardTitle>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator y Apollo</CardTitle>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v2 · Actualizada</span>
+                  </div>
                   <CardDescription className="text-violet-300/70">
-                    Esta extensión está diseñada para funcionar en LinkedIn Sales Navigator y Apollo.io — extrae automáticamente leads de ambas plataformas.
+                    Extrae hasta <strong className="text-violet-300">999 leads por sesión</strong> desde LinkedIn Sales Navigator y Apollo.io con motor anti-bot integrado.
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
           </Card>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-lg mt-0.5">🚀</span>
+              <div>
+                <p className="text-xs font-bold text-slate-200">Hasta 999 leads</p>
+                <p className="text-[11px] text-slate-500">Por sesión de extracción</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-lg mt-0.5">🛡️</span>
+              <div>
+                <p className="text-xs font-bold text-slate-200">Motor anti-bot</p>
+                <p className="text-[11px] text-slate-500">Cooldown y jitter humano</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-lg mt-0.5">🖱️</span>
+              <div>
+                <p className="text-xs font-bold text-slate-200">Scroll inteligente</p>
+                <p className="text-[11px] text-slate-500">Lazy-loading garantizado</p>
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="border-slate-800 bg-slate-900/40">
