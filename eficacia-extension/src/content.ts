@@ -341,18 +341,30 @@ function extractLinkedInLeadsFromPage(): Lead[] {
 
 async function goToNextLinkedInPage(): Promise<boolean> {
   const nextBtn = (
-    document.querySelector('.artdeco-pagination__button--next') ||
-    document.querySelector('button.search-results__pagination-next-button')
-  ) as HTMLButtonElement | null;
+    document.querySelector<HTMLButtonElement>('button.artdeco-pagination__button--next') ||
+    document.querySelector<HTMLButtonElement>('button[aria-label*="Next"]') ||
+    document.querySelector<HTMLButtonElement>('button[aria-label*="Siguiente"]') ||
+    document.querySelector<HTMLButtonElement>('button.search-results__pagination-next-button')
+  );
 
   if (!nextBtn || nextBtn.disabled) {
     console.log('[EficacIA MegaFix] LinkedIn: next button not found or disabled');
     return false;
   }
 
-  console.log('[EficacIA MegaFix] LinkedIn: clicking Next page...');
+  console.log('[EficacIA MegaFix] LinkedIn: scrolling next button into view and clicking...');
+  nextBtn.scrollIntoView({ block: 'center' });
+  await sleep(1000);
+
   const previousFirstItem = document.querySelector('li.artdeco-list__item, .search-results__result-item');
-  nextBtn.click();
+
+  try {
+    nextBtn.click();
+  } catch (e) {
+    console.warn('[EficacIA MegaFix] LinkedIn: normal click failed, using forced click:', e);
+    (nextBtn as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+
   await waitForLinkedInPageTransition(previousFirstItem);
   return true;
 }
@@ -365,7 +377,8 @@ function waitForLinkedInPageTransition(
     const done = () => {
       clearTimeout(timer);
       observer.disconnect();
-      sleep(1500).then(resolve);
+      // Espera obligatoria 4–6s para que Sales Navigator renderice la nueva página
+      randomSleep(4000, 6000).then(resolve);
     };
 
     const check = () => {
@@ -801,25 +814,62 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-const randomSleep = (min: number, max: number): Promise<void> =>
-  new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+const randomSleep = (min: number, max: number): Promise<void> => {
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+  console.log(`[EficacIA] ⏳ Pausa humana de ${(ms / 1000).toFixed(1)} segundos...`);
+  return new Promise(r => setTimeout(r, ms));
+};
 
-async function humanScrollDown(): Promise<void> {
-  const container =
-    document.querySelector<HTMLElement>('[class*="results-list"], [class*="artdeco-list"], .search-results__list') ??
-    document.documentElement;
+function findScrollableContainer(): HTMLElement {
+  // Priority 1: Sales Navigator dedicated container
+  const byId = document.querySelector<HTMLElement>('#search-results-container');
+  if (byId) return byId;
 
-  const totalHeight = container.scrollHeight;
-  let current = container.scrollTop || window.scrollY;
-  const step = 300;
+  // Priority 2: aria-label parent
+  const byAria = document.querySelector('[aria-label="Search results"]')?.parentElement as HTMLElement | null;
+  if (byAria) return byAria;
 
-  while (current < totalHeight - window.innerHeight - 50) {
-    current = Math.min(current + step, totalHeight);
-    container === document.documentElement
-      ? window.scrollTo({ top: current, behavior: 'smooth' })
-      : (container.scrollTop = current);
-    await randomSleep(300, 500);
+  // Priority 3: climb from first lead card to first scrollable ancestor
+  const firstCard = document.querySelector<HTMLElement>('li.artdeco-list__item, .search-results__result-item');
+  if (firstCard) {
+    let el: HTMLElement | null = firstCard.parentElement;
+    while (el && el !== document.documentElement) {
+      const { overflow, overflowY } = window.getComputedStyle(el);
+      if (/(auto|scroll)/.test(overflow + overflowY) && el.scrollHeight > el.clientHeight) {
+        return el;
+      }
+      el = el.parentElement;
+    }
   }
 
-  await sleep(600);
+  return document.documentElement;
+}
+
+async function humanScrollDown(): Promise<void> {
+  const container = findScrollableContainer();
+  console.log(`[EficacIA] 🖱️ Scrolling en contenedor: <${container.tagName} id="${container.id}" class="${container.className.slice(0, 60)}">`);
+
+  const isRoot = container === document.documentElement;
+
+  // Scroll al inicio antes de bajar para asegurar estado limpio
+  if (isRoot) window.scrollTo(0, 0); else container.scrollTop = 0;
+  await sleep(300);
+
+  let iterations = 0;
+  const maxIterations = 60; // seguro: evita bucle infinito
+
+  while (iterations < maxIterations) {
+    const scrollTop = isRoot ? window.scrollY : container.scrollTop;
+    const clientHeight = isRoot ? window.innerHeight : container.clientHeight;
+    const scrollHeight = isRoot ? document.documentElement.scrollHeight : container.scrollHeight;
+
+    if (scrollTop + clientHeight >= scrollHeight - 10) break;
+
+    if (isRoot) window.scrollBy(0, 400); else container.scrollBy(0, 400);
+    await randomSleep(400, 700);
+    iterations++;
+  }
+
+  console.log('[EficacIA] ✅ Scroll completo. 25 tarjetas renderizadas.');
+  await sleep(500);
 }
