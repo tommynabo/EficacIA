@@ -25,6 +25,9 @@ import { getStripe, getSupabase } from '../_lib/stripe.js';
 // Vercel serialless functions forward it automatically; do NOT parse with bodyParser.
 export const config = { api: { bodyParser: false } };
 
+// Per-plan AI credit allocations — single source of truth for initial grants and renewals.
+const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
+
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -158,17 +161,16 @@ export default async function handler(req, res) {
       }
       if (userRecord) {
         const stripeCustomerId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
-        const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
         const planKey = normalisePlan(plan);
-        const initialCredits = PLAN_CREDITS[planKey] ?? 1000;
+        const initialCredits = planKey !== null ? PLAN_CREDITS[planKey] : null;
         await supabase.from('users')
           .update({
             subscription_status: plan,
-            ai_credits: initialCredits,
+            ...(initialCredits !== null ? { ai_credits: initialCredits } : {}),
             ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
           })
           .eq('id', userRecord.id);
-        console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}. AI credits set to ${initialCredits}`);
+        console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}. AI credits set to ${initialCredits ?? 'unchanged (unknown plan)'}`);
       }
       return res.status(200).json({ received: true });
     }
@@ -203,9 +205,9 @@ export default async function handler(req, res) {
 
     await executePartnerSplit(stripe, invoice);
 
-    // ── AI Credits renewal: reset monthly credits based on the user's plan ──
+    // ── AI Credits renewal: top-up monthly credits based on the user's plan ──
     // invoice.paid fires every billing cycle (create, cycle, update).
-    // We RESET (not add) credits so stale balances never accumulate.
+    // We ADD credits to the current balance so separately purchased packs are preserved.
     const renewalCustomerId = typeof invoice.customer === 'string'
       ? invoice.customer
       : invoice.customer?.id;
@@ -213,24 +215,25 @@ export default async function handler(req, res) {
     if (renewalCustomerId) {
       try {
         const { data: renewalUser } = await supabase.from('users')
-          .select('id, subscription_status')
+          .select('id, subscription_status, ai_credits')
           .eq('stripe_customer_id', renewalCustomerId)
           .single();
 
         if (renewalUser?.subscription_status) {
-          const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
           const planKey = normalisePlan(renewalUser.subscription_status);
-          const creditsToAssign = PLAN_CREDITS[planKey];
-          if (creditsToAssign !== undefined) {
+          const creditsToAdd = planKey !== null ? PLAN_CREDITS[planKey] : null;
+          if (creditsToAdd !== null && creditsToAdd !== undefined) {
+            const currentCredits = typeof renewalUser.ai_credits === 'number' ? renewalUser.ai_credits : 0;
+            const newBalance = currentCredits + creditsToAdd;
             await supabase.from('users')
-              .update({ ai_credits: creditsToAssign })
+              .update({ ai_credits: newBalance })
               .eq('id', renewalUser.id);
-            console.log(`[WEBHOOK] ✓ AI credits reset to ${creditsToAssign} for user ${renewalUser.id} (plan: ${planKey})`);
+            console.log(`[WEBHOOK] ✓ AI credits topped up +${creditsToAdd} → ${newBalance} for user ${renewalUser.id} (plan: ${planKey})`);
           }
         }
       } catch (credErr) {
         // Non-fatal — partner split already succeeded; log and continue
-        console.warn('[WEBHOOK] Could not reset AI credits on invoice.paid:', credErr.message);
+        console.warn('[WEBHOOK] Could not top up AI credits on invoice.paid:', credErr.message);
       }
     }
 
@@ -358,13 +361,15 @@ const PLAN_AFFILIATE_CUTS = {
   scale_oferta: 2070, // 20.70 €
 };
 
-/** Normalise a raw plan string to one of the keys above. */
+/** Normalise a raw plan string to a known key, or null if unrecognised.
+ *  Returning null prevents automatic credit assignment for unknown plans. */
 function normalisePlan(raw = '') {
   const s = raw.toLowerCase().replace(/[\s-]/g, '_');
   if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
   if (s.includes('scale'))  return 'scale';
   if (s.includes('growth')) return 'growth';
-  return 'pro'; // default / PRO
+  if (s.includes('pro'))    return 'pro';
+  return null; // unknown plan — do not assign credits automatically
 }
 
 async function executePartnerSplit(stripe, invoice) {
