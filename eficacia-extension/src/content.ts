@@ -198,8 +198,12 @@ async function startScrapingProcess(): Promise<void> {
 async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
   console.log('[EficacIA MegaFix] runLinkedInScraper started');
 
+  let pageCount = 0;
+
   while (task.leads.length < task.limit) {
     if (_stopped) { console.log('[EficacIA MegaFix] LinkedIn: stop requested, exiting loop'); break; }
+
+    await humanScrollDown();
 
     const pageLeads = extractLinkedInLeadsFromPage();
     console.log(`[EficacIA MegaFix] LinkedIn: found ${pageLeads.length} leads on current page`);
@@ -218,6 +222,14 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
     console.log(`[EficacIA MegaFix] LinkedIn progress: ${task.leads.length}/${task.limit}`);
 
     if (task.leads.length >= task.limit) break;
+
+    pageCount++;
+    if (pageCount % 4 === 0) {
+      console.log('[EficacIA] Tomando un descanso anti-bot de 40s...');
+      await randomSleep(30000, 45000);
+    }
+
+    await randomSleep(3500, 7000);
 
     const movedToNext = await goToNextLinkedInPage();
     if (!movedToNext) {
@@ -386,6 +398,8 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
   await sleep(2000);
   console.log('[EficacIA MegaFix] Apollo rows detected, beginning extraction loop');
 
+  let pageCount = 0;
+
   while (task.leads.length < task.limit) {
     if (_stopped) { console.log('[EficacIA MegaFix] Apollo: stop requested, exiting loop'); break; }
 
@@ -409,6 +423,14 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
     console.log(`[EficacIA MegaFix] Apollo progress: ${task.leads.length}/${task.limit}`);
 
     if (task.leads.length >= task.limit) break;
+
+    pageCount++;
+    if (pageCount % 4 === 0) {
+      console.log('[EficacIA] Tomando un descanso anti-bot de 40s...');
+      await randomSleep(30000, 45000);
+    }
+
+    await randomSleep(3500, 7000);
 
     const moved = await goToNextApolloPage();
     if (!moved) {
@@ -777,4 +799,27 @@ function sendProgress(task: ScrapingTask): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+const randomSleep = (min: number, max: number): Promise<void> =>
+  new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+
+async function humanScrollDown(): Promise<void> {
+  const container =
+    document.querySelector<HTMLElement>('[class*="results-list"], [class*="artdeco-list"], .search-results__list') ??
+    document.documentElement;
+
+  const totalHeight = container.scrollHeight;
+  let current = container.scrollTop || window.scrollY;
+  const step = 300;
+
+  while (current < totalHeight - window.innerHeight - 50) {
+    current = Math.min(current + step, totalHeight);
+    container === document.documentElement
+      ? window.scrollTo({ top: current, behavior: 'smooth' })
+      : (container.scrollTop = current);
+    await randomSleep(300, 500);
+  }
+
+  await sleep(600);
 }

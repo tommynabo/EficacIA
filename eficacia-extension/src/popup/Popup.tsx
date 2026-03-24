@@ -319,11 +319,13 @@ const Popup = () => {
                     <input 
                       type="number" 
                       value={leadCount}
-                      onChange={(e) => setLeadCount(parseInt(e.target.value) || 0)}
+                      min={1}
+                      max={999}
+                      onChange={(e) => setLeadCount(Math.min(999, parseInt(e.target.value) || 0))}
                       className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-base font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                     <div className="flex flex-col gap-1">
-                      {[10, 50, 100].map(val => (
+                      {[50, 100, 999].map(val => (
                         <button 
                           key={val}
                           onClick={() => setLeadCount(val)}
