@@ -4,30 +4,6 @@
 // ║  State persisted in chrome.storage.local — survives page reloads       ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-// ─── Page Visibility Spoofing ─────────────────────────────────────────────────
-// Overrides document.visibilityState and document.hidden in the MAIN world so
-// LinkedIn's React frontend never pauses rendering when the tab goes to background.
-(function injectVisibilitySpoofer() {
-  const script = document.createElement('script');
-  script.textContent = `
-    try {
-      Object.defineProperty(document, 'visibilityState', {
-        get: function() { return 'visible'; },
-        configurable: true
-      });
-      Object.defineProperty(document, 'hidden', {
-        get: function() { return false; },
-        configurable: true
-      });
-      document.addEventListener('visibilitychange', function(e) {
-        e.stopImmediatePropagation();
-      }, true);
-    } catch(e) {}
-  `;
-  (document.head || document.documentElement).appendChild(script);
-  script.remove();
-})();
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TASK_KEY = 'eficacia_active_task';
@@ -223,6 +199,7 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
   console.log('[EficacIA MegaFix] runLinkedInScraper started');
 
   let pageCount = 0;
+  let consecutiveEmptyPages = 0;
 
   while (task.leads.length < task.limit) {
     if (_stopped) { console.log('[EficacIA MegaFix] LinkedIn: stop requested, exiting loop'); break; }
@@ -234,6 +211,17 @@ async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
 
     const pageLeads = extractLinkedInLeadsFromPage();
     console.log(`[EficacIA MegaFix] LinkedIn: found ${pageLeads.length} leads on current page`);
+
+    if (pageLeads.length === 0) {
+      consecutiveEmptyPages++;
+    } else {
+      consecutiveEmptyPages = 0;
+    }
+
+    if (consecutiveEmptyPages >= 3) {
+      console.warn('[EficacIA MegaFix] 🛑 Abortando extracción: 3 páginas consecutivas sin leads. Posible suspensión de pestaña en segundo plano.');
+      break;
+    }
 
     const seen = new Set(task.leads.map(l => l.linkedin_url));
     for (const lead of pageLeads) {
@@ -452,6 +440,7 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
   console.log('[EficacIA MegaFix] Apollo rows detected, beginning extraction loop');
 
   let pageCount = 0;
+  let consecutiveEmptyPages = 0;
 
   while (task.leads.length < task.limit) {
     if (_stopped) { console.log('[EficacIA MegaFix] Apollo: stop requested, exiting loop'); break; }
@@ -461,6 +450,17 @@ async function runApolloScraper(task: ScrapingTask): Promise<void> {
 
     const pageLeads = extractApolloLeads();
     console.log(`[EficacIA MegaFix] Apollo: extracted ${pageLeads.length} leads from current page`);
+
+    if (pageLeads.length === 0) {
+      consecutiveEmptyPages++;
+    } else {
+      consecutiveEmptyPages = 0;
+    }
+
+    if (consecutiveEmptyPages >= 3) {
+      console.warn('[EficacIA MegaFix] 🛑 Abortando extracción: 3 páginas consecutivas sin leads. Posible suspensión de pestaña en segundo plano.');
+      break;
+    }
 
     const seen = new Set(task.leads.map(l => l.linkedin_url).filter(Boolean));
     for (const lead of pageLeads) {
