@@ -167,34 +167,19 @@ const Popup = () => {
 
       if (!tab?.id) throw new Error('No se encontró la pestaña activa.');
 
+      // Route through background service worker — it owns the scraping clock.
+      // Background handles content-script injection if needed.
+      const platform = url.includes('apollo') ? 'apollo' : 'sales_navigator';
       const payload = {
         campaign_id: selectedCampaign,
         limit: leadCount,
         token: token.trim(),
         backendUrl: backendUrl.trim(),
+        tabId: tab.id,
+        platform,
       };
 
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });
-      } catch (connErr: any) {
-        // Content script not alive — inject and retry
-        // Content script not alive (post-extension-update, first navigation, etc.) — inject and retry
-        const isConnErr =
-          connErr?.message?.includes('Receiving end does not exist') ||
-          connErr?.message?.includes('Could not establish connection');
-        if (!isConnErr) throw connErr;
-
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['assets/content.js'],
-          });
-          await new Promise(r => setTimeout(r, 600));
-          await chrome.tabs.sendMessage(tab.id, { type: 'START_SCRAPING', payload });
-        } catch (_injectErr) {
-          throw new Error('Por favor, recarga esta página (F5) para iniciar la conexión con la extensión.');
-        }
-      }
+      await chrome.runtime.sendMessage({ type: 'START_SCRAPING', payload });
     } catch (err: any) {
       setIsScraping(false);
       setStatus('error');
@@ -204,16 +189,9 @@ const Popup = () => {
 
   const stopScraping = async () => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        try {
-          await chrome.tabs.sendMessage(tab.id, { type: 'STOP_SCRAPING' });
-        } catch {
-          // Tab may not have content script alive — clear state anyway
-        }
-      }
+      await chrome.runtime.sendMessage({ type: 'STOP_SCRAPING' });
     } catch {
-      // ignore
+      // ignore — background may already be inactive
     }
     setIsScraping(false);
     setStatus('idle');

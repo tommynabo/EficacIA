@@ -1,14 +1,11 @@
-// EficacIA Content Script — LinkedIn Sales Navigator + Apollo.io Dual-Mode Scraper
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  MEGA FIX: Bulletproof Apollo scraper + extensive debug logging        ║
-// ║  State persisted in chrome.storage.local — survives page reloads       ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
+// EficacIA Content Script — v2.0 (Background-Driven, Throttle-Immune)
+// ╔════════════════════════════════════════════════════════════════════════════╗
+// ║  The background service worker now OWNS the clock (chrome.alarms).       ║
+// ║  Content script only executes atomic commands: SCROLL / EXTRACT / NEXT.  ║
+// ║  No long setTimeout calls here — zero risk of Chrome tab-throttling.     ║
+// ╚════════════════════════════════════════════════════════════════════════════╝
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const TASK_KEY = 'eficacia_active_task';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Lead {
   first_name: string;
@@ -20,303 +17,209 @@ interface Lead {
   email?: string;
 }
 
-interface ScrapingTask {
-  active: boolean;
-  platform: 'apollo' | 'sales_navigator';
-  campaign_id: string;
-  limit: number;
-  token: string;
-  backendUrl: string;
-  leads: Lead[];
-}
-
 type Environment = 'sales_navigator' | 'apollo';
 
-// ─── Storage Helpers ─────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 
-function getTask(): Promise<ScrapingTask | null> {
-  return new Promise(r =>
-    chrome.storage.local.get(TASK_KEY, s => r((s[TASK_KEY] as ScrapingTask) ?? null))
-  );
-}
-
-function saveTask(task: ScrapingTask): Promise<void> {
-  console.log(`[EficacIA MegaFix] Saving task to storage: ${task.leads.length} leads collected`);
-  return new Promise(r => chrome.storage.local.set({ [TASK_KEY]: task }, r));
-}
-
-function clearTask(): Promise<void> {
-  console.log('[EficacIA MegaFix] Clearing task from storage');
-  return new Promise(r => chrome.storage.local.remove([TASK_KEY], r));
-}
-
-// ─── State ──────────────────────────────────────────────────────────────────
-
-let _running = false;
 let _stopped = false;
+let _cmdInFlight = false; // debounce: ignore duplicate commands while one is running
 
-// ─── Message Listener ───────────────────────────────────────────────────────
+// ─── Message Listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
-  console.log('[EficacIA MegaFix] Message received:', message.type);
+  console.log('[EficacIA v2] Message received:', message.type);
 
-  if (message.type === 'START_SCRAPING') {
-    const { campaign_id, limit, token, backendUrl } = message.payload;
-    const platform = detectEnvironment();
-    console.log(`[EficacIA MegaFix] START_SCRAPING — platform: ${platform} | limit: ${limit} | campaign: ${campaign_id}`);
+  switch (message.type) {
 
-    _stopped = false; // reset stop flag whenever a new scrape starts
-    const task: ScrapingTask = {
-      active: true,
-      platform,
-      campaign_id,
-      limit,
-      token,
-      backendUrl,
-      leads: [],
-    };
-    chrome.storage.local.set({ [TASK_KEY]: task }, () => {
-      if (!_running) startScrapingProcess();
-    });
-  }
+    // ── Background → Content: atomic commands ─────────────────────────────
 
-  if (message.type === 'RESUME_IF_STALLED') {
-    console.log('[EficacIA MegaFix] RESUME_IF_STALLED received, _running:', _running);
-    if (!_running) startScrapingProcess();
-  }
+    case 'CMD_SCROLL': {
+      if (_stopped) return;
+      if (_cmdInFlight) {
+        console.log('[EficacIA v2] CMD_SCROLL ignored — command already in flight');
+        return;
+      }
+      _cmdInFlight = true;
+      humanScrollDown()
+        .then(() => chrome.runtime.sendMessage({ type: 'SCROLL_DONE' }))
+        .catch(err => console.error('[EficacIA v2] CMD_SCROLL error:', err))
+        .finally(() => { _cmdInFlight = false; });
+      break;
+    }
 
-  if (message.type === 'STOP_SCRAPING') {
-    console.log('[EficacIA MegaFix] STOP_SCRAPING received — halting scraper');
-    _stopped = true;
-    _running = false;
-    chrome.storage.local.remove([TASK_KEY]);
+    case 'CMD_EXTRACT': {
+      if (_stopped) return;
+      const env = detectEnvironment();
+      const leads = env === 'apollo' ? extractApolloLeads() : extractLinkedInLeadsFromPage();
+      chrome.runtime.sendMessage({ type: 'EXTRACT_DONE', payload: { leads } }).catch(() => {});
+      break;
+    }
+
+    case 'CMD_NEXT_PAGE': {
+      if (_stopped) {
+        chrome.runtime.sendMessage({ type: 'NEXT_PAGE_DONE', payload: { moved: false } }).catch(() => {});
+        return;
+      }
+      if (_cmdInFlight) return;
+      _cmdInFlight = true;
+      const env = detectEnvironment();
+      const nextFn = env === 'apollo' ? goToNextApolloPage : goToNextLinkedInPage;
+      nextFn()
+        .then(moved => chrome.runtime.sendMessage({ type: 'NEXT_PAGE_DONE', payload: { moved } }))
+        .catch(err => {
+          console.error('[EficacIA v2] CMD_NEXT_PAGE error:', err);
+          chrome.runtime.sendMessage({ type: 'NEXT_PAGE_DONE', payload: { moved: false } }).catch(() => {});
+        })
+        .finally(() => { _cmdInFlight = false; });
+      break;
+    }
+
+    case 'CMD_PING': {
+      // Reply immediately to keep the message channel alive
+      chrome.runtime.sendMessage({ type: 'PONG' }).catch(() => {});
+      break;
+    }
+
+    // ── Stop signal ────────────────────────────────────────────────────────
+
+    case 'STOP_SCRAPING': {
+      console.log('[EficacIA v2] STOP_SCRAPING — halting');
+      _stopped = true;
+      _cmdInFlight = false;
+      break;
+    }
+
+    // ── Legacy / backward compat ───────────────────────────────────────────
+
+    case 'RESUME_IF_STALLED': {
+      // Watchdog from older background versions — forward a CONTENT_READY signal
+      if (!_stopped) {
+        chrome.runtime.sendMessage({ type: 'CONTENT_READY', payload: { url: window.location.href } }).catch(() => {});
+      }
+      break;
+    }
   }
 });
 
-// ─── Page Load Init ─────────────────────────────────────────────────────────
+// ─── Page Load Init ──────────────────────────────────────────────────────────
+// After a page navigation (LinkedIn goes to next page), the content script
+// re-initialises. Signal the background so it knows the new page is ready.
 
-(function resumeOnLoad() {
+(function notifyOnLoad() {
   const env = detectEnvironment();
-  console.log(`[EficacIA MegaFix] resumeOnLoad — env: ${env} | url: ${window.location.href}`);
+  console.log(`[EficacIA v2] notifyOnLoad — env: ${env} | url: ${window.location.href}`);
 
-  chrome.storage.local.get(TASK_KEY, (result) => {
-    const task = result[TASK_KEY] as ScrapingTask | undefined;
-    if (!task?.active) {
-      console.log('[EficacIA MegaFix] No active task in storage');
-      return;
-    }
-    if (task.platform !== env) {
-      console.log(`[EficacIA MegaFix] Task platform (${task.platform}) != env (${env}), skipping`);
-      return;
-    }
+  const doNotify = () => {
+    _stopped = false; // fresh page — reset stop flag
+    chrome.runtime.sendMessage({
+      type: 'CONTENT_READY',
+      payload: { url: window.location.href },
+    }).catch(() => {});
+  };
 
-    console.log(`[EficacIA MegaFix] Active task found! ${task.leads.length}/${task.limit} leads. Waiting for DOM...`);
-
-    const waitThenResume = () => {
-      if (_running) return;
-      const ready =
-        env === 'apollo'
-          ? !!document.querySelector('a[href*="linkedin.com"]') || !!document.querySelector('table tbody tr')
-          : !!document.querySelector('li.artdeco-list__item, .search-results__result-item');
-
-      if (ready) {
-        console.log('[EficacIA MegaFix] DOM ready — auto-resuming scraping');
-        startScrapingProcess();
-      } else {
-        console.log('[EficacIA MegaFix] DOM not ready, retrying in 1s...');
-        setTimeout(waitThenResume, 1000);
-      }
-    };
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => setTimeout(waitThenResume, 1500));
-    } else {
-      setTimeout(waitThenResume, 1500);
-    }
-  });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(doNotify, 800));
+  } else {
+    setTimeout(doNotify, 800);
+  }
 })();
 
-// ─── Environment Detection ───────────────────────────────────────────────────
+// ─── Environment Detection ────────────────────────────────────────────────────
 
 function detectEnvironment(): Environment {
   return window.location.hostname.includes('apollo.io') ? 'apollo' : 'sales_navigator';
 }
 
-// ─── Main Dispatch ───────────────────────────────────────────────────────────
-
-async function startScrapingProcess(): Promise<void> {
-  if (_running) return;
-  const task = await getTask();
-  if (!task?.active) {
-    console.log('[EficacIA MegaFix] startScrapingProcess: no active task, aborting');
-    return;
-  }
-
-  _running = true;
-  console.log(`[EficacIA MegaFix] ═══ SCRAPING STARTED ═══ platform: ${task.platform} | target: ${task.limit} | have: ${task.leads.length}`);
-
-  try {
-    if (task.platform === 'apollo') {
-      await runApolloScraper(task);
-    } else {
-      await runLinkedInScraper(task);
-    }
-
-    const finalTask = await getTask();
-    if (!finalTask) return;
-
-    console.log(`[EficacIA MegaFix] ═══ SCRAPING COMPLETE ═══ Submitting ${finalTask.leads.length} leads to backend`);
-
-    chrome.runtime.sendMessage({
-      type: 'SUBMIT_LEADS',
-      payload: {
-        campaign_id: finalTask.campaign_id,
-        leads: finalTask.leads,
-        token: finalTask.token,
-        backendUrl: finalTask.backendUrl,
-        source: finalTask.platform,
-      },
-    });
-
-    await clearTask();
-  } catch (error: any) {
-    console.error('[EficacIA MegaFix] Scraping error:', error);
-    chrome.runtime.sendMessage({
-      type: 'SCRAPING_ERROR',
-      payload: { error: error.message },
-    });
-    await clearTask();
-  } finally {
-    _running = false;
-  }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
-//  LINKEDIN SALES NAVIGATOR
+//  LINKEDIN SALES NAVIGATOR — EXTRACTION
 // ════════════════════════════════════════════════════════════════════════════
-
-async function runLinkedInScraper(task: ScrapingTask): Promise<void> {
-  console.log('[EficacIA MegaFix] runLinkedInScraper started');
-
-  let pageCount = 0;
-  let consecutiveEmptyPages = 0;
-
-  while (task.leads.length < task.limit) {
-    if (_stopped) { console.log('[EficacIA MegaFix] LinkedIn: stop requested, exiting loop'); break; }
-
-    await humanScrollDown();
-
-    console.log('[EficacIA] ⏳ Esperando a que LinkedIn cargue los datos reales de las tarjetas...');
-    await randomSleep(4000, 6000);
-
-    const pageLeads = extractLinkedInLeadsFromPage();
-    console.log(`[EficacIA MegaFix] LinkedIn: found ${pageLeads.length} leads on current page`);
-
-    if (pageLeads.length === 0) {
-      consecutiveEmptyPages++;
-    } else {
-      consecutiveEmptyPages = 0;
-    }
-
-    if (consecutiveEmptyPages >= 3) {
-      console.warn('[EficacIA MegaFix] 🛑 Abortando extracción: 3 páginas consecutivas sin leads. Posible suspensión de pestaña en segundo plano.');
-      break;
-    }
-
-    const seen = new Set(task.leads.map(l => l.linkedin_url));
-    for (const lead of pageLeads) {
-      if (task.leads.length >= task.limit) break;
-      if (!seen.has(lead.linkedin_url)) {
-        seen.add(lead.linkedin_url);
-        task.leads.push(lead);
-      }
-    }
-
-    await saveTask(task);
-    sendProgress(task);
-    console.log(`[EficacIA MegaFix] LinkedIn progress: ${task.leads.length}/${task.limit}`);
-
-    if (task.leads.length >= task.limit) break;
-
-    pageCount++;
-    if (pageCount % 4 === 0) {
-      console.log('[EficacIA] Tomando un descanso anti-bot de 40s...');
-      await randomSleep(30000, 45000);
-    }
-
-    await randomSleep(3500, 7000);
-
-    const movedToNext = await goToNextLinkedInPage();
-    if (!movedToNext) {
-      console.log('[EficacIA MegaFix] LinkedIn: No more pages available');
-      break;
-    }
-  }
-}
-
-
 
 function extractLinkedInLeadsFromPage(): Lead[] {
   const leads: Lead[] = [];
   const listItems = document.querySelectorAll('li.artdeco-list__item, .search-results__result-item');
-  console.log(`[EficacIA MegaFix PURE] LinkedIn: scanning ${listItems.length} list items`);
+  console.log(`[EficacIA v2] LinkedIn: scanning ${listItems.length} list items`);
 
   listItems.forEach((item, itemIdx) => {
     try {
-      // ── 1. URL ────────────────────────────────────────────────────────────
-      // Priority 1: explicit anchor href (works both foreground & background)
+      // ── 1. URL (three-tier cascade) ───────────────────────────────────────
+
+      // Tier 1: visible <a> elements (foreground case)
       let linkedin_url =
         item.querySelector<HTMLAnchorElement>('a[href*="/sales/lead/"]')?.href ||
         item.querySelector('[data-anonymize="person-name"]')?.closest('a')?.href ||
         item.querySelector<HTMLAnchorElement>('a[href*="/in/"]')?.href ||
         '';
 
-      // Priority 2: reconstruct from data-id / data-p-id attributes (persists when DOM is pruned)
+      // Tier 2: data-id / data-p-id attributes (DOM pruned in background)
       if (!linkedin_url) {
-        const dataId = item.getAttribute('data-id') || item.getAttribute('data-p-id') ||
+        const dataId =
+          item.getAttribute('data-id') ||
+          item.getAttribute('data-p-id') ||
           item.querySelector('[data-id]')?.getAttribute('data-id') ||
-          item.querySelector('[data-p-id]')?.getAttribute('data-p-id') || '';
+          item.querySelector('[data-p-id]')?.getAttribute('data-p-id') ||
+          '';
         if (dataId) linkedin_url = `https://www.linkedin.com/sales/lead/${dataId}/`;
       }
 
+      // Tier 3: Regex on raw innerHTML — finds the URL even when <a> is not rendered
+      // Matches /sales/lead/ACwAAA... or /sales/lead/... profile paths
       if (!linkedin_url) {
-        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No URL found. Skipping.`);
+        const html = (item as HTMLElement).innerHTML;
+        const salesLeadMatch = html.match(/\/sales\/lead\/(ACwA[A-Za-z0-9_-]{6,})[^"'\\s]*/);
+        if (salesLeadMatch) {
+          linkedin_url = `https://www.linkedin.com/sales/lead/${salesLeadMatch[1]}/`;
+          console.log(`[EficacIA v2] Item[${itemIdx}]: URL recovered via innerHTML regex: ${linkedin_url}`);
+        }
+      }
+
+      // Tier 4: Any /in/ slug in innerHTML
+      if (!linkedin_url) {
+        const html = (item as HTMLElement).innerHTML;
+        const inMatch = html.match(/linkedin\.com\/in\/([A-Za-z0-9_%-]+)/);
+        if (inMatch) {
+          linkedin_url = `https://www.linkedin.com/in/${inMatch[1]}/`;
+          console.log(`[EficacIA v2] Item[${itemIdx}]: /in/ URL recovered via innerHTML regex`);
+        }
+      }
+
+      if (!linkedin_url) {
+        console.log(`[EficacIA v2] Item[${itemIdx}]: No URL found. Skipping.`);
         return;
       }
 
       if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
-      // ── 2. Nombre ─────────────────────────────────────────────────────────
-      // Priority 1: data-anonymize="person-name" — survives background pruning
+      // ── 2. Name ───────────────────────────────────────────────────────────
+      // Always use textContent — never innerText (innerText goes blank in background)
       const personNameEl = item.querySelector('[data-anonymize="person-name"]');
       let rawName =
-        personNameEl?.getAttribute('data-anonymize-name') ||   // custom attr some themes use
-        personNameEl?.textContent ||                            // textContent persists when hidden
+        personNameEl?.textContent?.trim() ||
         item.getAttribute('data-name') ||
         '';
 
-      // Priority 2: any anchor that had visible text (foreground case)
       if (!rawName) {
-        const profileAnchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
+        // Anchor text fallback — textContent of profile link anchors
+        const profileAnchors = Array.from(
+          item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]')
+        );
         for (const a of profileAnchors) {
-          const text = (a.textContent || a.innerText || '').trim();
+          const text = a.textContent?.trim() || '';
           if (text.length > 0) { rawName = text; break; }
         }
       }
 
-      // Priority 3: first line of card textContent (textContent doesn't go blank in background)
       if (!rawName) {
-        rawName = (item.textContent || (item as HTMLElement).innerText || '').split('\n')[0] || '';
+        // Last resort: first non-empty line of whole-card textContent
+        rawName = item.textContent?.split('\n')[0]?.trim() || '';
       }
 
-      // Clean ARIA / button noise
+      // Strip ARIA / button noise
       rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '').trim();
-
       const fullName = rawName.split('\n')[0]?.trim() || '';
 
       if (!fullName) {
-        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: Could not extract name. Skipping.`);
+        console.log(`[EficacIA v2] Item[${itemIdx}]: Could not extract name. Skipping.`);
         return;
       }
 
@@ -324,67 +227,54 @@ function extractLinkedInLeadsFromPage(): Lead[] {
       let first_name = nameParts[0] || '';
       let last_name = nameParts.slice(1).join(' ') || '';
 
-      // ── 2. Cargo, Empresa y Ubicación (Cascada Visual Pura) ────────────────
-      // Use textContent (persists in background) with fallback to innerText
-      const allText = item.textContent || (item as HTMLElement).innerText || '';
+      // ── 3. Job Title, Company, Location ──────────────────────────────────
+      // Use textContent (never innerText) — survives background rendering
+      const allText = item.textContent || '';
       const lines = allText
         .split('\n')
         .map(s => s.trim())
         .filter(Boolean);
 
       const garbageWords = [
-        'conectar', 'mensaje', 'guardar', 'connect', 'message', 'save', 
+        'conectar', 'mensaje', 'guardar', 'connect', 'message', 'save',
         'ver perfil', 'view profile', 'seguir', 'follow', 'invite', 'invitar',
-        'enviar mensaje', 'send message', 'más', 'more'
+        'enviar mensaje', 'send message', 'más', 'more',
       ];
 
       const usefulLines = lines.filter(line => {
-        const lower = line.trim().toLowerCase();
-        
-        // Excluir la línea si contiene el Nombre extraído
+        const lower = line.toLowerCase();
         if (lower.includes(fullName.toLowerCase())) return false;
-        
-        // Excluir grados de conexión (1st, 2nd, 3rd, grado) y cosas similares
         if (/(1st|2nd|3rd|degree|grado|out of network|fuera de la red|conexión|connection)/i.test(lower)) return false;
-        
-        // Excluir basura de botones de LinkedIn
         if (garbageWords.includes(lower)) return false;
-        
-        // Excluir líneas muy cortas que sean artefactos visuales (ej: "•", "-")
         if (line.length < 2) return false;
-        
         return true;
       });
 
-      // Asignación estricta por índice visual
       let job_title = usefulLines[0] || '';
-      let company = usefulLines[1] || '';
-      let location = usefulLines[2] || '';
+      let company   = usefulLines[1] || '';
+      let location  = usefulLines[2] || '';
 
+      // Truncate to 200 chars (prevents HTTP 400 on backend)
       first_name = first_name.substring(0, 200).trim();
-      last_name = last_name.substring(0, 200).trim();
-      job_title = job_title.substring(0, 200).trim();
-      company = company.substring(0, 200).trim();
-      location = location.substring(0, 200).trim();
+      last_name  = last_name.substring(0, 200).trim();
+      job_title  = job_title.substring(0, 200).trim();
+      company    = company.substring(0, 200).trim();
+      location   = location.substring(0, 200).trim();
 
-      console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`);
+      console.log(
+        `[EficacIA v2] Item[${itemIdx}]: ✓ ${first_name} ${last_name} | ${job_title} @ ${company} | ${linkedin_url}`
+      );
 
-      // ── 3. Asignación Segura (Truncamiento a 200 chars para prevenir Error 400) ──
-      leads.push({ 
-        first_name, 
-        last_name, 
-        job_title, 
-        company, 
-        linkedin_url, 
-        location 
-      });
+      leads.push({ first_name, last_name, job_title, company, linkedin_url, location });
     } catch (e) {
-      console.warn(`[EficacIA MegaFix PURE] LinkedIn item[${itemIdx}] parse error:`, e);
+      console.warn(`[EficacIA v2] LinkedIn item[${itemIdx}] parse error:`, e);
     }
   });
 
   return leads;
 }
+
+// ─── LinkedIn Pagination ──────────────────────────────────────────────────────
 
 async function goToNextLinkedInPage(): Promise<boolean> {
   const nextBtn = (
@@ -395,21 +285,19 @@ async function goToNextLinkedInPage(): Promise<boolean> {
   );
 
   if (!nextBtn || nextBtn.disabled) {
-    console.log('[EficacIA MegaFix] LinkedIn: next button not found or disabled');
+    console.log('[EficacIA v2] LinkedIn: next button not found or disabled');
     return false;
   }
 
-  console.log('[EficacIA MegaFix] LinkedIn: scrolling next button into view and clicking...');
   nextBtn.scrollIntoView({ block: 'center' });
-  await sleep(1000);
+  await sleep(300);
 
   const previousFirstItem = document.querySelector('li.artdeco-list__item, .search-results__result-item');
 
   try {
     nextBtn.click();
-  } catch (e) {
-    console.warn('[EficacIA MegaFix] LinkedIn: normal click failed, using forced click:', e);
-    (nextBtn as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  } catch {
+    nextBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   }
 
   await waitForLinkedInPageTransition(previousFirstItem);
@@ -424,8 +312,8 @@ function waitForLinkedInPageTransition(
     const done = () => {
       clearTimeout(timer);
       observer.disconnect();
-      // Espera obligatoria 4–6s para que Sales Navigator renderice la nueva página
-      randomSleep(4000, 6000).then(resolve);
+      // NOTE: NO sleep here — background (WAIT_NEXT phase) handles the post-nav delay
+      resolve();
     };
 
     const check = () => {
@@ -437,8 +325,8 @@ function waitForLinkedInPageTransition(
 
     const timer = setTimeout(() => {
       observer.disconnect();
-      console.warn('[EficacIA MegaFix] LinkedIn: page transition timed out');
-      sleep(4000).then(resolve);
+      console.warn('[EficacIA v2] LinkedIn: page transition timed out');
+      resolve();
     }, timeoutMs);
 
     const observer = new MutationObserver(check);
@@ -448,145 +336,26 @@ function waitForLinkedInPageTransition(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  APOLLO.IO — MEGA FIX SCRAPER
+//  APOLLO.IO — EXTRACTION
 // ════════════════════════════════════════════════════════════════════════════
 
-async function runApolloScraper(task: ScrapingTask): Promise<void> {
-  console.log('[EficacIA MegaFix] runApolloScraper started — waiting for rows...');
-  await waitForApolloRows();
-  // Extra hydration delay — Apollo renders in stages
-  await sleep(2000);
-  console.log('[EficacIA MegaFix] Apollo rows detected, beginning extraction loop');
-
-  let pageCount = 0;
-  let consecutiveEmptyPages = 0;
-
-  while (task.leads.length < task.limit) {
-    if (_stopped) { console.log('[EficacIA MegaFix] Apollo: stop requested, exiting loop'); break; }
-
-    await scrollApolloTable();
-    await sleep(700);
-
-    const pageLeads = extractApolloLeads();
-    console.log(`[EficacIA MegaFix] Apollo: extracted ${pageLeads.length} leads from current page`);
-
-    if (pageLeads.length === 0) {
-      consecutiveEmptyPages++;
-    } else {
-      consecutiveEmptyPages = 0;
-    }
-
-    if (consecutiveEmptyPages >= 3) {
-      console.warn('[EficacIA MegaFix] 🛑 Abortando extracción: 3 páginas consecutivas sin leads. Posible suspensión de pestaña en segundo plano.');
-      break;
-    }
-
-    const seen = new Set(task.leads.map(l => l.linkedin_url).filter(Boolean));
-    for (const lead of pageLeads) {
-      if (task.leads.length >= task.limit) break;
-      if (lead.linkedin_url && !seen.has(lead.linkedin_url)) {
-        seen.add(lead.linkedin_url);
-        task.leads.push(lead);
-      }
-    }
-
-    await saveTask(task);
-    sendProgress(task);
-    console.log(`[EficacIA MegaFix] Apollo progress: ${task.leads.length}/${task.limit}`);
-
-    if (task.leads.length >= task.limit) break;
-
-    pageCount++;
-    if (pageCount % 4 === 0) {
-      console.log('[EficacIA] Tomando un descanso anti-bot de 40s...');
-      await randomSleep(30000, 45000);
-    }
-
-    await randomSleep(3500, 7000);
-
-    const moved = await goToNextApolloPage();
-    if (!moved) {
-      console.log('[EficacIA MegaFix] Apollo: No more pages available');
-      break;
-    }
-  }
-}
-
-function waitForApolloRows(timeoutMs = 20000): Promise<void> {
-  const isReady = () =>
-    !!document.querySelector('a[href*="linkedin.com"]') ||
-    !!document.querySelector('table tbody tr') ||
-    !!document.querySelector('[role="row"]') ||
-    !!document.querySelector('.zp_accordion_row, .zp_baseRow, [class*="Row"]');
-
-  return new Promise(resolve => {
-    if (isReady()) {
-      console.log('[EficacIA MegaFix] Apollo rows already present');
-      resolve();
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      observer.disconnect();
-      console.warn('[EficacIA MegaFix] waitForApolloRows timed out — proceeding anyway');
-      resolve();
-    }, timeoutMs);
-
-    const observer = new MutationObserver(() => {
-      if (isReady()) {
-        clearTimeout(timer);
-        observer.disconnect();
-        console.log('[EficacIA MegaFix] Apollo rows appeared via MutationObserver');
-        resolve();
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-  });
-}
-
-async function scrollApolloTable(): Promise<void> {
-  const container =
-    document.querySelector<HTMLElement>('[class*="table_wrapper"], [class*="tableWrapper"], .infinite-scroll-component') ??
-    document.querySelector<HTMLElement>('main, [role="main"]') ??
-    document.documentElement;
-
-  let prev = -1;
-  let stable = 0;
-
-  while (stable < 2) {
-    const h = container.scrollHeight;
-    container.scrollTop = h;
-    window.scrollTo(0, document.body.scrollHeight);
-    if (h === prev) { stable++; } else { stable = 0; prev = h; }
-    await sleep(600);
-  }
-  await sleep(500);
-}
-
-// ─── Apollo Lead Extraction (MegaFix: bulletproof heuristic) ─────────────────
-
 function extractApolloLeads(): Lead[] {
-  // STEP 1: Find ALL LinkedIn links on the page (broad match)
   const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="linkedin.com"]');
-  console.log(`[EficacIA MegaFix] Apollo STEP 1: Found ${links.length} linkedin.com links on page`);
+  console.log(`[EficacIA v2] Apollo: Found ${links.length} linkedin.com links on page`);
 
   const seen = new Set<string>();
   const leads: Lead[] = [];
 
   for (const anchor of links) {
     try {
-      // Skip company pages
       if (anchor.href.includes('/company/') || anchor.href.includes('/companies/')) continue;
 
-      // Normalize LinkedIn URL — accept /in/ profiles and Sales Nav /lead/ URLs
       const match = anchor.href.match(/(https?:\/\/(?:www\.)?linkedin\.com\/(?:in|sales\/lead)\/[^/?#\s]+)/);
       if (!match) continue;
       const linkedin_url = match[1].replace(/\/$/, '') + '/';
       if (seen.has(linkedin_url)) continue;
       seen.add(linkedin_url);
 
-      // STEP 2: Climb to the row container — Apollo uses divs (.zp_baseRow, etc.)
       const row =
         anchor.closest('.zp_accordion_row') ||
         anchor.closest('.zp_baseRow') ||
@@ -595,38 +364,27 @@ function extractApolloLeads(): Lead[] {
         anchor.closest('div[class*="Row"]') ||
         climbToRowContainer(anchor);
 
-      if (!row) {
-        console.log(`[EficacIA MegaFix] Apollo STEP 2: No row container for ${linkedin_url}`);
-        continue;
-      }
+      if (!row) continue;
 
-      console.log(`[EficacIA MegaFix] Apollo STEP 2: Row found <${row.tagName}> for ${linkedin_url}`);
-
-      // STEP 3: Extract name, title, company from the row
       const lead = extractLeadFromRow(row, linkedin_url);
       if (lead) {
         leads.push(lead);
-        console.log(`[EficacIA MegaFix] Apollo STEP 3: Extracted: ${lead.first_name} ${lead.last_name} | ${lead.job_title} @ ${lead.company}`);
+        console.log(`[EficacIA v2] Apollo: ${lead.first_name} ${lead.last_name} | ${lead.job_title} @ ${lead.company}`);
       }
     } catch (e) {
-      console.warn('[EficacIA MegaFix] Apollo: Parse error for', anchor.href, e);
+      console.warn('[EficacIA v2] Apollo: Parse error for', anchor.href, e);
     }
   }
 
-  console.log(`[EficacIA MegaFix] Apollo: Total leads from page: ${leads.length}`);
+  console.log(`[EficacIA v2] Apollo: Total leads from page: ${leads.length}`);
   return leads;
 }
 
-/**
- * Fallback row detection: climb the DOM tree until we find a container whose
- * parent has multiple same-tag siblings that also contain LinkedIn links.
- */
 function climbToRowContainer(anchor: HTMLAnchorElement): Element | null {
   let candidate: Element | null = anchor.parentElement;
   for (let depth = 0; depth < 12 && candidate; depth++) {
     const parent = candidate.parentElement;
     if (!parent) break;
-
     const siblings = Array.from(parent.children).filter(c => c.tagName === candidate!.tagName);
     if (
       siblings.length >= 3 &&
@@ -635,10 +393,7 @@ function climbToRowContainer(anchor: HTMLAnchorElement): Element | null {
       const othersWithLinks = siblings.filter(
         s => s !== candidate && s.querySelector('a[href*="linkedin.com"]')
       );
-      if (othersWithLinks.length >= 1) {
-        console.log(`[EficacIA MegaFix] Apollo: Fallback row found at depth ${depth} <${candidate.tagName}>`);
-        return candidate;
-      }
+      if (othersWithLinks.length >= 1) return candidate;
     }
     candidate = parent;
   }
@@ -650,7 +405,6 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
   const nameAnchor = row.querySelector<HTMLAnchorElement>('a[href*="/people/"], a[href*="/contacts/"]');
   let fullName = nameAnchor?.textContent?.trim() ?? '';
 
-  // Fallback: any anchor text that looks like a personal name
   if (!fullName) {
     for (const a of Array.from(row.querySelectorAll<HTMLAnchorElement>('a'))) {
       if (a.href.includes('linkedin.com') || a.href.includes('/companies/')) continue;
@@ -663,7 +417,6 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
     }
   }
 
-  // Fallback: first cell-like element (td OR direct child div) with uppercase content
   if (!fullName) {
     const cellLike = row.querySelectorAll('td, > div');
     for (const cell of cellLike) {
@@ -681,11 +434,9 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
   if (!first_name) return null;
 
   // ── Job Title & Company ──
-  // Apollo uses divs as cells — try <td> first, fall back to direct child <div>s
   let cells = Array.from(row.querySelectorAll('td'));
-  if (cells.length < 2) {
-    cells = Array.from(row.querySelectorAll(':scope > div'));
-  }
+  if (cells.length < 2) cells = Array.from(row.querySelectorAll(':scope > div'));
+
   let job_title = '';
   let company = '';
 
@@ -694,56 +445,46 @@ function extractLeadFromRow(row: Element, linkedin_url: string): Lead | null {
 
   if (cells.length >= 2) {
     let nameCellIdx = nameAnchor ? cells.findIndex(c => c.contains(nameAnchor)) : -1;
-    if (nameCellIdx < 0) {
-      nameCellIdx = cells.findIndex(c => (c.textContent?.trim() ?? '').includes(first_name));
-    }
+    if (nameCellIdx < 0) nameCellIdx = cells.findIndex(c => (c.textContent?.trim() ?? '').includes(first_name));
     if (nameCellIdx < 0) nameCellIdx = 0;
-
     job_title = cells[nameCellIdx + 1]?.textContent?.trim().split('\n')[0].trim() ?? '';
-    if (!company) {
-      company = cells[nameCellIdx + 2]?.textContent?.trim().split('\n')[0].trim() ?? '';
-    }
+    if (!company) company = cells[nameCellIdx + 2]?.textContent?.trim().split('\n')[0].trim() ?? '';
   }
 
-  // ── Email (if unlocked/visible) ──
+  // ── Email ──
   let email: string | undefined;
   const allCells = cells.length > 0 ? cells : Array.from(row.querySelectorAll('td, > div'));
   for (const cell of allCells) {
     const text = cell.textContent?.trim() ?? '';
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
-      email = text;
-      break;
-    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) { email = text; break; }
   }
 
   return { first_name, last_name, job_title, company, linkedin_url, location: '', email };
 }
 
-// ─── Apollo Pagination ──────────────────────────────────────────────────────
+// ─── Apollo Pagination ────────────────────────────────────────────────────────
 
 async function goToNextApolloPage(): Promise<boolean> {
-  // Scroll to bottom first — forces lazy-loading of pagination controls
   window.scrollTo(0, document.body.scrollHeight);
   await sleep(1000);
 
   const nextBtn = findApolloNextButton();
   if (!nextBtn) {
-    console.log('[EficacIA MegaFix] Apollo: next button not found');
+    console.log('[EficacIA v2] Apollo: next button not found');
     return false;
   }
 
-  console.log('[EficacIA MegaFix] Apollo: clicking Next page...');
   const previousUrl = window.location.href;
-  const previousFirstRow = document.querySelector('table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow');
+  const previousFirstRow = document.querySelector(
+    'table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow'
+  );
 
   nextBtn.click();
   await waitForApolloPageTransition(previousFirstRow, previousUrl);
-  console.log('[EficacIA MegaFix] Apollo: page transition complete');
   return true;
 }
 
 function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
-  // 1. Direct aria-label / data-cy match
   const directSelectors = [
     'button[data-cy="next-page-button"]',
     'button[aria-label="next page"]',
@@ -755,13 +496,9 @@ function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
   ];
   for (const sel of directSelectors) {
     const btn = document.querySelector<HTMLButtonElement | HTMLAnchorElement>(sel);
-    if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-      console.log('[EficacIA MegaFix] Apollo: next btn found via', sel);
-      return btn;
-    }
+    if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') return btn;
   }
 
-  // 2. Apollo-specific: icon button with chevron-right / right-arrow
   const iconBtns = document.querySelectorAll<HTMLButtonElement>(
     'button:has(i[class*="chevron-right"]), ' +
     'button:has(i[class*="arrow-right"]), ' +
@@ -769,14 +506,12 @@ function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
     '.zp-button:has(.zp-icon-chevron-right)'
   );
   for (const btn of iconBtns) {
-    if (!btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-      console.log('[EficacIA MegaFix] Apollo: next btn found via icon chevron-right');
-      return btn;
-    }
+    if (!btn.disabled && btn.getAttribute('aria-disabled') !== 'true') return btn;
   }
 
-  // 3. Pagination containers — look for next-like buttons
-  const containers = document.querySelectorAll('[class*="pagination"], [class*="Pagination"], [role="navigation"], [class*="pager"]');
+  const containers = document.querySelectorAll(
+    '[class*="pagination"], [class*="Pagination"], [role="navigation"], [class*="pager"]'
+  );
   for (const container of containers) {
     const buttons = [...container.querySelectorAll<HTMLButtonElement>('button, a')];
     const nextLike = buttons.find(b => {
@@ -784,32 +519,21 @@ function findApolloNextButton(): HTMLButtonElement | HTMLAnchorElement | null {
       const text = b.textContent?.trim() ?? '';
       const label = (b.getAttribute('aria-label') ?? '').toLowerCase();
       const cls = (b.className ?? '').toLowerCase();
-      return text === '>' || text === '\u203A' || text === '\u00BB' || label.includes('next') || cls.includes('next');
+      return text === '>' || text === '›' || text === '»' || label.includes('next') || cls.includes('next');
     });
-    if (nextLike) {
-      console.log('[EficacIA MegaFix] Apollo: next btn found in pagination container');
-      return nextLike as HTMLButtonElement;
-    }
+    if (nextLike) return nextLike as HTMLButtonElement;
 
-    // Last enabled button in pagination is usually "next"
     const last = [...buttons].reverse().find(
       b => !(b as HTMLButtonElement).disabled && b.getAttribute('aria-disabled') !== 'true'
     );
-    if (last) {
-      console.log('[EficacIA MegaFix] Apollo: next btn — using last enabled in pagination');
-      return last as HTMLButtonElement;
-    }
+    if (last) return last as HTMLButtonElement;
   }
 
-  // 4. Brute-force: any button whose inner <i> has "right" in class or whose parent is near page numbers
   const allButtons = document.querySelectorAll<HTMLButtonElement>('button');
   for (const btn of allButtons) {
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
     const icon = btn.querySelector('i, svg');
-    if (icon && /(right|forward|next)/i.test(icon.className)) {
-      console.log('[EficacIA MegaFix] Apollo: next btn found via brute-force icon scan');
-      return btn;
-    }
+    if (icon && /(right|forward|next)/i.test(icon.className)) return btn;
   }
 
   return null;
@@ -829,13 +553,15 @@ function waitForApolloPageTransition(
       clearTimeout(timer);
       observer.disconnect();
       await waitForApolloRows();
-      await sleep(800);
+      await sleep(800); // Short stabilisation — fine (not throttled at < 1s)
       resolve();
     };
 
     const check = () => {
       if (window.location.href !== previousUrl) { done(); return; }
-      const current = document.querySelector('table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow');
+      const current = document.querySelector(
+        'table tbody tr, [role="row"], .zp_accordion_row, .zp_baseRow'
+      );
       if (!current) { done(); return; }
       if (current !== previousFirstRow) done();
     };
@@ -844,8 +570,8 @@ function waitForApolloPageTransition(
       if (!settled) {
         settled = true;
         observer.disconnect();
-        console.warn('[EficacIA MegaFix] Apollo: page transition timed out');
-        sleep(3000).then(resolve);
+        console.warn('[EficacIA v2] Apollo: page transition timed out');
+        sleep(1000).then(resolve);
       }
     }, timeoutMs);
 
@@ -855,48 +581,66 @@ function waitForApolloPageTransition(
   });
 }
 
-// ─── Shared Utilities ────────────────────────────────────────────────────────
+function waitForApolloRows(timeoutMs = 20000): Promise<void> {
+  const isReady = () =>
+    !!document.querySelector('a[href*="linkedin.com"]') ||
+    !!document.querySelector('table tbody tr') ||
+    !!document.querySelector('[role="row"]') ||
+    !!document.querySelector('.zp_accordion_row, .zp_baseRow, [class*="Row"]');
 
-function sendProgress(task: ScrapingTask): void {
-  const pct = Math.min((task.leads.length / task.limit) * 100, 100);
-  chrome.runtime.sendMessage({
-    type: 'SCRAPING_PROGRESS',
-    payload: {
-      progress: pct,
-      current: task.leads.length,
-      limit: task.limit,
-    },
+  return new Promise(resolve => {
+    if (isReady()) { resolve(); return; }
+
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      console.warn('[EficacIA v2] waitForApolloRows timed out');
+      resolve();
+    }, timeoutMs);
+
+    const observer = new MutationObserver(() => {
+      if (isReady()) { clearTimeout(timer); observer.disconnect(); resolve(); }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   });
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+// ─── Apollo Scroll ────────────────────────────────────────────────────────────
+
+async function scrollApolloTable(): Promise<void> {
+  const container =
+    document.querySelector<HTMLElement>('[class*="table_wrapper"], [class*="tableWrapper"], .infinite-scroll-component') ??
+    document.querySelector<HTMLElement>('main, [role="main"]') ??
+    document.documentElement;
+
+  let prev = -1;
+  let stable = 0;
+
+  while (stable < 2) {
+    const h = container.scrollHeight;
+    // Use direct assignment — does not depend on Chrome rendering the scroll
+    container.scrollTop = h;
+    window.scrollTo(0, document.body.scrollHeight);
+    if (h === prev) { stable++; } else { stable = 0; prev = h; }
+    await sleep(600); // 600ms — well below throttling threshold
+  }
+  await sleep(400);
 }
 
-const randomSleep = (min: number, max: number): Promise<void> => {
-  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
-  console.log(`[EficacIA] ⏳ Pausa humana de ${(ms / 1000).toFixed(1)} segundos...`);
-  return new Promise(r => setTimeout(r, ms));
-};
+// ─── LinkedIn Scroll ──────────────────────────────────────────────────────────
 
 function findScrollableContainer(): HTMLElement {
-  // Priority 1: Sales Navigator dedicated container
   const byId = document.querySelector<HTMLElement>('#search-results-container');
   if (byId) return byId;
 
-  // Priority 2: aria-label parent
   const byAria = document.querySelector('[aria-label="Search results"]')?.parentElement as HTMLElement | null;
   if (byAria) return byAria;
 
-  // Priority 3: climb from first lead card to first scrollable ancestor
   const firstCard = document.querySelector<HTMLElement>('li.artdeco-list__item, .search-results__result-item');
   if (firstCard) {
     let el: HTMLElement | null = firstCard.parentElement;
     while (el && el !== document.documentElement) {
       const { overflow, overflowY } = window.getComputedStyle(el);
-      if (/(auto|scroll)/.test(overflow + overflowY) && el.scrollHeight > el.clientHeight) {
-        return el;
-      }
+      if (/(auto|scroll)/.test(overflow + overflowY) && el.scrollHeight > el.clientHeight) return el;
       el = el.parentElement;
     }
   }
@@ -905,30 +649,37 @@ function findScrollableContainer(): HTMLElement {
 }
 
 async function humanScrollDown(): Promise<void> {
-  const container = findScrollableContainer();
-  console.log(`[EficacIA] 🖱️ Scrolling en contenedor: <${container.tagName} id="${container.id}" class="${container.className.slice(0, 60)}">`);
-
-  const isRoot = container === document.documentElement;
-
-  // Scroll al inicio antes de bajar para asegurar estado limpio
-  if (isRoot) window.scrollTo(0, 0); else container.scrollTop = 0;
-  await sleep(300);
-
-  let iterations = 0;
-  const maxIterations = 60; // seguro: evita bucle infinito
-
-  while (iterations < maxIterations) {
-    const scrollTop = isRoot ? window.scrollY : container.scrollTop;
-    const clientHeight = isRoot ? window.innerHeight : container.clientHeight;
-    const scrollHeight = isRoot ? document.documentElement.scrollHeight : container.scrollHeight;
-
-    if (scrollTop + clientHeight >= scrollHeight - 10) break;
-
-    if (isRoot) window.scrollBy(0, 400); else container.scrollBy(0, 400);
-    await randomSleep(400, 700);
-    iterations++;
+  // Dispatch to Apollo-specific scroll if on Apollo
+  if (detectEnvironment() === 'apollo') {
+    await scrollApolloTable();
+    return;
   }
 
-  console.log('[EficacIA] ✅ Scroll completo. 25 tarjetas renderizadas.');
-  await sleep(500);
+  const container = findScrollableContainer();
+  const isRoot = container === document.documentElement;
+
+  console.log(
+    `[EficacIA v2] Scrolling <${container.tagName} id="${container.id}" class="${container.className.slice(0, 60)}">`
+  );
+
+  // Reset to top
+  if (isRoot) window.scrollTo(0, 0); else container.scrollTop = 0;
+  await sleep(100);
+
+  // Scroll through in steps using direct scrollTop assignment (force-scroll, no rendering required)
+  const totalHeight = () => isRoot ? document.documentElement.scrollHeight : container.scrollHeight;
+
+  for (let step = 1; step <= 6; step++) {
+    const target = Math.floor(totalHeight() * (step / 6));
+    if (isRoot) window.scrollTo(0, target); else container.scrollTop = target;
+    await sleep(80); // 80ms per step — below any throttling threshold
+  }
+
+  console.log('[EficacIA v2] ✅ Scroll completo.');
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
 }
