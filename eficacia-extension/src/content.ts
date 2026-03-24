@@ -252,23 +252,38 @@ function extractLinkedInLeadsFromPage(): Lead[] {
   listItems.forEach((item, itemIdx) => {
     try {
       // ── 1. URL y Nombre ────────────────────────────────────────────────────
-      // Deep search: busca en cualquier nivel de profundidad del item
-      const profileLink = Array.from(item.querySelectorAll<HTMLAnchorElement>('a')).find(
-        a => (a.href.includes('/sales/lead/') || a.href.includes('/in/')) &&
-             (a.innerText || '').trim().length > 0
-      ) ?? null;
+      // 1. Obtener TODOS los enlaces de perfil de la tarjeta (foto y texto)
+      const profileAnchors = Array.from(item.querySelectorAll<HTMLAnchorElement>('a[href*="/sales/lead/"], a[href*="/in/"]'));
 
-      if (!profileLink) {
-        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No valid text anchor with /sales/lead/ or /in/ found. Skipping.`);
+      if (profileAnchors.length === 0) {
+        console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: No anchor found. Skipping.`);
         return;
       }
 
-      let linkedin_url = profileLink.href;
+      // 2. La URL es la misma para todos, cogemos la del primero
+      let linkedin_url = profileAnchors[0].href;
       if (linkedin_url.includes('?')) linkedin_url = linkedin_url.split('?')[0];
       if (!linkedin_url.endsWith('/')) linkedin_url += '/';
 
-      // Usamos innerText para no capturar etiquetas ARIA ocultas y limpiamos basura visual
-      const fullName = (profileLink.innerText || '').split('\n')[0]?.trim() || '';
+      // 3. Buscar el primer enlace que SÍ tenga texto para extraer el nombre
+      let rawName = '';
+      for (const a of profileAnchors) {
+        const text = (a.innerText || a.textContent || '').trim();
+        if (text.length > 0) {
+          rawName = text;
+          break;
+        }
+      }
+
+      // Si no encontramos texto en los enlaces, intentamos extraer de la tarjeta general
+      if (!rawName) {
+        rawName = (item as HTMLElement).innerText?.split('\n')[0] || '';
+      }
+
+      // Limpieza de basura (ARIA labels ocultos, botones)
+      rawName = rawName.replace(/est[áa] disponible|Añadir a la selección|Guardar/gi, '');
+
+      const fullName = rawName.split('\n')[0]?.trim() || '';
 
       if (!fullName) {
         console.log(`[EficacIA MegaFix PURE] Item[${itemIdx}]: Could not extract name. Skipping.`);
