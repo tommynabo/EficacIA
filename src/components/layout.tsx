@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Link, useLocation, Outlet } from "react-router-dom"
+import { Link, useLocation, useNavigate, Outlet } from "react-router-dom"
 import { 
   BarChart3, 
   Inbox, 
@@ -9,6 +9,7 @@ import {
   LogOut
 } from "lucide-react"
 import { cn } from "@/src/lib/utils"
+import { useAuth } from "@/src/contexts/AuthContext"
 
 const navItems = [
   { name: "Cuentas", href: "/dashboard", icon: LayoutDashboard },
@@ -20,6 +21,13 @@ const navItems = [
 
 export function DashboardLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { logout } = useAuth()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/', { replace: true })
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -53,10 +61,13 @@ export function DashboardLayout() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <Link to="/login" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 w-full transition-colors">
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 w-full transition-colors"
+          >
             <LogOut className="w-5 h-5 text-slate-500" />
             <span>Cerrar Sesión</span>
-          </Link>
+          </button>
         </div>
       </aside>
 
