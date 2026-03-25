@@ -51,9 +51,9 @@ export default async function handler(req, res) {
     }
   }
 
-  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!openaiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!anthropicKey) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
   const dsn = (process.env.UNIPILE_DSN || '').trim();
   const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
@@ -165,17 +165,19 @@ export default async function handler(req, res) {
                   })
                   .join('\n');
 
-                // 3e. Call OpenAI
+                // 3e. Call Anthropic Claude (same model used across all API functions)
                 const aiRes = await fetch(
-                  'https://api.openai.com/v1/chat/completions',
+                  'https://api.anthropic.com/v1/messages',
                   {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
-                      Authorization: `Bearer ${openaiKey}`,
+                      'x-api-key': anthropicKey,
+                      'anthropic-version': '2023-06-01',
                     },
                     body: JSON.stringify({
-                      model: 'gpt-4o-mini',
+                      model: 'claude-3-haiku-20240307',
+                      max_tokens: 5,
                       messages: [
                         {
                           role: 'user',
@@ -185,15 +187,13 @@ export default async function handler(req, res) {
                           ),
                         },
                       ],
-                      max_tokens: 5,
-                      temperature: 0,
                     }),
                   }
                 );
                 if (!aiRes.ok) return;
                 const aiData = await aiRes.json();
                 const rawTemp = (
-                  aiData.choices?.[0]?.message?.content || ''
+                  aiData.content?.[0]?.text || ''
                 )
                   .trim()
                   .toLowerCase();

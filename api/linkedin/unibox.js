@@ -478,8 +478,8 @@ export default async function handler(req, res) {
         .single();
       if (leadErr || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
 
-      const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
-      if (!openaiKey) return res.status(500).json({ error: 'IA no configurada (OPENAI_API_KEY)' });
+      const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+      if (!anthropicKey) return res.status(500).json({ error: 'IA no configurada (ANTHROPIC_API_KEY)' });
 
       // Build a concise conversation summary (last 20 messages)
       const conversationText = convMessages.slice(-20).map(m => {
@@ -487,39 +487,30 @@ export default async function handler(req, res) {
         return `${dir}: ${(m.text || '[adjunto]').substring(0, 300)}`;
       }).join('\n');
 
-      const prompt = `Eres un experto en ventas B2B analizando conversaciones de LinkedIn.
-Analiza la conversación y determina la "temperatura" del lead:
-- "hot": interés activo, pide reunión, pregunta precio/condiciones, expresa urgencia o deseo de avanzar
-- "warm": responde positivamente pero sin urgencia, hace preguntas generales, abierto pero sin compromiso
-- "cold": no responde, respuestas cortas o negativas, desvía el tema, sin interés aparente
+      const prompt = `Analiza el sentimiento de esta conversación de ventas en LinkedIn.\nResponde ÚNICAMENTE con una palabra: 'hot' (si quiere agendar o pide info), 'warm' (si responde pero tiene dudas) o 'cold' (si no responde o no le interesa).\n\nConversación (más reciente al final):\n${conversationText}`;
 
-Conversación (más reciente al final):
-${conversationText}
-
-Responde ÚNICAMENTE con una de estas palabras: hot, warm, cold`;
-
-      const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`,
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
+          model: 'claude-3-haiku-20240307',
           max_tokens: 5,
-          temperature: 0,
+          messages: [{ role: 'user', content: prompt }],
         }),
       });
 
       if (!aiRes.ok) {
         const errText = await aiRes.text();
-        console.error('[UNIBOX][analyze_temperature] OpenAI error:', aiRes.status, errText);
+        console.error('[UNIBOX][analyze_temperature] Anthropic error:', aiRes.status, errText);
         return res.status(502).json({ error: 'Error al analizar conversación con IA' });
       }
 
       const aiData = await aiRes.json();
-      const rawTemp = (aiData.choices?.[0]?.message?.content || '').trim().toLowerCase();
+      const rawTemp = (aiData.content?.[0]?.text || '').trim().toLowerCase();
       const temperature = ['hot', 'warm', 'cold'].includes(rawTemp) ? rawTemp : 'cold';
 
       const { data: updated, error: updateErr } = await supabaseAdmin
