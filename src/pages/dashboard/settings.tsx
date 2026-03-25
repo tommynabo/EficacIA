@@ -5,8 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
 import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt } from "lucide-react"
+import { useAuth } from "@/src/contexts/AuthContext"
 
 export default function SettingsPage() {
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get("tab") ?? "profile"
   const setActiveTab = (key: string) => setSearchParams({ tab: key }, { replace: true })
@@ -522,20 +524,21 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Nombre</label>
-                  <Input defaultValue="Tomás" />
+                  <label className="text-sm font-medium text-slate-300">Nombre completo</label>
+                  <Input defaultValue={user?.full_name || ""} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Apellidos</label>
-                  <Input defaultValue="Navarro Sarda" />
+                  <label className="text-sm font-medium text-slate-300">ID de Usuario</label>
+                  <Input defaultValue={user?.id || ""} disabled className="bg-slate-900/50 text-slate-500 text-xs font-mono" />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-300">Email</label>
-                <Input defaultValue="tomasnivraone@gmail.com" disabled className="bg-slate-900/50 text-slate-500" />
+                <Input defaultValue={user?.email || ""} disabled className="bg-slate-900/50 text-slate-500" />
               </div>
               <Button className="mt-4">Guardar Cambios</Button>
             </CardContent>
+
           </Card>
 
           {/* Change Password */}
