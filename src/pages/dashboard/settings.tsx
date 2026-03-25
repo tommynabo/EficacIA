@@ -400,30 +400,8 @@ export default function SettingsPage() {
 
       {activeTab === "extension" && (
         <div className="space-y-6">
-          <Card className="border-violet-500/30 bg-violet-500/5">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5 text-violet-500" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <CardTitle className="text-violet-400 text-lg">Extensión para Sales Navigator y Apollo</CardTitle>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v2 · Actualizada</span>
-                  </div>
-                  <CardDescription className="text-violet-300/70">
-                    Extrae hasta <strong className="text-violet-300">999 leads por sesión</strong> desde LinkedIn Sales Navigator y Apollo.io con motor anti-bot integrado.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
           {/* Guía de Instalación */}
           <Card className="border-slate-800 bg-slate-900/40">
-            <CardHeader>
-              <CardTitle className="text-base font-bold text-slate-200">Guía de Instalación</CardTitle>
-            </CardHeader>
             <CardContent className="space-y-5">
               <div className="flex gap-4">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200">1</div>
