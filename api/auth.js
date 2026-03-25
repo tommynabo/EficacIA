@@ -60,21 +60,40 @@ async function handleLogin(req, res) {
         || authData.user.user_metadata?.name
         || email.split('@')[0];
 
-      const { data: newUser, error: insertError } = await supabase
+      // Intentamos primero con todos los campos; si falla por constraint
+      // en subscription_plan (columna que puede no existir), reintentamos sin ella.
+      let newUser, insertError;
+      ({ data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({
           id: authData.user.id,
           email: email.trim().toLowerCase(),
           full_name: fallbackName,
-          subscription_status: 'free',
+          subscription_status: 'active',
           subscription_plan: 'free',
         })
         .select()
-        .single();
+        .single());
 
       if (insertError) {
-        console.error('[LOGIN] Error creando perfil auto-heal:', insertError.message);
-        return res.status(500).json({ error: 'Error accediendo al perfil de usuario' });
+        console.warn('[LOGIN] Auto-heal attempt 1 failed:', insertError.message, '— retrying without subscription_plan...');
+        // Reintento sin subscription_plan (por si el schema no tiene esa columna
+        // o tiene un constraint diferente)
+        ({ data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            email: email.trim().toLowerCase(),
+            full_name: fallbackName,
+            subscription_status: 'active',
+          })
+          .select()
+          .single());
+      }
+
+      if (insertError) {
+        console.error('[LOGIN] Error creando perfil auto-heal (ambos intentos):', insertError.message);
+        return res.status(500).json({ error: 'Error accediendo al perfil de usuario. Constraint: ' + insertError.message });
       }
 
       userData = newUser;
@@ -150,9 +169,10 @@ async function handleRegister(req, res) {
       id: userId,
       email: email.trim().toLowerCase(),
       full_name: userName,
-      subscription_status: 'free',
+      subscription_status: 'active',   // 'active' = valor por defecto del schema real
       subscription_plan: 'free',
     };
+
 
     // Código de prueba gratis: EficaciaEsLoMejor2026
     if (promoCode === 'EficaciaEsLoMejor2026') {
