@@ -16,6 +16,9 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = React.useState<string | null>(null)
   const [isLoadingKey, setIsLoadingKey] = React.useState(false)
 
+  // Lightbox state
+  const [lightboxImg, setLightboxImg] = React.useState<string | null>(null)
+
   // Change password state
   const [newPassword, setNewPassword] = React.useState("")
   const [confirmPassword, setConfirmPassword] = React.useState("")
@@ -400,9 +403,28 @@ export default function SettingsPage() {
 
       {activeTab === "extension" && (
         <div className="space-y-6">
+          {/* Lightbox */}
+          {lightboxImg && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+              onClick={() => setLightboxImg(null)}
+            >
+              <img
+                src={lightboxImg}
+                alt="Vista ampliada"
+                className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+                onClick={e => e.stopPropagation()}
+              />
+              <button
+                className="absolute top-4 right-5 text-white text-3xl font-bold leading-none hover:text-slate-300"
+                onClick={() => setLightboxImg(null)}
+              >✕</button>
+            </div>
+          )}
+
           {/* Guía de Instalación */}
           <Card className="border-slate-800 bg-slate-900/40">
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-5 pt-6">
               <div className="flex gap-4">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200">1</div>
                 <p className="text-base text-slate-300 leading-relaxed pt-1">Descarga la extensión comprimida (.zip) usando el botón de abajo.</p>
@@ -496,8 +518,8 @@ export default function SettingsPage() {
                 <span>🎬</span> Guía de Instalación en Video
               </h3>
               <div className="relative rounded-2xl p-[2px] bg-gradient-to-r from-violet-500 via-purple-500 to-blue-500 shadow-[0_0_40px_rgba(139,92,246,0.5),0_0_80px_rgba(139,92,246,0.2)]">
-                <div className="rounded-2xl bg-slate-950 p-3">
-                  <div className="aspect-video w-full overflow-hidden rounded-xl">
+                <div className="rounded-2xl bg-slate-950 p-1">
+                  <div className="w-full overflow-hidden rounded-xl" style={{ aspectRatio: '16/10' }}>
                     <iframe
                       src="https://drive.google.com/file/d/1dwNWlL54lqUhJHMvJRX60q7QRDklJV8Y/preview"
                       className="w-full h-full rounded-xl"
@@ -524,7 +546,7 @@ export default function SettingsPage() {
                     <p className="text-base font-bold text-white">Descarga y Preparación del Archivo</p>
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed pl-12">Haz clic en el botón central de <strong className="text-white">"Descargar Extensión"</strong>. Esto guardará un archivo comprimido <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">.zip</code> en tu ordenador. Es <strong className="text-white">crucial</strong> que antes del siguiente paso localices el archivo y lo <strong className="text-white">descomprimas</strong> (extraigas el contenido) en una carpeta accesible.</p>
-                  <img src="/assets_instalacion/1.png" alt="Paso 1 – Descargar extensión" className="w-full h-auto rounded-lg shadow-sm" />
+                  <img src="/assets_instalacion/1.png" alt="Paso 1 – Descargar extensión" className="w-full h-auto rounded-lg shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightboxImg("/assets_instalacion/1.png")} />
                 </div>
 
                 {/* Paso 2 */}
@@ -534,7 +556,7 @@ export default function SettingsPage() {
                     <p className="text-base font-bold text-white">Acceder al Panel de Extensiones de Chrome</p>
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed pl-12">Abre una nueva pestaña en Chrome. Haz clic en el icono del puzle 🧩 situado en la barra de herramientas <strong className="text-white">(arriba a la derecha)</strong>. En el menú desplegable, selecciona la opción final: <strong className="text-white">"Gestionar extensiones"</strong>.</p>
-                  <img src="/assets_instalacion/2.png" alt="Paso 2 – Panel de extensiones" className="w-full h-auto rounded-lg shadow-sm" />
+                  <img src="/assets_instalacion/2.png" alt="Paso 2 – Panel de extensiones" className="w-full h-auto rounded-lg shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightboxImg("/assets_instalacion/2.png")} />
                 </div>
 
                 {/* Paso 3 */}
@@ -544,7 +566,7 @@ export default function SettingsPage() {
                     <p className="text-base font-bold text-white">Habilitar el "Modo de desarrollador"</p>
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed pl-12">Una vez en la página <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">chrome://extensions</code>, localiza el interruptor titulado <strong className="text-white">"Modo de desarrollador"</strong> en la <strong className="text-white">esquina superior derecha</strong>. Por defecto estará desactivado; haz clic en él para <strong className="text-white">activarlo</strong>. Esto habilitará nuevas opciones de carga en la barra superior.</p>
-                  <img src="/assets_instalacion/3.png" alt="Paso 3 – Modo desarrollador" className="w-full h-auto rounded-lg shadow-sm" />
+                  <img src="/assets_instalacion/3.png" alt="Paso 3 – Modo desarrollador" className="w-full h-auto rounded-lg shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightboxImg("/assets_instalacion/3.png")} />
                 </div>
 
                 {/* Paso 4 */}
@@ -554,7 +576,7 @@ export default function SettingsPage() {
                     <p className="text-base font-bold text-white">Cargar la Extensión Descargada</p>
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed pl-12">Mira la barra de herramientas superior que se acaba de habilitar. Haz clic en el botón <strong className="text-white">"Cargar descomprimida"</strong> (el primero de la izquierda). Se abrirá un explorador de archivos; busca y selecciona la <strong className="text-white">carpeta completa</strong> que descomprimiste en el Paso 1.</p>
-                  <img src="/assets_instalacion/4.png" alt="Paso 4 – Cargar extensión" className="w-full h-auto rounded-lg shadow-sm" />
+                  <img src="/assets_instalacion/4.png" alt="Paso 4 – Cargar extensión" className="w-full h-auto rounded-lg shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightboxImg("/assets_instalacion/4.png")} />
                 </div>
 
                 {/* Paso 5 */}
@@ -564,7 +586,7 @@ export default function SettingsPage() {
                     <p className="text-base font-bold text-white">Fijar en Barra de Herramientas para Uso</p>
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed pl-12">La extensión <strong className="text-violet-300">"EficacIA MegaFix"</strong> ya está instalada. Para usarla, vuelve a hacer clic en el icono del puzle 🧩. Busca la extensión en la lista y haz clic en el <strong className="text-white">icono del pin 📌</strong> para que se vuelva azul. El logo de EficacIA aparecerá siempre visible en tu barra de herramientas, listo para arrancar campañas.</p>
-                  <img src="/assets_instalacion/5.png" alt="Paso 5 – Fijar extensión" className="w-full h-auto rounded-lg shadow-sm" />
+                  <img src="/assets_instalacion/5.png" alt="Paso 5 – Fijar extensión" className="w-full h-auto rounded-lg shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightboxImg("/assets_instalacion/5.png")} />
                 </div>
 
               </div>
