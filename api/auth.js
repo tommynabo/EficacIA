@@ -28,6 +28,18 @@ export default async function handler(req, res) {
   return res.status(400).json({ error: 'Acción no válida' });
 }
 
+// ── Per-plan AI credit allocations ──────────────────────────────────────────
+const PLAN_CREDITS = {
+  free: 100,
+  pro: 1000,
+  growth: 2000,
+  scale: 10000,
+  scale_oferta: 10000,
+  starter: 1000,
+  agency: 10000
+};
+
+
 
 // ─── LOGIN ────────────────────────────────────────────────────────
 
@@ -169,9 +181,11 @@ async function handleRegister(req, res) {
       id: userId,
       email: email.trim().toLowerCase(),
       full_name: userName,
-      subscription_status: 'active',   // 'active' = valor por defecto del schema real
+      subscription_status: 'active',
       subscription_plan: 'free',
+      ai_credits: PLAN_CREDITS.free
     };
+
 
 
     // Código de prueba gratis: EficaciaEsLoMejor2026
@@ -181,15 +195,23 @@ async function handleRegister(req, res) {
       upsertData.subscription_plan = 'pro';
       upsertData.subscription_status = 'trial';
       upsertData.trial_ends_at = trialEndsAt.toISOString();
-    } else if (stripeCustomerId && stripeSubscriptionId) {
+      upsertData.ai_credits = PLAN_CREDITS.pro;
+    }
+ else if (stripeCustomerId && stripeSubscriptionId) {
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+      const planKey = plan || 'starter';
       upsertData.stripe_customer_id = stripeCustomerId;
       upsertData.stripe_subscription_id = stripeSubscriptionId;
-      upsertData.subscription_plan = plan || 'starter';
+      upsertData.subscription_plan = planKey;
       upsertData.subscription_status = 'trial';
       upsertData.trial_ends_at = trialEndsAt.toISOString();
+
+      // Dynamic credits assignment
+      const credits = PLAN_CREDITS[planKey.toLowerCase()] || 1000;
+      upsertData.ai_credits = credits;
     }
+
 
     const { data: userData, error: dbError } = await supabaseAdmin
       .from('users')
