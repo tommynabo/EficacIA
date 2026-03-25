@@ -513,7 +513,7 @@ export default function SettingsPage() {
             {/* Columna Derecha – Paso a Paso Visual */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <span>📋</span> Paso a Paso Visual
+                <span>📋</span> Paso a Paso Visual de Instalación
               </h3>
               <div className="space-y-4">
 
@@ -521,50 +521,50 @@ export default function SettingsPage() {
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">1</span>
-                    <p className="text-base font-bold text-white">Descarga el archivo ZIP</p>
+                    <p className="text-base font-bold text-white">Descarga y Preparación del Archivo</p>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Pulsa el botón <strong className="text-white">"Descargar Extensión"</strong> que hay más arriba. Se descargará un archivo <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">.zip</code>. Una vez descargado, <strong className="text-white">descomprímelo</strong> haciendo doble clic (Mac) o clic derecho → "Extraer todo" (Windows). Obtendrás una carpeta con todos los archivos de la extensión.</p>
-                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 1</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Haz clic en el botón central de <strong className="text-white">"Descargar Extensión"</strong>. Esto guardará un archivo comprimido <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">.zip</code> en tu ordenador. Es <strong className="text-white">crucial</strong> que antes del siguiente paso localices el archivo y lo <strong className="text-white">descomprimas</strong> (extraigas el contenido) en una carpeta accesible.</p>
+                  <img src="/assets_instalacion/1.png" alt="Paso 1 – Descargar extensión" className="w-full h-auto rounded-lg shadow-sm" />
                 </div>
 
                 {/* Paso 2 */}
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">2</span>
-                    <p className="text-base font-bold text-white">Abre el gestor de extensiones de Chrome</p>
+                    <p className="text-base font-bold text-white">Acceder al Panel de Extensiones de Chrome</p>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed pl-12">En Chrome, haz clic en el icono del puzle 🧩 <strong className="text-white">(arriba a la derecha)</strong> y selecciona <strong className="text-white">"Gestionar extensiones"</strong>. También puedes escribir directamente <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">chrome://extensions</code> en la barra de direcciones y pulsar Enter.</p>
-                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 2</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Abre una nueva pestaña en Chrome. Haz clic en el icono del puzle 🧩 situado en la barra de herramientas <strong className="text-white">(arriba a la derecha)</strong>. En el menú desplegable, selecciona la opción final: <strong className="text-white">"Gestionar extensiones"</strong>.</p>
+                  <img src="/assets_instalacion/2.png" alt="Paso 2 – Panel de extensiones" className="w-full h-auto rounded-lg shadow-sm" />
                 </div>
 
                 {/* Paso 3 */}
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">3</span>
-                    <p className="text-base font-bold text-white">Activa el Modo Desarrollador</p>
+                    <p className="text-base font-bold text-white">Habilitar el "Modo de desarrollador"</p>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed pl-12">En la página de extensiones, mira la <strong className="text-white">esquina superior derecha</strong>. Verás un interruptor con el texto <strong className="text-white">"Modo de desarrollador"</strong>. Actívalo — el interruptor se pondrá azul. Esto desbloquea la instalación de extensiones no publicadas en la Chrome Web Store.</p>
-                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 3</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Una vez en la página <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">chrome://extensions</code>, localiza el interruptor titulado <strong className="text-white">"Modo de desarrollador"</strong> en la <strong className="text-white">esquina superior derecha</strong>. Por defecto estará desactivado; haz clic en él para <strong className="text-white">activarlo</strong>. Esto habilitará nuevas opciones de carga en la barra superior.</p>
+                  <img src="/assets_instalacion/3.png" alt="Paso 3 – Modo desarrollador" className="w-full h-auto rounded-lg shadow-sm" />
                 </div>
 
                 {/* Paso 4 */}
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">4</span>
-                    <p className="text-base font-bold text-white">Carga la extensión arrastrando la carpeta</p>
+                    <p className="text-base font-bold text-white">Cargar la Extensión Descargada</p>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed pl-12"><strong className="text-white">Arrastra la carpeta</strong> que descomprimiste en el Paso 1 y <strong className="text-white">suéltala</strong> en cualquier parte de la página de extensiones de Chrome. En pocos segundos aparecerá la tarjeta de <strong className="text-violet-300">EficacIA MegaFix</strong> instalada y lista.</p>
-                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 4</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Mira la barra de herramientas superior que se acaba de habilitar. Haz clic en el botón <strong className="text-white">"Cargar descomprimida"</strong> (el primero de la izquierda). Se abrirá un explorador de archivos; busca y selecciona la <strong className="text-white">carpeta completa</strong> que descomprimiste en el Paso 1.</p>
+                  <img src="/assets_instalacion/4.png" alt="Paso 4 – Cargar extensión" className="w-full h-auto rounded-lg shadow-sm" />
                 </div>
 
                 {/* Paso 5 */}
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">5</span>
-                    <p className="text-base font-bold text-white">Fija la extensión en la barra de herramientas</p>
+                    <p className="text-base font-bold text-white">Fijar en Barra de Herramientas para Uso</p>
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Vuelve a hacer clic en el icono del puzle 🧩. Busca <strong className="text-white">"EficacIA MegaFix"</strong> en la lista y haz clic en el <strong className="text-white">icono del pin 📌</strong> para que se vuelva azul. A partir de ahora, el logo de EficacIA aparecerá siempre visible en tu barra de herramientas de Chrome, listo para usar.</p>
-                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 5</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">La extensión <strong className="text-violet-300">"EficacIA MegaFix"</strong> ya está instalada. Para usarla, vuelve a hacer clic en el icono del puzle 🧩. Busca la extensión en la lista y haz clic en el <strong className="text-white">icono del pin 📌</strong> para que se vuelva azul. El logo de EficacIA aparecerá siempre visible en tu barra de herramientas, listo para arrancar campañas.</p>
+                  <img src="/assets_instalacion/5.png" alt="Paso 5 – Fijar extensión" className="w-full h-auto rounded-lg shadow-sm" />
                 </div>
 
               </div>
