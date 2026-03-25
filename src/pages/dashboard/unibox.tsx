@@ -6,7 +6,7 @@ import {
   Search, Send, RefreshCw, ChevronDown, Inbox,
   MessageSquare, User, Clock, Loader2, AlertCircle,
   Tag, PauseCircle, PlayCircle, ShieldBan, X, Check, Sparkles,
-  Filter,
+  Filter, Flame, Snowflake, Thermometer,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,8 @@ interface LeadData {
   name?: string
   linkedin_url?: string
   status?: string
+  conversation_temperature?: string
+  last_analysis_at?: string
 }
 
 interface Chat {
@@ -182,8 +184,11 @@ export default function UniboxPage() {
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
   const [filterCampaignId, setFilterCampaignId] = React.useState<string>("")
   const [filterTag, setFilterTag] = React.useState<string>("")
+  const [filterTemperature, setFilterTemperature] = React.useState<string>("")
+  const [filterDirection, setFilterDirection] = React.useState<"" | "received" | "sent">("") // "received" = last msg from lead; "sent" = last msg from us
   const [campaignMenuOpen, setCampaignMenuOpen] = React.useState(false)
   const [tagMenuOpen, setTagMenuOpen] = React.useState(false)
+  const [temperatureMenuOpen, setTemperatureMenuOpen] = React.useState(false)
 
   const [chats, setChats] = React.useState<Chat[]>([])
   const [chatsLoading, setChatsLoading] = React.useState(false)
@@ -207,8 +212,10 @@ export default function UniboxPage() {
   // AI Assistant panel
   const [assistantOpen, setAssistantOpen] = React.useState(false)
 
-  // Map chatId → lead tags (for tag-based filtering)
+  // Map chatId → lead tags / temperature (for sidebar filtering)
   const [chatLeadTags, setChatLeadTags] = React.useState<Record<string, string[]>>({})
+  const [chatLeadTemperatures, setChatLeadTemperatures] = React.useState<Record<string, string>>({})
+  const [temperatureAnalyzing, setTemperatureAnalyzing] = React.useState(false)
 
   const [search, setSearch] = React.useState("")
   const [filterUnread, setFilterUnread] = React.useState(false)
@@ -306,8 +313,11 @@ export default function UniboxPage() {
             .then(d2 => {
               if (d2.lead) {
                 setSelectedLead(d2.lead)
-                // Track lead tags for this chat so the tag filter works
+                // Track lead tags + temperature for this chat
                 setChatLeadTags(prev => ({ ...prev, [chat.id]: d2.lead.tags || [] }))
+                if (d2.lead.conversation_temperature) {
+                  setChatLeadTemperatures(prev => ({ ...prev, [chat.id]: d2.lead.conversation_temperature }))
+                }
               }
             })
             .catch(() => {})
@@ -404,6 +414,28 @@ export default function UniboxPage() {
     }
   }
 
+  // ── Analyze conversation temperature with AI ───────────────────────
+  const analyzeTemperature = async () => {
+    if (!selectedLead || messages.length === 0 || temperatureAnalyzing) return
+    setTemperatureAnalyzing(true)
+    try {
+      const r = await api("/api/linkedin/unibox?action=analyze_temperature", {
+        method: "POST",
+        body: JSON.stringify({ leadId: selectedLead.id, messages }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error)
+      const temp = d.temperature as string
+      setSelectedLead(prev => prev ? { ...prev, conversation_temperature: temp, last_analysis_at: d.lead?.last_analysis_at } : prev)
+      if (selectedChat) setChatLeadTemperatures(prev => ({ ...prev, [selectedChat.id]: temp }))
+    } catch (e: any) {
+      setActionMsg({ type: "error", text: e.message || "Error al analizar" })
+      setTimeout(() => setActionMsg(null), 3000)
+    } finally {
+      setTemperatureAnalyzing(false)
+    }
+  }
+
   const handleSend = async () => {
     if (!draft.trim() || !selectedChat || sending) return
     setSending(true)
@@ -439,6 +471,14 @@ export default function UniboxPage() {
       const q = search.toLowerCase()
       if (!chatTitle(c).toLowerCase().includes(q) && !c.last_message?.text?.toLowerCase().includes(q)) return false
     }
+    // Recibidos / Enviados: filter by who sent the last message
+    if (filterDirection) {
+      const lm = c.last_message
+      if (!lm) return false
+      const lastFromMe = String(lm.is_sender) === "true" || lm.is_sender === 1
+      if (filterDirection === "received" && lastFromMe) return false
+      if (filterDirection === "sent" && !lastFromMe) return false
+    }
     // Campaign filter: Unipile doesn't embed campaign data in chat,
     // so this filters by account (each campaign runs on one account)
     if (filterCampaignId) {
@@ -449,6 +489,11 @@ export default function UniboxPage() {
     if (filterTag) {
       const tags = chatLeadTags[c.id]
       if (!tags || !tags.includes(filterTag)) return false
+    }
+    // Temperature filter
+    if (filterTemperature) {
+      const temp = chatLeadTemperatures[c.id]
+      if (temp !== filterTemperature) return false
     }
     return true
   })
@@ -587,8 +632,8 @@ export default function UniboxPage() {
           {/* Filters row: Todos/No leídos + Campaign filter + Tag filter */}
           <div className="flex items-center gap-1.5 mt-3 flex-wrap">
             <button
-              onClick={() => { setFilterUnread(false); setFilterTag(""); setFilterCampaignId("") }}
-              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${!filterUnread && !filterTag && !filterCampaignId ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              onClick={() => { setFilterUnread(false); setFilterTag(""); setFilterCampaignId(""); setFilterTemperature(""); setFilterDirection("") }}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${!filterUnread && !filterTag && !filterCampaignId && !filterTemperature && !filterDirection ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               Todos
             </button>
@@ -597,6 +642,20 @@ export default function UniboxPage() {
               className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterUnread ? "bg-blue-500/15 text-blue-400 border border-blue-500/25" : "text-slate-400 hover:text-slate-200"}`}
             >
               No leídos
+            </button>
+            <button
+              onClick={() => setFilterDirection(d => d === "received" ? "" : "received")}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterDirection === "received" ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              title="Conversaciones donde el lead escribió último"
+            >
+              Recibidos
+            </button>
+            <button
+              onClick={() => setFilterDirection(d => d === "sent" ? "" : "sent")}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterDirection === "sent" ? "bg-violet-500/15 text-violet-400 border border-violet-500/25" : "text-slate-400 hover:text-slate-200"}`}
+              title="Conversaciones donde tú escribiste último"
+            >
+              Enviados
             </button>
 
             {/* Campaign filter */}
@@ -634,7 +693,7 @@ export default function UniboxPage() {
             {/* Tag filter */}
             <div className="relative">
               <button
-                onClick={() => { setTagMenuOpen(o => !o); setCampaignMenuOpen(false) }}
+                onClick={() => { setTagMenuOpen(o => !o); setCampaignMenuOpen(false); setTemperatureMenuOpen(false) }}
                 className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${filterTag ? "bg-amber-500/15 text-amber-400 border border-amber-500/25" : "text-slate-400 hover:text-slate-200 border border-slate-700"}`}
               >
                 <Tag className="w-3 h-3" />
@@ -655,6 +714,41 @@ export default function UniboxPage() {
                       className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 ${filterTag === t ? "text-amber-400" : "text-slate-300"}`}
                     >
                       {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Temperature filter */}
+            <div className="relative">
+              <button
+                onClick={() => { setTemperatureMenuOpen(o => !o); setCampaignMenuOpen(false); setTagMenuOpen(false) }}
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${
+                  filterTemperature === 'hot' ? "bg-red-500/15 text-red-400 border border-red-500/25" :
+                  filterTemperature === 'warm' ? "bg-orange-500/15 text-orange-400 border border-orange-500/25" :
+                  filterTemperature === 'cold' ? "bg-sky-500/15 text-sky-400 border border-sky-500/25" :
+                  "text-slate-400 hover:text-slate-200 border border-slate-700"
+                }`}
+              >
+                {filterTemperature === 'hot' ? <Flame className="w-3 h-3" /> :
+                 filterTemperature === 'warm' ? <Thermometer className="w-3 h-3" /> :
+                 filterTemperature === 'cold' ? <Snowflake className="w-3 h-3" /> :
+                 <Thermometer className="w-3 h-3" />}
+                {filterTemperature === 'hot' ? "Caliente" :
+                 filterTemperature === 'warm' ? "Tibio" :
+                 filterTemperature === 'cold' ? "Frío" : "Temp"}
+              </button>
+              {temperatureMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 w-40 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                  <button onClick={() => { setFilterTemperature(""); setTemperatureMenuOpen(false) }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-800 ${!filterTemperature ? "text-blue-400" : "text-slate-300"}`}>
+                    Todas
+                  </button>
+                  {([['hot','Caliente',<Flame className="w-3 h-3" />,'text-red-400'],['warm','Tibio',<Thermometer className="w-3 h-3" />,'text-orange-400'],['cold','Frío',<Snowflake className="w-3 h-3" />,'text-sky-400']] as const).map(([val, label, icon, cls]) => (
+                    <button key={val} onClick={() => { setFilterTemperature(val); setTemperatureMenuOpen(false) }}
+                      className={`w-full flex items-center gap-2 text-left px-3 py-2 text-xs hover:bg-slate-800 ${filterTemperature === val ? cls : 'text-slate-300'}`}>
+                      {icon}{label}
                     </button>
                   ))}
                 </div>
@@ -724,6 +818,35 @@ export default function UniboxPage() {
                     <p className={`text-xs truncate ${chat.unread_count ? "text-slate-300" : "text-slate-500"}`}>
                       {chat.last_message?.text || "Sin mensajes"}
                     </p>
+                    {/* Temperature badge with tooltip */}
+                    {chatLeadTemperatures[chat.id] && (
+                      <div className="mt-1">
+                        {chatLeadTemperatures[chat.id] === 'hot' && (
+                          <span
+                            title="🔥 Caliente — El lead quiere agendar o pide información"
+                            className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-red-500/15 text-red-400 rounded-full border border-red-500/20 cursor-default"
+                          >
+                            🔥 Caliente
+                          </span>
+                        )}
+                        {chatLeadTemperatures[chat.id] === 'warm' && (
+                          <span
+                            title="☀️ Tibio — Responde pero con dudas, está evaluando"
+                            className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-orange-500/15 text-orange-400 rounded-full border border-orange-500/20 cursor-default"
+                          >
+                            ☀️ Tibio
+                          </span>
+                        )}
+                        {chatLeadTemperatures[chat.id] === 'cold' && (
+                          <span
+                            title="❄️ Frío — Sin respuesta o sin interés aparente"
+                            className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-sky-500/15 text-sky-400 rounded-full border border-sky-500/20 cursor-default"
+                          >
+                            ❄️ Frío
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {!!chat.unread_count && (
                       <div className="mt-1.5">
                         <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-blue-500 text-white rounded-full">
@@ -798,6 +921,42 @@ export default function UniboxPage() {
                 <Sparkles className="w-3.5 h-3.5" />
                 <span className="hidden lg:inline">IA</span>
               </button>
+
+              {/* Temperature analyze button — click to re-run AI analysis */}
+              {selectedLead && (
+                <button
+                  onClick={analyzeTemperature}
+                  disabled={temperatureAnalyzing || messages.length === 0}
+                  title={
+                    selectedLead.conversation_temperature === 'hot'
+                      ? '🔥 Caliente — El lead quiere agendar o pide información. Clic para re-analizar.'
+                      : selectedLead.conversation_temperature === 'warm'
+                      ? '☀️ Tibio — Responde pero con dudas, está evaluando. Clic para re-analizar.'
+                      : '❄️ Frío — Sin respuesta o sin interés aparente. Clic para analizar.'
+                  }
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                    selectedLead.conversation_temperature === 'hot'
+                      ? 'bg-red-500/15 text-red-400 border-red-500/25 hover:bg-red-500/25'
+                      : selectedLead.conversation_temperature === 'warm'
+                      ? 'bg-orange-500/15 text-orange-400 border-orange-500/25 hover:bg-orange-500/25'
+                      : 'bg-sky-500/15 text-sky-400 border-sky-500/25 hover:bg-sky-500/25'
+                  } disabled:opacity-50`}
+                >
+                  {temperatureAnalyzing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <span className="text-base leading-none">
+                      {selectedLead.conversation_temperature === 'hot' ? '🔥' :
+                       selectedLead.conversation_temperature === 'warm' ? '☀️' : '❄️'}
+                    </span>
+                  )}
+                  <span className="hidden lg:inline">
+                    {temperatureAnalyzing ? 'Analizando…' :
+                     selectedLead.conversation_temperature === 'hot' ? 'Caliente' :
+                     selectedLead.conversation_temperature === 'warm' ? 'Tibio' : 'Frío'}
+                  </span>
+                </button>
+              )}
 
               {/* Labels dropdown */}
               <div className="relative">

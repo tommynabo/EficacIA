@@ -33,6 +33,7 @@ interface Lead {
   sent_message: false
   sent_at: string | null
   created_at: string
+  conversation_temperature?: string
 }
 
 export default function LeadsPage() {
@@ -324,6 +325,7 @@ export default function LeadsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Empresa</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Puesto</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Estado</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Temp</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Mensaje</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase">Acciones</th>
                 </tr>
@@ -345,6 +347,35 @@ export default function LeadsPage() {
                       <Badge variant="outline" className={getStatusColor(lead.status)}>
                         {getStatusLabel(lead.status)}
                       </Badge>
+                    </td>
+                    <td className="px-6 py-4">
+                      {lead.conversation_temperature === 'hot' && (
+                        <span
+                          title="🔥 Caliente — El lead quiere agendar o pide información"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-500/15 text-red-400 rounded-full border border-red-500/20 cursor-default"
+                        >
+                          🔥 Caliente
+                        </span>
+                      )}
+                      {lead.conversation_temperature === 'warm' && (
+                        <span
+                          title="☀️ Tibio — Responde pero con dudas, está evaluando"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-orange-500/15 text-orange-400 rounded-full border border-orange-500/20 cursor-default"
+                        >
+                          ☀️ Tibio
+                        </span>
+                      )}
+                      {lead.conversation_temperature === 'cold' && (
+                        <span
+                          title="❄️ Frío — Sin respuesta o sin interés aparente"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-sky-500/15 text-sky-400 rounded-full border border-sky-500/20 cursor-default"
+                        >
+                          ❄️ Frío
+                        </span>
+                      )}
+                      {!lead.conversation_temperature && (
+                        <span className="text-slate-600 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center">
                       {lead.sent_message ? (

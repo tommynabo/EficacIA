@@ -279,7 +279,7 @@ export default async function handler(req, res) {
       if (profileUrl) {
         const { data } = await supabaseAdmin
           .from('leads')
-          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
+          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status, conversation_temperature, last_analysis_at')
           .ilike('linkedin_url', `%${publicIdentifier}%`)
           .eq('team_id', teamId)
           .limit(1);
@@ -288,7 +288,7 @@ export default async function handler(req, res) {
       if (!existingLead) {
         const { data } = await supabaseAdmin
           .from('leads')
-          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
+          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status, conversation_temperature, last_analysis_at')
           .ilike('linkedin_url', `%${providerId}%`)
           .eq('team_id', teamId)
           .limit(1);
@@ -314,14 +314,14 @@ export default async function handler(req, res) {
       let { data: newLead, error } = await supabaseAdmin
         .from('leads')
         .insert({ ...insertData, unipile_id: providerId })
-        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
+        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status, conversation_temperature, last_analysis_at')
         .single();
 
       if (error && error.message && error.message.includes('unipile_id')) {
         ({ data: newLead, error } = await supabaseAdmin
           .from('leads')
           .insert(insertData)
-          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status')
+          .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, status, conversation_temperature, last_analysis_at')
           .single());
       }
 
@@ -424,7 +424,7 @@ export default async function handler(req, res) {
 
       const { data: leads } = await supabaseAdmin
         .from('leads')
-        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url')
+        .select('id, tags, sequence_paused, first_name, last_name, linkedin_url, conversation_temperature, last_analysis_at')
         .ilike('linkedin_url', `%${providerId}%`)
         .limit(1);
 
@@ -436,13 +436,14 @@ export default async function handler(req, res) {
 
     // ─── PATCH update lead (tags / sequence_paused / status) ─────────
     if (req.method === 'PATCH' && action === 'update_lead') {
-      const { leadId, tags, sequence_paused, status } = req.body;
+      const { leadId, tags, sequence_paused, status, conversation_temperature } = req.body;
       if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
 
       const updates = {};
       if (tags !== undefined) updates.tags = tags;
       if (sequence_paused !== undefined) updates.sequence_paused = sequence_paused;
       if (status !== undefined) updates.status = status;
+      if (conversation_temperature !== undefined) updates.conversation_temperature = conversation_temperature;
 
       if (Object.keys(updates).length === 0) {
         return res.status(400).json({ error: 'No hay campos para actualizar' });
@@ -453,11 +454,84 @@ export default async function handler(req, res) {
         .update(updates)
         .eq('id', leadId)
         .eq('team_id', teamId)
-        .select('id, tags, sequence_paused, status')
+        .select('id, tags, sequence_paused, status, conversation_temperature, last_analysis_at')
         .single();
 
       if (error) return res.status(400).json({ error: error.message });
       return res.status(200).json({ lead });
+    }
+
+    // ─── POST analyze_temperature — AI analysis of conversation heat ──────
+    if (req.method === 'POST' && action === 'analyze_temperature') {
+      const { leadId, messages: convMessages } = req.body;
+      if (!leadId) return res.status(400).json({ error: 'Falta leadId' });
+      if (!Array.isArray(convMessages) || convMessages.length === 0) {
+        return res.status(400).json({ error: 'Falta lista de messages' });
+      }
+
+      // Verify the lead belongs to this team
+      const { data: lead, error: leadErr } = await supabaseAdmin
+        .from('leads')
+        .select('id, conversation_temperature')
+        .eq('id', leadId)
+        .eq('team_id', teamId)
+        .single();
+      if (leadErr || !lead) return res.status(404).json({ error: 'Lead no encontrado' });
+
+      const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+      if (!openaiKey) return res.status(500).json({ error: 'IA no configurada (OPENAI_API_KEY)' });
+
+      // Build a concise conversation summary (last 20 messages)
+      const conversationText = convMessages.slice(-20).map(m => {
+        const dir = (String(m.is_sender) === 'true' || m.is_sender === 1) ? 'Yo' : 'Contacto';
+        return `${dir}: ${(m.text || '[adjunto]').substring(0, 300)}`;
+      }).join('\n');
+
+      const prompt = `Eres un experto en ventas B2B analizando conversaciones de LinkedIn.
+Analiza la conversación y determina la "temperatura" del lead:
+- "hot": interés activo, pide reunión, pregunta precio/condiciones, expresa urgencia o deseo de avanzar
+- "warm": responde positivamente pero sin urgencia, hace preguntas generales, abierto pero sin compromiso
+- "cold": no responde, respuestas cortas o negativas, desvía el tema, sin interés aparente
+
+Conversación (más reciente al final):
+${conversationText}
+
+Responde ÚNICAMENTE con una de estas palabras: hot, warm, cold`;
+
+      const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 5,
+          temperature: 0,
+        }),
+      });
+
+      if (!aiRes.ok) {
+        const errText = await aiRes.text();
+        console.error('[UNIBOX][analyze_temperature] OpenAI error:', aiRes.status, errText);
+        return res.status(502).json({ error: 'Error al analizar conversación con IA' });
+      }
+
+      const aiData = await aiRes.json();
+      const rawTemp = (aiData.choices?.[0]?.message?.content || '').trim().toLowerCase();
+      const temperature = ['hot', 'warm', 'cold'].includes(rawTemp) ? rawTemp : 'cold';
+
+      const { data: updated, error: updateErr } = await supabaseAdmin
+        .from('leads')
+        .update({ conversation_temperature: temperature, last_analysis_at: new Date().toISOString() })
+        .eq('id', leadId)
+        .eq('team_id', teamId)
+        .select('id, conversation_temperature, last_analysis_at')
+        .single();
+
+      if (updateErr) return res.status(500).json({ error: updateErr.message });
+      return res.status(200).json({ temperature, lead: updated });
     }
 
     return res.status(405).json({ error: 'Método no permitido' });
