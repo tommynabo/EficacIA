@@ -38,13 +38,48 @@ async function handleLogin(req, res) {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email y contraseña son requeridos' });
 
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    // Usamos service role para poder insertar en users si hace falta
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY);
 
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) return res.status(401).json({ error: 'Email o contraseña incorrectos' });
 
-    const { data: userData, error: dbError } = await supabase.from('users').select('*').eq('id', authData.user.id).single();
-    if (dbError) return res.status(404).json({ error: 'Perfil no encontrado' });
+    let { data: userData, error: dbError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    // ── Auto-heal: el usuario existe en Auth pero le falta el row en users ──
+    // Ocurre cuando se crea desde el panel de Supabase o si el INSERT del
+    // registro falló silenciosamente (ej. durante el flujo de Stripe).
+    if (dbError || !userData) {
+      console.warn(`[LOGIN] Perfil no encontrado para ${authData.user.id} — creando row en users...`);
+
+      const fallbackName = authData.user.user_metadata?.full_name
+        || authData.user.user_metadata?.name
+        || email.split('@')[0];
+
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          email: email.trim().toLowerCase(),
+          full_name: fallbackName,
+          subscription_status: 'free',
+          subscription_plan: 'free',
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[LOGIN] Error creando perfil auto-heal:', insertError.message);
+        return res.status(500).json({ error: 'Error accediendo al perfil de usuario' });
+      }
+
+      userData = newUser;
+      console.log(`[LOGIN] ✓ Perfil creado automáticamente para ${authData.user.id}`);
+    }
 
     const token = jwt.sign({ userId: authData.user.id, email }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '7d' });
 
@@ -70,37 +105,83 @@ async function handleRegister(req, res) {
     const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     const userName = fullName || name || email.split('@')[0];
 
+    // ── Crear usuario en Auth (idempotente: si ya existe, lo reutilizamos) ──
+    // Esto resuelve el caso en que un primer intento de registro creó el usuario
+    // en Auth pero falló antes de insertar en la tabla users.
+    let userId;
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email, password, email_confirm: true,
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: userName },
     });
 
-    if (authError) throw new Error(authError.message);
+    if (authError) {
+      // Si el email ya está registrado en Auth, buscamos el usuario existente
+      // y lo actualizamos con la nueva contraseña para que el login funcione.
+      const isAlreadyExists =
+        authError.message?.toLowerCase().includes('already registered') ||
+        authError.message?.toLowerCase().includes('already been registered') ||
+        authError.code === 'email_exists' ||
+        authError.status === 422;
 
-    const userId = authData.user.id;
-    const insertData = { id: userId, email, full_name: userName, subscription_status: 'free' };
+      if (isAlreadyExists) {
+        console.warn(`[REGISTER] Email ya existe en Auth: ${email} — recuperando cuenta...`);
+        // Buscar el usuario existente listando por email
+        const { data: { users: authUsers }, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+        if (listErr) throw new Error(`Error buscando usuario: ${listErr.message}`);
+        const existing = authUsers?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+        if (!existing) throw new Error('El email ya está registrado pero no se pudo recuperar la cuenta');
+        userId = existing.id;
+        // Actualizar la contraseña para que coincida con la que acaba de poner
+        await supabaseAdmin.auth.admin.updateUserById(userId, { password, email_confirm: true });
+        console.log(`[REGISTER] ✓ Contraseña actualizada para usuario existente: ${userId}`);
+      } else {
+        throw new Error(authError.message);
+      }
+    } else {
+      userId = authData.user.id;
+    }
+
+    // ── Build upsert payload ─────────────────────────────────────────────────
+    // Usamos upsert (no insert) para que sea idempotente: si el row ya existe
+    // lo actualiza con los datos de Stripe; si no existe lo crea.
+    const upsertData = {
+      id: userId,
+      email: email.trim().toLowerCase(),
+      full_name: userName,
+      subscription_status: 'free',
+      subscription_plan: 'free',
+    };
 
     // Código de prueba gratis: EficaciaEsLoMejor2026
     if (promoCode === 'EficaciaEsLoMejor2026') {
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 7);
-      insertData.subscription_plan = 'pro';
-      insertData.subscription_status = 'trial';
-      insertData.trial_ends_at = trialEndsAt.toISOString();
+      upsertData.subscription_plan = 'pro';
+      upsertData.subscription_status = 'trial';
+      upsertData.trial_ends_at = trialEndsAt.toISOString();
     } else if (stripeCustomerId && stripeSubscriptionId) {
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 7);
-      insertData.stripe_customer_id = stripeCustomerId;
-      insertData.stripe_subscription_id = stripeSubscriptionId;
-      insertData.subscription_plan = plan || 'starter';
-      insertData.subscription_status = 'trial';
-      insertData.trial_ends_at = trialEndsAt.toISOString();
+      upsertData.stripe_customer_id = stripeCustomerId;
+      upsertData.stripe_subscription_id = stripeSubscriptionId;
+      upsertData.subscription_plan = plan || 'starter';
+      upsertData.subscription_status = 'trial';
+      upsertData.trial_ends_at = trialEndsAt.toISOString();
     }
 
-    const { data: userData, error: dbError } = await supabaseAdmin.from('users').insert(insertData).select().single();
+    const { data: userData, error: dbError } = await supabaseAdmin
+      .from('users')
+      .upsert(upsertData, { onConflict: 'id' })
+      .select()
+      .single();
+
     if (dbError) throw new Error(dbError.message);
 
     const token = jwt.sign({ userId, email }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '7d' });
 
+    console.log(`[REGISTER] ✓ Usuario registrado/actualizado: ${userId} (${email})`);
     return res.status(200).json({ user: userData, token });
   } catch (error) {
     console.error('Register error:', error);
