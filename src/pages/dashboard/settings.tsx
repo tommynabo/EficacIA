@@ -419,157 +419,95 @@ export default function SettingsPage() {
             </CardHeader>
           </Card>
 
+          {/* Guía de Instalación */}
+          <Card className="border-slate-800 bg-slate-900/40">
+            <CardHeader>
+              <CardTitle className="text-base font-bold text-slate-200">Guía de Instalación</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200">1</div>
+                <p className="text-base text-slate-300 leading-relaxed pt-1">Descarga la extensión comprimida (.zip) usando el botón de abajo.</p>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200">2</div>
+                <p className="text-base text-slate-300 leading-relaxed pt-1">Ve a <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">chrome://extensions</code> y activa el "Modo Desarrollador".</p>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200">3</div>
+                <p className="text-base text-slate-300 leading-relaxed pt-1">Haz clic en "Cargar descomprimido" y selecciona la <strong className="text-white">carpeta</strong> de la extensión extraída.</p>
+              </div>
+              <Button
+                asChild
+                className="w-full mt-2 bg-slate-100 text-slate-900 hover:bg-slate-200 font-bold py-7 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 active:scale-95 shadow-xl"
+              >
+                <a href="/eficacia-extension.zip" download className="flex items-center justify-center w-full gap-3">
+                  <Download className="w-6 h-6 shrink-0" />
+                  <span className="text-base">Descargar Extensión (.zip)</span>
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* ⚠️ Riesgos y Buenas Prácticas — 3 rectángulos */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Tarjeta 1 – Versión Actual */}
-            <Card className="border-slate-800 bg-slate-900/40">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs uppercase tracking-wider text-slate-500">Versión Actual</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold text-slate-200">EficacIA MegaFix</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v2 · Actualizada</span>
-                </div>
-                <p className="text-[11px] text-slate-500">Motor anti-bot · Hasta 999 leads/sesión · Scroll inteligente</p>
-                <Button asChild size="sm" className="w-full bg-slate-100 text-slate-900 hover:bg-slate-200 font-bold gap-2">
-                  <a href="/eficacia-extension.zip" download className="flex items-center justify-center gap-2">
-                    <Download className="w-4 h-4 shrink-0" />
-                    Descargar .zip
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                <p className="text-sm font-bold text-amber-300">Superimportante</p>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed">Mantén el ordenador encendido y la pestaña de <strong className="text-white">LinkedIn / Apollo abierta y visible</strong> durante toda la extracción.</p>
+            </div>
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                <p className="text-sm font-bold text-amber-300">Límite recomendado</p>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed">No superes los <strong className="text-white">500 prospectos</strong> de golpe en una sola campaña. Usa los botones predefinidos (10, 50, 100…) para campañas más seguras.</p>
+            </div>
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                <p className="text-sm font-bold text-amber-300">Ventana activa</p>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed">Arranca la extensión y ve a otra ventana de Chrome, pero <strong className="text-white">no minimices</strong> la ventana de la extensión mientras está en marcha.</p>
+            </div>
+          </div>
 
-            {/* Tarjeta 2 – Estado de Conexión */}
-            <Card className="border-slate-800 bg-slate-900/40">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs uppercase tracking-wider text-slate-500">Estado de Conexión</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {apiKey ? (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                    <span className="text-sm font-semibold text-emerald-400">Sincronizado</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
-                    <span className="text-sm font-semibold text-amber-400">Sin token generado</span>
-                  </div>
-                )}
-                <p className="text-[11px] text-slate-500">
-                  {apiKey
-                    ? "Tu extensión puede comunicarse con el servidor de EficacIA."
-                    : "Genera un token en la sección inferior para vincular la extensión."}
-                </p>
-                {!apiKey && (
-                  <Button size="sm" onClick={generateApiKey} disabled={isLoadingKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2">
-                    {isLoadingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                    Generar Token
+          {/* Token de Conexión */}
+          <Card className="border-slate-800 bg-slate-900/40">
+            <CardHeader>
+              <CardTitle className="text-base font-bold text-slate-200">Token de Conexión (API Key)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-base text-slate-400 leading-relaxed">Genera y utiliza este token permanente en la extensión para vincular tu cuenta.</p>
+              {isLoadingKey ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+                </div>
+              ) : apiKey ? (
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    type="password"
+                    value={apiKey}
+                    className="bg-slate-950 border-slate-800 font-mono text-sm text-slate-400"
+                  />
+                  <Button variant="outline" onClick={() => navigator.clipboard.writeText(apiKey)}>
+                    Copiar
                   </Button>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Tarjeta 3 – Riesgos y Buenas Prácticas */}
-            <Card className="border-amber-500/30 bg-amber-500/5">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  Riesgos y Buenas Prácticas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
-                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
-                    <span><strong className="text-amber-300">Superimportante:</strong> Mantén el ordenador encendido y la pestaña de LinkedIn/Apollo abierta y visible.</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
-                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
-                    <span>No superes los <strong className="text-amber-300">500 prospectos</strong> de golpe en una sola campaña.</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
-                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
-                    <span>Arranca la extensión y ve a otra ventana de Chrome, pero <strong className="text-amber-300">no minimices</strong> la ventana de la extensión.</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
-                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
-                    <span>Usa los botones predefinidos (10, 50, 100…) para campañas más seguras.</span>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="border-slate-800 bg-slate-900/40">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Guía de Instalación</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">1</div>
-                  <p className="text-sm text-slate-300">Descarga la extensión comprimida (.zip) usando el botón de abajo.</p>
                 </div>
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">2</div>
-                  <p className="text-sm text-slate-300">Ve a <code className="bg-slate-950 px-1 py-0.5 rounded text-blue-400">chrome://extensions</code> y activa el "Modo Desarrollador".</p>
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">3</div>
-                  <p className="text-sm text-slate-300">Haz clic en "Cargar descomprimido" y selecciona la carpeta de la extensión extraída.</p>
-                </div>
-                
-                <Button 
-                  asChild
-                  className="w-full mt-4 bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 font-bold py-7 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 active:scale-95 shadow-xl"
-                >
-                  <a href="/eficacia-extension.zip" download className="flex items-center justify-center w-full gap-3">
-                    <Download className="w-6 h-6 shrink-0" />
-                    <span className="text-base">Descargar Extensión (.zip)</span>
-                  </a>
+              ) : (
+                <Button onClick={generateApiKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2 py-6 text-base">
+                  <Plus className="w-5 h-5" /> Generar Token de Conexión
                 </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-800 bg-slate-900/40">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-wider text-slate-500">Token de Conexión (API Key)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-slate-400">Genera y utiliza este token permanente en la extensión para vincular tu cuenta.</p>
-                {isLoadingKey ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
-                  </div>
-                ) : apiKey ? (
-                   <div className="flex gap-2">
-                     <Input 
-                       readOnly 
-                       type="password"
-                       value={apiKey} 
-                       className="bg-slate-950 border-slate-800 font-mono text-xs text-slate-500"
-                     />
-                     <Button 
-                       variant="outline"
-                       onClick={() => navigator.clipboard.writeText(apiKey)}
-                     >
-                       Copiar
-                     </Button>
-                   </div>
-                ) : (
-                   <Button onClick={generateApiKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2">
-                     <Plus className="w-4 h-4" /> Generar Token de Conexión
-                   </Button>
-                )}
-                <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  Este token es permanente y seguro. No lo compartas con nadie.
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              )}
+              <div className="p-4 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-sm text-emerald-400 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                Este token es permanente y seguro. No lo compartas con nadie.
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Zona inferior: Video + Guía Paso a Paso */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -602,53 +540,53 @@ export default function SettingsPage() {
               <div className="space-y-4">
 
                 {/* Paso 1 */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                    <p className="text-sm font-semibold text-slate-200">Descarga el archivo ZIP</p>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">1</span>
+                    <p className="text-base font-bold text-white">Descarga el archivo ZIP</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-8">Haz clic en el botón "Descargar Extensión" en el dashboard. Guarda el archivo <code className="bg-slate-950 px-1 rounded text-blue-400">.zip</code> en tu ordenador y descomprímelo (extrae el contenido en una carpeta).</p>
-                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 1</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Pulsa el botón <strong className="text-white">"Descargar Extensión"</strong> que hay más arriba. Se descargará un archivo <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">.zip</code>. Una vez descargado, <strong className="text-white">descomprímelo</strong> haciendo doble clic (Mac) o clic derecho → "Extraer todo" (Windows). Obtendrás una carpeta con todos los archivos de la extensión.</p>
+                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 1</div>
                 </div>
 
                 {/* Paso 2 */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">2</span>
-                    <p className="text-sm font-semibold text-slate-200">Abre el gestor de extensiones</p>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">2</span>
+                    <p className="text-base font-bold text-white">Abre el gestor de extensiones de Chrome</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-8">En Chrome, haz clic en el icono del puzle 🧩 (arriba a la derecha) y selecciona "Gestionar extensiones". O escribe <code className="bg-slate-950 px-1 rounded text-blue-400">chrome://extensions</code> en la barra de direcciones.</p>
-                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 2</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">En Chrome, haz clic en el icono del puzle 🧩 <strong className="text-white">(arriba a la derecha)</strong> y selecciona <strong className="text-white">"Gestionar extensiones"</strong>. También puedes escribir directamente <code className="bg-slate-950 px-1.5 py-0.5 rounded text-blue-400">chrome://extensions</code> en la barra de direcciones y pulsar Enter.</p>
+                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 2</div>
                 </div>
 
                 {/* Paso 3 */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">3</span>
-                    <p className="text-sm font-semibold text-slate-200">Activa el Modo Desarrollador</p>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">3</span>
+                    <p className="text-base font-bold text-white">Activa el Modo Desarrollador</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-8">En la esquina superior derecha de la página de extensiones, activa el interruptor que dice "Modo de desarrollador".</p>
-                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 3</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">En la página de extensiones, mira la <strong className="text-white">esquina superior derecha</strong>. Verás un interruptor con el texto <strong className="text-white">"Modo de desarrollador"</strong>. Actívalo — el interruptor se pondrá azul. Esto desbloquea la instalación de extensiones no publicadas en la Chrome Web Store.</p>
+                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 3</div>
                 </div>
 
                 {/* Paso 4 */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">4</span>
-                    <p className="text-sm font-semibold text-slate-200">Carga la extensión</p>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">4</span>
+                    <p className="text-base font-bold text-white">Carga la extensión arrastrando la carpeta</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-8">Arrastra la carpeta que descomprimiste en el Paso 1 y suéltala en cualquier lugar de la página de extensiones. Verás que aparece <strong className="text-slate-300">EficacIA MegaFix</strong>.</p>
-                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 4</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12"><strong className="text-white">Arrastra la carpeta</strong> que descomprimiste en el Paso 1 y <strong className="text-white">suéltala</strong> en cualquier parte de la página de extensiones de Chrome. En pocos segundos aparecerá la tarjeta de <strong className="text-violet-300">EficacIA MegaFix</strong> instalada y lista.</p>
+                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 4</div>
                 </div>
 
                 {/* Paso 5 */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">5</span>
-                    <p className="text-sm font-semibold text-slate-200">Fija la extensión para usarla</p>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-full bg-violet-500/20 text-violet-300 text-base font-bold flex items-center justify-center shrink-0">5</span>
+                    <p className="text-base font-bold text-white">Fija la extensión en la barra de herramientas</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 pl-8">Vuelve a hacer clic en el icono del puzle 🧩. Busca "EficacIA MegaFix" y haz clic en el icono del pin 📌 para que se vuelva azul y el logo aparezca siempre en tu barra de herramientas.</p>
-                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 5</div>
+                  <p className="text-sm text-slate-300 leading-relaxed pl-12">Vuelve a hacer clic en el icono del puzle 🧩. Busca <strong className="text-white">"EficacIA MegaFix"</strong> en la lista y haz clic en el <strong className="text-white">icono del pin 📌</strong> para que se vuelva azul. A partir de ahora, el logo de EficacIA aparecerá siempre visible en tu barra de herramientas de Chrome, listo para usar.</p>
+                  <div className="ml-12 bg-slate-800/60 aspect-video rounded-lg flex items-center justify-center text-slate-500 text-sm border border-slate-700">Captura Paso 5</div>
                 </div>
 
               </div>
