@@ -511,6 +511,24 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Video Tutorial de Instalación */}
+          <div className="relative rounded-2xl p-[2px] bg-gradient-to-r from-violet-500 via-purple-500 to-blue-500 shadow-[0_0_40px_rgba(139,92,246,0.5),0_0_80px_rgba(139,92,246,0.2)]">
+            <div className="rounded-2xl bg-slate-950 p-5">
+              <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-4 text-center flex items-center justify-center gap-2">
+                <span>🎬</span> Tutorial de Instalación
+              </p>
+              <div className="relative w-full overflow-hidden rounded-xl" style={{ paddingBottom: "56.25%" }}>
+                <iframe
+                  src="https://drive.google.com/file/d/1dwNWlL54lqUhJHMvJRX60q7QRDklJV8Y/preview"
+                  className="absolute inset-0 w-full h-full rounded-xl"
+                  allow="autoplay"
+                  allowFullScreen
+                  title="Tutorial de instalación de la extensión Eficacia"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
