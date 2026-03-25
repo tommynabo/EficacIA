@@ -419,28 +419,87 @@ export default function SettingsPage() {
             </CardHeader>
           </Card>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-lg mt-0.5">🚀</span>
-              <div>
-                <p className="text-xs font-bold text-slate-200">Hasta 999 leads</p>
-                <p className="text-[11px] text-slate-500">Por sesión de extracción</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-lg mt-0.5">🛡️</span>
-              <div>
-                <p className="text-xs font-bold text-slate-200">Motor anti-bot</p>
-                <p className="text-[11px] text-slate-500">Cooldown y jitter humano</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-lg mt-0.5">🖱️</span>
-              <div>
-                <p className="text-xs font-bold text-slate-200">Scroll inteligente</p>
-                <p className="text-[11px] text-slate-500">Lazy-loading garantizado</p>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Tarjeta 1 – Versión Actual */}
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs uppercase tracking-wider text-slate-500">Versión Actual</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-bold text-slate-200">EficacIA MegaFix</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v2 · Actualizada</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Motor anti-bot · Hasta 999 leads/sesión · Scroll inteligente</p>
+                <Button asChild size="sm" className="w-full bg-slate-100 text-slate-900 hover:bg-slate-200 font-bold gap-2">
+                  <a href="/eficacia-extension.zip" download className="flex items-center justify-center gap-2">
+                    <Download className="w-4 h-4 shrink-0" />
+                    Descargar .zip
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Tarjeta 2 – Estado de Conexión */}
+            <Card className="border-slate-800 bg-slate-900/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs uppercase tracking-wider text-slate-500">Estado de Conexión</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {apiKey ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span className="text-sm font-semibold text-emerald-400">Sincronizado</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                    <span className="text-sm font-semibold text-amber-400">Sin token generado</span>
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500">
+                  {apiKey
+                    ? "Tu extensión puede comunicarse con el servidor de EficacIA."
+                    : "Genera un token en la sección inferior para vincular la extensión."}
+                </p>
+                {!apiKey && (
+                  <Button size="sm" onClick={generateApiKey} disabled={isLoadingKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2">
+                    {isLoadingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    Generar Token
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Tarjeta 3 – Riesgos y Buenas Prácticas */}
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Riesgos y Buenas Prácticas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
+                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                    <span><strong className="text-amber-300">Superimportante:</strong> Mantén el ordenador encendido y la pestaña de LinkedIn/Apollo abierta y visible.</span>
+                  </li>
+                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
+                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                    <span>No superes los <strong className="text-amber-300">500 prospectos</strong> de golpe en una sola campaña.</span>
+                  </li>
+                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
+                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                    <span>Arranca la extensión y ve a otra ventana de Chrome, pero <strong className="text-amber-300">no minimices</strong> la ventana de la extensión.</span>
+                  </li>
+                  <li className="flex items-start gap-2 text-[11px] text-slate-300">
+                    <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                    <span>Usa los botones predefinidos (10, 50, 100…) para campañas más seguras.</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -512,22 +571,89 @@ export default function SettingsPage() {
             </Card>
           </div>
 
-          {/* Video Tutorial de Instalación */}
-          <div className="relative rounded-2xl p-[2px] bg-gradient-to-r from-violet-500 via-purple-500 to-blue-500 shadow-[0_0_40px_rgba(139,92,246,0.5),0_0_80px_rgba(139,92,246,0.2)]">
-            <div className="rounded-2xl bg-slate-950 p-5">
-              <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-4 text-center flex items-center justify-center gap-2">
-                <span>🎬</span> Tutorial de Instalación
-              </p>
-              <div className="relative w-full overflow-hidden rounded-xl" style={{ paddingBottom: "56.25%" }}>
-                <iframe
-                  src="https://drive.google.com/file/d/1dwNWlL54lqUhJHMvJRX60q7QRDklJV8Y/preview"
-                  className="absolute inset-0 w-full h-full rounded-xl"
-                  allow="autoplay"
-                  allowFullScreen
-                  title="Tutorial de instalación de la extensión Eficacia"
-                />
+          {/* Zona inferior: Video + Guía Paso a Paso */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            {/* Columna Izquierda – Video Tutorial */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <span>🎬</span> Guía de Instalación en Video
+              </h3>
+              <div className="relative rounded-2xl p-[2px] bg-gradient-to-r from-violet-500 via-purple-500 to-blue-500 shadow-[0_0_40px_rgba(139,92,246,0.5),0_0_80px_rgba(139,92,246,0.2)]">
+                <div className="rounded-2xl bg-slate-950 p-3">
+                  <div className="aspect-video w-full overflow-hidden rounded-xl">
+                    <iframe
+                      src="https://drive.google.com/file/d/1dwNWlL54lqUhJHMvJRX60q7QRDklJV8Y/preview"
+                      className="w-full h-full rounded-xl"
+                      allow="autoplay"
+                      allowFullScreen
+                      title="Tutorial de instalación de la extensión Eficacia"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Columna Derecha – Paso a Paso Visual */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <span>📋</span> Paso a Paso Visual
+              </h3>
+              <div className="space-y-4">
+
+                {/* Paso 1 */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                    <p className="text-sm font-semibold text-slate-200">Descarga el archivo ZIP</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-8">Haz clic en el botón "Descargar Extensión" en el dashboard. Guarda el archivo <code className="bg-slate-950 px-1 rounded text-blue-400">.zip</code> en tu ordenador y descomprímelo (extrae el contenido en una carpeta).</p>
+                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 1</div>
+                </div>
+
+                {/* Paso 2 */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                    <p className="text-sm font-semibold text-slate-200">Abre el gestor de extensiones</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-8">En Chrome, haz clic en el icono del puzle 🧩 (arriba a la derecha) y selecciona "Gestionar extensiones". O escribe <code className="bg-slate-950 px-1 rounded text-blue-400">chrome://extensions</code> en la barra de direcciones.</p>
+                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 2</div>
+                </div>
+
+                {/* Paso 3 */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                    <p className="text-sm font-semibold text-slate-200">Activa el Modo Desarrollador</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-8">En la esquina superior derecha de la página de extensiones, activa el interruptor que dice "Modo de desarrollador".</p>
+                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 3</div>
+                </div>
+
+                {/* Paso 4 */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">4</span>
+                    <p className="text-sm font-semibold text-slate-200">Carga la extensión</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-8">Arrastra la carpeta que descomprimiste en el Paso 1 y suéltala en cualquier lugar de la página de extensiones. Verás que aparece <strong className="text-slate-300">EficacIA MegaFix</strong>.</p>
+                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 4</div>
+                </div>
+
+                {/* Paso 5 */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 text-xs font-bold flex items-center justify-center shrink-0">5</span>
+                    <p className="text-sm font-semibold text-slate-200">Fija la extensión para usarla</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-8">Vuelve a hacer clic en el icono del puzle 🧩. Busca "EficacIA MegaFix" y haz clic en el icono del pin 📌 para que se vuelva azul y el logo aparezca siempre en tu barra de herramientas.</p>
+                  <div className="ml-8 bg-slate-800/50 aspect-video rounded-lg flex items-center justify-center text-slate-600 text-xs">Captura Paso 5</div>
+                </div>
+
+              </div>
+            </div>
+
           </div>
         </div>
       )}
