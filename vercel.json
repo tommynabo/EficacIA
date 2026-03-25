@@ -30,10 +30,6 @@
     {
       "path": "/api/linkedin/invitations/withdraw",
       "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/temperature-analysis",
-      "schedule": "0 */10 * * *"
     }
   ],
   "rewrites": [

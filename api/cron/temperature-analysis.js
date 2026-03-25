@@ -42,11 +42,12 @@ function unipileBase() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export default async function handler(req, res) {
-  // ── Security: Vercel sends CRON_SECRET as a Bearer token ────────────
+  // ── Security: accept CRON_SECRET as Bearer token or x-cron-secret header ────
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
-    const auth = req.headers.authorization || '';
-    if (auth !== `Bearer ${cronSecret}`) {
+    const bearer = (req.headers.authorization || '').replace('Bearer ', '');
+    const header = req.headers['x-cron-secret'] || '';
+    if (bearer !== cronSecret && header !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
