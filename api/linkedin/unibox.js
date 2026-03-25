@@ -37,6 +37,15 @@ function unipileBase() {
   return `https://${(process.env.UNIPILE_DSN || '').trim()}`;
 }
 
+const ANALYSIS_PROMPT =
+  "Analiza el sentimiento de esta conversación de ventas en LinkedIn. " +
+  "Responde ÚNICAMENTE con una palabra: " +
+  "'hot' (si quiere agendar o pide info), " +
+  "'warm' (si responde pero tiene dudas) o " +
+  "'cold' (si no responde o no le interesa).\n\nConversación:\n{MESSAGES}";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default async function handler(req, res) {
   // 1. CORS obligatorio siempre
   setCors(res);
@@ -47,6 +56,146 @@ export default async function handler(req, res) {
   }
 
   try {
+    const action = req.query.action;
+
+    // ─── CRON: batch temperature analysis (CRON_SECRET auth, no user session) ──
+    if (req.method === 'GET' && action === 'cron_analyze') {
+      const cronSecret = process.env.CRON_SECRET;
+      if (cronSecret) {
+        const bearer = (req.headers.authorization || '').replace('Bearer ', '');
+        const cronHeader = req.headers['x-cron-secret'] || '';
+        if (bearer !== cronSecret && cronHeader !== cronSecret) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+      }
+
+      const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+      if (!anthropicKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+
+      const cronDsn = (process.env.UNIPILE_DSN || '').trim();
+      const cronApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+      if (!cronDsn || !cronApiKey) return res.status(500).json({ error: 'Unipile not configured' });
+
+      const nineHoursAgo = new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString();
+      let totalProcessed = 0;
+      let totalErrors = 0;
+
+      const { data: accounts, error: accErr } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('id, team_id, unipile_account_id')
+        .eq('is_valid', true)
+        .not('unipile_account_id', 'is', null);
+
+      if (accErr) return res.status(500).json({ error: accErr.message });
+      if (!accounts || accounts.length === 0) {
+        return res.status(200).json({ processed: 0, message: 'No valid accounts found' });
+      }
+
+      const { data: leadsToAnalyse } = await supabaseAdmin
+        .from('leads')
+        .select('id, team_id, unipile_id, last_analysis_at')
+        .not('unipile_id', 'is', null)
+        .or(`last_analysis_at.is.null,last_analysis_at.lt.${nineHoursAgo}`);
+
+      if (!leadsToAnalyse || leadsToAnalyse.length === 0) {
+        return res.status(200).json({ processed: 0, message: 'All leads are up-to-date' });
+      }
+
+      const leadByProvider = new Map(
+        leadsToAnalyse.map((l) => [l.unipile_id.toLowerCase(), l])
+      );
+      const accountByTeam = new Map();
+      for (const acc of accounts) {
+        if (!accountByTeam.has(acc.team_id)) accountByTeam.set(acc.team_id, acc);
+      }
+
+      for (const [, acc] of accountByTeam.entries()) {
+        try {
+          const chatsRes = await fetch(
+            `${unipileBase()}/api/v1/chats?account_id=${acc.unipile_account_id}&limit=30`,
+            { headers: unipileHeaders() }
+          );
+          if (!chatsRes.ok) continue;
+          const chatsData = await chatsRes.json();
+          const chatItems = chatsData.items || chatsData.chats || [];
+
+          const BATCH = 5;
+          for (let i = 0; i < chatItems.length; i += BATCH) {
+            const batch = chatItems.slice(i, i + BATCH);
+            await Promise.all(batch.map(async (chat) => {
+              try {
+                const attRes = await fetch(
+                  `${unipileBase()}/api/v1/chats/${chat.id}/attendees`,
+                  { headers: unipileHeaders() }
+                );
+                if (!attRes.ok) return;
+                const attData = await attRes.json();
+                const attendees = attData.items || attData.attendees || attData || [];
+                const other = attendees.find((a) => !a.is_self) || attendees[0];
+                if (!other) return;
+                const providerId = (other.provider_id || other.id || '').toLowerCase();
+                if (!providerId) return;
+                const lead = leadByProvider.get(providerId);
+                if (!lead) return;
+
+                const msgsRes = await fetch(
+                  `${unipileBase()}/api/v1/chats/${chat.id}/messages?limit=10`,
+                  { headers: unipileHeaders() }
+                );
+                if (!msgsRes.ok) return;
+                const msgsData = await msgsRes.json();
+                const messages = (msgsData.items || msgsData.messages || []).reverse();
+                if (messages.length === 0) return;
+
+                const conversationText = messages.map((m) => {
+                  const dir = String(m.is_sender) === 'true' || m.is_sender === 1 ? 'Yo' : 'Contacto';
+                  return `${dir}: ${(m.text || '[adjunto]').substring(0, 200)}`;
+                }).join('\n');
+
+                const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': anthropicKey,
+                    'anthropic-version': '2023-06-01',
+                  },
+                  body: JSON.stringify({
+                    model: 'claude-3-haiku-20240307',
+                    max_tokens: 5,
+                    messages: [{ role: 'user', content: ANALYSIS_PROMPT.replace('{MESSAGES}', conversationText) }],
+                  }),
+                });
+                if (!aiRes.ok) return;
+                const aiData = await aiRes.json();
+                const rawTemp = (aiData.content?.[0]?.text || '').trim().toLowerCase();
+                const temperature = ['hot', 'warm', 'cold'].includes(rawTemp) ? rawTemp : 'cold';
+
+                await supabaseAdmin.from('leads').update({
+                  conversation_temperature: temperature,
+                  last_analysis_at: new Date().toISOString(),
+                }).eq('id', lead.id);
+
+                totalProcessed++;
+              } catch (e) {
+                console.error(`[CRON][temperature] chat ${chat.id}:`, e.message);
+                totalErrors++;
+              }
+            }));
+            if (i + BATCH < chatItems.length) await sleep(500);
+          }
+        } catch (e) {
+          console.error(`[CRON][temperature] account ${acc.unipile_account_id}:`, e.message);
+          totalErrors++;
+        }
+      }
+
+      return res.status(200).json({
+        processed: totalProcessed,
+        errors: totalErrors,
+        leads_eligible: leadsToAnalyse.length,
+      });
+    }
+
     // 3. Autenticación centralizada
     const user = await getAuthUser(req);
     if (!user) {
@@ -57,7 +206,6 @@ export default async function handler(req, res) {
     const teamId = await getTeamId(userId);
     if (!teamId) return res.status(403).json({ error: 'Equipo no encontrado' });
 
-    const action = req.query.action;
     const dsn = (process.env.UNIPILE_DSN || '').trim();
     const apiKey = (process.env.UNIPILE_API_KEY || '').trim();
 
