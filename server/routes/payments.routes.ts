@@ -13,23 +13,31 @@ const stripe = new Stripe(config.STRIPE_SECRET_KEY)
 const PLANS = {
   starter: {
     name: 'Starter',
-    priceId: 'price_1T6w3Y2dSOGFvDre1P8c2t4L', // €49.99/mes
-    price: 4999,
+    priceId: process.env.STRIPE_PRO_MONTHLY || 'price_1TDRVbBYhY8BKBRPHIhLMgv4', // €42/mes
+    price: 4200,
     currency: 'eur',
     features: ['Hasta 500 leads/mes', 'Búsqueda en LinkedIn', '1 campaña activa', 'Soporte por email'],
     trial_days: 7,
   },
-  pro: {
-    name: 'Pro',
-    priceId: 'price_1T6w3Z2dSOGFvDrePckW6jYJ', // €84.99/mes
-    price: 8499,
+  growth: {
+    name: 'Growth',
+    priceId: process.env.STRIPE_GROWTH_MONTHLY || 'price_1TDRVdBYhY8BKBRPJOp0oPxB', // €79/mes
+    price: 7900,
     currency: 'eur',
-    features: ['Leads ilimitados', 'Automatización completa', 'Campañas ilimitadas', 'API access', 'Soporte prioritario'],
+    features: ['Leads ilimitados', 'Automatización completa', 'Campañas ilimitadas', 'IA Assistant'],
+    trial_days: 7,
+  },
+  scale: {
+    name: 'Scale',
+    priceId: process.env.STRIPE_AGENCY_MONTHLY || 'price_1TDRVeBYhY8BKBRPp0bdTlp8', // €199/mes
+    price: 19900,
+    currency: 'eur',
+    features: ['10 cuentas LinkedIn', 'IA Ilimitada', 'Todo incluido', 'Account manager dedicado'],
     trial_days: 7,
   },
   starter_anual: {
     name: 'Starter Anual',
-    priceId: process.env.STRIPE_PRICE_STARTER_ANNUAL || 'price_starter_annual_placeholder', // €420/año
+    priceId: process.env.STRIPE_PRICE_STARTER_ANNUAL || 'price_1TDRVbBYhY8BKBRP8sPRbzGv', // €420/año
     price: 42000,
     currency: 'eur',
     features: ['Todo lo de Starter', 'Precio anual con descuento'],
@@ -37,7 +45,7 @@ const PLANS = {
   },
   growth_anual: {
     name: 'Growth Anual',
-    priceId: process.env.STRIPE_PRICE_GROWTH_ANNUAL || 'price_growth_annual_placeholder', // €790/año
+    priceId: process.env.STRIPE_PRICE_GROWTH_ANNUAL || 'price_1TDRVdBYhY8BKBRP92ZUzyvJ', // €790/año
     price: 79000,
     currency: 'eur',
     features: ['IA Ilimitada 1 año', 'Hasta 3 cuentas LinkedIn', 'Campañas ilimitadas', 'Soporte prioritario'],
@@ -45,7 +53,7 @@ const PLANS = {
   },
   scale_anual: {
     name: 'Scale Anual',
-    priceId: process.env.STRIPE_PRICE_SCALE_ANNUAL || 'price_scale_annual_placeholder', // €1990/año
+    priceId: process.env.STRIPE_PRICE_SCALE_ANNUAL || 'price_1TDRVeBYhY8BKBRP51zIUpEy', // €1990/año
     price: 199000,
     currency: 'eur',
     features: ['10 cuentas LinkedIn', 'IA Ilimitada', 'Todo incluido', 'Account manager dedicado'],
@@ -53,7 +61,7 @@ const PLANS = {
   },
   addon_account: {
     name: 'Cuenta LinkedIn Extra',
-    priceId: process.env.STRIPE_PRICE_ADDON_ACCOUNT || 'price_addon_account_placeholder', // €15/mes
+    priceId: process.env.STRIPE_PRICE_ADDON_ACCOUNT || 'price_1TFAQSBYhY8BKBRPAeDOPTTW', // €15/mes
     price: 1500,
     currency: 'eur',
     features: ['1 cuenta LinkedIn adicional'],
