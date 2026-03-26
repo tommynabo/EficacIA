@@ -4,7 +4,7 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt, Trash2, Pencil } from "lucide-react"
 import { useAuth } from "@/src/contexts/AuthContext"
 
 export default function SettingsPage() {
@@ -63,6 +63,14 @@ export default function SettingsPage() {
   const [unblockingId, setUnblockingId] = React.useState<string | null>(null)
   const [blockedMsg, setBlockedMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
+  // Message templates state
+  interface MessageTemplate { id: string; name: string; content: string }
+  const [templates, setTemplates] = React.useState<MessageTemplate[]>([])
+  const [newTemplateName, setNewTemplateName] = React.useState("")
+  const [newTemplateContent, setNewTemplateContent] = React.useState("")
+  const [editingTemplateId, setEditingTemplateId] = React.useState<string | null>(null)
+  const [templatesSaved, setTemplatesSaved] = React.useState(false)
+
   const token = () => localStorage.getItem("auth_token")
   const envUrl = import.meta.env.VITE_API_URL || ""
 
@@ -91,6 +99,13 @@ export default function SettingsPage() {
       } else {
         loadAiCredits()
       }
+    }
+    if (activeTab === "plantillas") {
+      // Load templates from localStorage
+      try {
+        const saved = localStorage.getItem("eficacia_templates")
+        if (saved) setTemplates(JSON.parse(saved))
+      } catch { /* silent */ }
     }
   }, [activeTab])
 
@@ -384,6 +399,7 @@ export default function SettingsPage() {
           { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
           { key: "credits", label: "Créditos IA" },
+          { key: "plantillas", label: "Plantillas" },
           { key: "afiliados", label: "Afiliados" },
         ].map(({ key, label, badge }) => (
           <button
@@ -1245,6 +1261,119 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ─── PLANTILLAS TAB ──────────────────────────────────────────── */}
+      {activeTab === "plantillas" && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-100">Plantillas de Mensajes</h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Crea plantillas reutilizables para insertar rápidamente en el Unibox al redactar respuestas.
+            </p>
+          </div>
+
+          {/* Create / Edit form */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {editingTemplateId ? "✏️ Editar plantilla" : "➕ Nueva plantilla"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Nombre de la plantilla</label>
+                <Input
+                  placeholder="Ej: Seguimiento 48h, Cierre de reunión..."
+                  value={newTemplateName}
+                  onChange={e => setNewTemplateName(e.target.value)}
+                  className="bg-slate-950 border-slate-700"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Contenido del mensaje</label>
+                <textarea
+                  rows={5}
+                  placeholder="Hola {{nombre}}, quería hacer seguimiento de nuestra conversación..."
+                  value={newTemplateContent}
+                  onChange={e => setNewTemplateContent(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+                />
+                <p className="text-xs text-slate-600 mt-1">Usa {"{{nombre}}"} para insertar el nombre del contacto.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    if (!newTemplateName.trim() || !newTemplateContent.trim()) return
+                    const updated = editingTemplateId
+                      ? templates.map(t => t.id === editingTemplateId ? { ...t, name: newTemplateName, content: newTemplateContent } : t)
+                      : [...templates, { id: crypto.randomUUID(), name: newTemplateName, content: newTemplateContent }]
+                    setTemplates(updated)
+                    localStorage.setItem("eficacia_templates", JSON.stringify(updated))
+                    setNewTemplateName("")
+                    setNewTemplateContent("")
+                    setEditingTemplateId(null)
+                    setTemplatesSaved(true)
+                    setTimeout(() => setTemplatesSaved(false), 2000)
+                  }}
+                  disabled={!newTemplateName.trim() || !newTemplateContent.trim()}
+                  className="gap-2"
+                >
+                  {editingTemplateId ? "Guardar cambios" : <><Plus className="w-4 h-4" /> Añadir plantilla</>}
+                </Button>
+                {editingTemplateId && (
+                  <Button variant="ghost" onClick={() => { setEditingTemplateId(null); setNewTemplateName(""); setNewTemplateContent("") }}>
+                    Cancelar
+                  </Button>
+                )}
+                {templatesSaved && <span className="text-xs text-emerald-400 self-center">✓ Guardado</span>}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Templates list */}
+          {templates.length === 0 ? (
+            <Card className="p-12 flex flex-col items-center justify-center gap-3 border-dashed border-slate-700 bg-slate-900/20">
+              <FileText className="w-10 h-10 text-slate-600" />
+              <p className="text-slate-400 text-sm">No hay plantillas todavía. Crea tu primera plantilla arriba.</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {templates.map(t => (
+                <Card key={t.id} className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-100 text-sm">{t.name}</p>
+                      <p className="text-xs text-slate-400 mt-1 line-clamp-2">{t.content}</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-slate-400 hover:text-slate-100"
+                        onClick={() => { setEditingTemplateId(t.id); setNewTemplateName(t.name); setNewTemplateContent(t.content) }}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                        onClick={() => {
+                          const updated = templates.filter(x => x.id !== t.id)
+                          setTemplates(updated)
+                          localStorage.setItem("eficacia_templates", JSON.stringify(updated))
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

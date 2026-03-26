@@ -4,11 +4,11 @@ import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, AlertCircle, Trash2, Loader, CheckCircle2, Monitor, X, Key, Linkedin, Zap, ShieldAlert } from "lucide-react"
+import { AlertCircle, Trash2, CheckCircle2, X, Linkedin, Zap, ShieldAlert, Loader } from "lucide-react"
 import ConnectLinkedInButton from "@/src/components/connect-linkedin-button"
 
-const RISK_THRESHOLD = 15 // acciones/hora — por encima de esto se muestra la advertencia
-const MAX_ACTIONS_LIMIT = 120
+const RISK_THRESHOLD = 15 // acciones/hora — límite máximo permitido
+const MAX_ACTIONS_LIMIT = 15
 
 // ─── Health Score ──────────────────────────────────────────────────────────────
 // Score 0-100: penalizes high send rate and pending invitations.
@@ -17,8 +17,10 @@ const PENALIZE_INVITATIONS_THRESHOLD = 50       // >50 pending = starts hurting 
 const PENALIZE_INVITATIONS_DANGER = 150         // >=150 pending = max penalty
 
 function calcHealthScore(actionsPerHour: number, pendingInvitations: number): number {
-  // Speed penalty: 0 at safe limit, max 50 points lost at MAX_ACTIONS_LIMIT
-  const speedRatio = Math.min(actionsPerHour, MAX_ACTIONS_LIMIT) / MAX_ACTIONS_LIMIT
+  // Speed penalty: 0 at or below safe limit, scales up only above it
+  const speedRatio = actionsPerHour <= SAFE_ACTIONS_LIMIT
+    ? 0
+    : Math.min(actionsPerHour - SAFE_ACTIONS_LIMIT, MAX_ACTIONS_LIMIT - SAFE_ACTIONS_LIMIT) / Math.max(MAX_ACTIONS_LIMIT - SAFE_ACTIONS_LIMIT, 1)
   const speedPenalty = Math.round(speedRatio * 50)
 
   // Invitation penalty: 0 below threshold, max 50 points lost at danger level
@@ -87,28 +89,11 @@ interface LinkedInAccount {
   withdraw_after_days: number
 }
 
-type SessionStatus = "idle" | "starting" | "open" | "connected" | "error"
-
-export default function AccountsPage() {
+interface LinkedInAccount {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
-
-  // Cloud Login state
-  const [sessionStatus, setSessionStatus] = React.useState<SessionStatus>("idle")
-  const [screenshot, setScreenshot] = React.useState<string | null>(null)
-  const [pageId, setPageId] = React.useState<string | null>(null)
-  const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
-  const viewerRef = React.useRef<HTMLDivElement>(null)
-  const imgRef = React.useRef<HTMLImageElement>(null)
-  const BROWSER_W = 1280
-  const BROWSER_H = 720
-
-  // Manual cookie state
-  const [showCookieForm, setShowCookieForm] = React.useState(false)
-  const [cookieValue, setCookieValue] = React.useState("")
-  const [cookieLoading, setCookieLoading] = React.useState(false)
 
   // Throttle control state
   const [throttleAccount, setThrottleAccount] = React.useState<LinkedInAccount | null>(null)
@@ -198,10 +183,6 @@ export default function AccountsPage() {
       syncUnipileAccounts()
     })
   }, [])
-  React.useEffect(() => {
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
-  }, [])
-
   // Detectar retorno desde Unipile (?unipile=success en la URL)
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -212,127 +193,6 @@ export default function AccountsPage() {
       syncUnipileAccounts()
     }
   }, [])
-
-  const startCloudLogin = async () => {
-    try {
-      setSessionStatus("starting")
-      setError(null)
-      setSuccess(null)
-
-      const token = localStorage.getItem("auth_token")
-      const response = await fetch("/api/linkedin/browser-session", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        const msg = data.error || `Error ${response.status} al iniciar sesión`
-        setSessionStatus("error")
-        setError(`No se pudo abrir el navegador: ${msg}`)
-        return
-      }
-
-      setPageId(data.pageId)
-      setSessionStatus("open")
-      startPolling(data.pageId)
-    } catch (err) {
-      setSessionStatus("error")
-      setError(err instanceof Error ? `Error de red: ${err.message}` : "Error desconocido")
-    }
-  }
-
-  const startPolling = (pid: string) => {
-    if (pollingRef.current) clearInterval(pollingRef.current)
-    let pollCount = 0
-    const MAX_POLLS = 30 // ~36 seconds before giving up
-
-    pollingRef.current = setInterval(async () => {
-      pollCount++
-      try {
-        const token = localStorage.getItem("auth_token")
-        const res = await fetch(`/api/linkedin/browser-session?pageId=${pid}&_=${Date.now()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
-        if (data.image) {
-          setScreenshot(data.image)
-          pollCount = 0 // reset timeout when we get a screenshot
-        }
-        if (data.status === "connected") {
-          clearInterval(pollingRef.current!)
-          pollingRef.current = null
-          setSessionStatus("connected")
-          setSuccess(data.message || "✓ Cuenta conectada exitosamente")
-          setScreenshot(null)
-          setPageId(null)
-          await fetchAccounts()
-        } else if (!res.ok && pollCount > 5) {
-          // After 5 consecutive errors, abort
-          clearInterval(pollingRef.current!)
-          pollingRef.current = null
-          setSessionStatus("error")
-          setError(`El navegador en la nube no responde: ${data.error || `HTTP ${res.status}`}. Prueba "Conectar por cookie" como alternativa.`)
-          setScreenshot(null)
-          setPageId(null)
-        }
-      } catch { /* ignorar errores de red transitorios */ }
-
-      // If we've been polling too long without a screenshot, suggest manual
-      if (pollCount >= MAX_POLLS) {
-        clearInterval(pollingRef.current!)
-        pollingRef.current = null
-        setSessionStatus("error")
-        setError("El navegador en la nube tardó demasiado. Usa 'Conectar por cookie' para conectar tu cuenta directamente.")
-        setScreenshot(null)
-        setPageId(null)
-      }
-    }, 1200)
-  }
-
-  const closeModal = async () => {
-    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
-    if (pageId) {
-      try {
-        const token = localStorage.getItem("auth_token")
-        await fetch("/api/linkedin/browser-session", {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ pageId }),
-        })
-      } catch { /* ignorar */ }
-    }
-    setSessionStatus("idle")
-    setScreenshot(null)
-    setPageId(null)
-  }
-
-  const sendInput = (body: object) => {
-    const token = localStorage.getItem("auth_token")
-    fetch("/api/linkedin/browser-session", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch(() => { })
-  }
-
-  const handleImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    viewerRef.current?.focus()
-    if (!imgRef.current || !pageId) return
-    const rect = imgRef.current.getBoundingClientRect()
-    const x = Math.round((e.clientX - rect.left) * (BROWSER_W / rect.width))
-    const y = Math.round((e.clientY - rect.top) * (BROWSER_H / rect.height))
-    sendInput({ action: "input", type: "click", pageId, x, y })
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    e.preventDefault()
-    if (!pageId) return
-    if (e.key === "Enter") sendInput({ action: "input", type: "key", pageId, key: "Return", keyCode: 13 })
-    else if (e.key === "Tab") sendInput({ action: "input", type: "key", pageId, key: "Tab", keyCode: 9 })
-    else if (e.key === "Backspace") sendInput({ action: "input", type: "key", pageId, key: "Backspace", keyCode: 8 })
-    else if (e.key === "Escape") sendInput({ action: "input", type: "key", pageId, key: "Escape", keyCode: 27 })
-    else if (e.key.length === 1) sendInput({ action: "input", type: "text", pageId, text: e.key })
-  }
 
   const handleDisconnect = async (accountId: string) => {
     if (!confirm("¿Desconectar esta cuenta?")) return
@@ -392,40 +252,6 @@ export default function AccountsPage() {
     }
   }
 
-  const submitCookieManually = async (e: React.FormEvent) => {    e.preventDefault()
-    const val = cookieValue.trim()
-    if (!val) return
-    try {
-      setCookieLoading(true)
-      setError(null)
-      const token = localStorage.getItem("auth_token")
-      const response = await fetch("/api/linkedin/accounts", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ li_at: val }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        if (data.error === 'PLAN_LIMIT_REACHED') {
-          setShowCookieForm(false)
-          setCookieValue("")
-          setShowPlanLimitModal(true)
-          return
-        }
-        throw new Error(data.error || "Error al conectar")
-      }
-      setSuccess(data.message || "✓ Cuenta conectada")
-      setShowCookieForm(false)
-      setCookieValue("")
-      await fetchAccounts()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido")
-    } finally {
-      setCookieLoading(false)
-    }
-  }
-
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -434,29 +260,12 @@ export default function AccountsPage() {
           <p className="text-slate-400">Conecta tu cuenta LinkedIn. El sistema captura la sesión automáticamente.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => { setShowCookieForm(true); setError(null) }}
-            className="gap-1.5 text-slate-400 hover:text-slate-200 text-xs"
-          >
-            <Key className="w-3.5 h-3.5" /> Conectar por cookie
-          </Button>
           <ConnectLinkedInButton
             onSuccess={() => {
               setSuccess("Enlace generado. Completa el login en la pestaña abierta.")
             }}
             onError={(msg) => setError(msg)}
           />
-          <Button
-            onClick={startCloudLogin}
-            disabled={sessionStatus === "starting" || sessionStatus === "open"}
-            className="gap-2"
-          >
-            {sessionStatus === "starting"
-              ? <><Loader className="w-4 h-4 animate-spin" /> Iniciando...</>
-              : <><Plus className="w-4 h-4" /> Cloud Login</>}
-          </Button>
         </div>
       </div>
 
@@ -631,23 +440,18 @@ export default function AccountsPage() {
                   }}
                 />
                 <div className="flex justify-between text-xs text-slate-600">
-                  <span>1 — Seguro</span>
-                  <span className="text-amber-500/70">{RISK_THRESHOLD} — Límite recomendado</span>
-                  <span className="text-red-500/70">{MAX_ACTIONS_LIMIT}</span>
+                  <span>1 — Mínimo</span>
+                  <span className="text-emerald-500/70">15 — Máximo seguro</span>
                 </div>
               </div>
 
               {/* Indicador de nivel de riesgo */}
               <div className={`flex items-start gap-2 rounded-lg p-3 border text-xs ${
-                throttleValue > RISK_THRESHOLD
-                  ? "bg-red-500/10 border-red-500/30 text-red-400"
-                  : throttleValue > 8
+                throttleValue > 10
                   ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
                   : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
               }`}>
-                {throttleValue > RISK_THRESHOLD
-                  ? <><ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span><strong>Peligroso</strong> — Por encima de {RISK_THRESHOLD}/hr, LinkedIn puede detectar actividad automatizada y suspender tu cuenta.</span></>
-                  : throttleValue > 8
+                {throttleValue > 10
                   ? <><Zap className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span><strong>Moderado</strong> — Velocidad razonable. Monitorea la actividad de tu cuenta.</span></>
                   : <><CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span><strong>Conservador</strong> — Muy seguro. Comportamiento similar al humano.</span></>
                 }
@@ -715,58 +519,6 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* Modal: conectar por cookie manual */}
-      {showCookieForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-blue-400" />
-                <h3 className="font-semibold text-slate-100 text-sm">Conectar con cookie li_at</h3>
-              </div>
-              <button onClick={() => setShowCookieForm(false)} className="text-slate-400 hover:text-slate-200">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={submitCookieManually} className="p-5 space-y-4">
-              <div className="bg-slate-800/60 rounded-lg p-3 text-xs text-slate-400 space-y-1.5 border border-slate-700/50">
-                <p className="font-medium text-slate-300">Cómo obtener tu cookie li_at:</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Abre LinkedIn en tu navegador e inicia sesión</li>
-                  <li>Pulsa F12 → pestaña <span className="font-mono bg-slate-700 px-1 rounded">Application</span></li>
-                  <li>En el menú lateral: <span className="font-mono bg-slate-700 px-1 rounded">Cookies → https://www.linkedin.com</span></li>
-                  <li>Busca la cookie <span className="font-mono bg-slate-700 px-1 rounded">li_at</span> y copia su valor</li>
-                </ol>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Pega el valor de la cookie li_at:</label>
-                <textarea
-                  value={cookieValue}
-                  onChange={e => setCookieValue(e.target.value)}
-                  placeholder="AQEDARxxxxxx..."
-                  rows={3}
-                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none font-mono"
-                />
-              </div>
-              {error && (
-                <div className="flex items-start gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-              <div className="flex gap-2 justify-end">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setShowCookieForm(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" size="sm" disabled={cookieLoading || !cookieValue.trim()} className="gap-1.5">
-                  {cookieLoading ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Validando...</> : "Conectar cuenta"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Modal: límite de plan alcanzado */}
       {showPlanLimitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -811,68 +563,6 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* Overlay de viewer en pantalla completa */}
-      {(sessionStatus === "starting" || sessionStatus === "open") && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col bg-black select-none"
-          ref={viewerRef}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-          style={{ outline: "none" }}
-        >
-          {/* Barra superior */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-700 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
-                <Monitor className="w-3.5 h-3.5 text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-slate-100">Navegador seguro — LinkedIn</p>
-                <p className="text-xs text-slate-400">
-                  {sessionStatus === "starting"
-                    ? "Iniciando navegador en la nube..."
-                    : "Haz clic en el navegador y escribe — cerraremos esto cuando detectemos tu login"}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {sessionStatus === "open" && (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Detectando login...
-                </div>
-              )}
-              <button
-                onClick={closeModal}
-                className="w-7 h-7 rounded-full hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Área de screenshot */}
-          <div className="flex-1 flex items-center justify-center bg-black overflow-hidden">
-            {sessionStatus === "starting" || !screenshot ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader className="w-8 h-8 animate-spin text-blue-400" />
-                <p className="text-slate-400 text-sm">Iniciando navegador en la nube...</p>
-                <p className="text-slate-600 text-xs">Suele tardar 5-10 segundos</p>
-              </div>
-            ) : (
-              <img
-                ref={imgRef}
-                src={`data:image/jpeg;base64,${screenshot}`}
-                className="max-w-full max-h-full object-contain"
-                style={{ cursor: "crosshair" }}
-                onClick={handleImgClick}
-                draggable={false}
-                alt="LinkedIn browser"
-              />
-            )}
-          </div>
-        </div>
-      )}
 
     </div>
   )

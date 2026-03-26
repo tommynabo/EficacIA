@@ -26,7 +26,21 @@ import { getStripe, getSupabase } from '../_lib/stripe.js';
 export const config = { api: { bodyParser: false } };
 
 // Per-plan AI credit allocations — single source of truth for initial grants and renewals.
-const PLAN_CREDITS = { pro: 1000, growth: 2000, scale: 10000, scale_oferta: 10000 };
+// Use -1 as a sentinel for "unlimited" AI credits (growth_anual, scale, scale_oferta, scale_anual).
+const PLAN_CREDITS = {
+  pro:           1000,
+  growth:        2000,
+  growth_anual:  -1,    // Unlimited for 1 year
+  scale:         -1,    // Unlimited (10 accounts)
+  scale_oferta:  -1,
+  scale_anual:   -1,    // Unlimited annual
+  addon_account: 0,     // No credits — account slot add-on
+};
+
+/** Plans that grant unlimited AI credits */
+const UNLIMITED_CREDIT_PLANS = new Set(['growth_anual', 'scale', 'scale_oferta', 'scale_anual']);
+/** Plans that grant unlimited credits only for 1 year */
+const UNLIMITED_ONE_YEAR_PLANS = new Set(['growth_anual']);
 
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -162,15 +176,48 @@ export default async function handler(req, res) {
       if (userRecord) {
         const stripeCustomerId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
         const planKey = normalisePlan(plan);
-        const initialCredits = planKey !== null ? PLAN_CREDITS[planKey] : null;
+
+        // ── Add-on: extra LinkedIn account slot ────────────────────────────
+        if (planKey === 'addon_account') {
+          const { data: addonUser } = await supabase.from('users')
+            .select('id, max_linkedin_accounts').eq('id', userRecord.id).single();
+          const currentMax = typeof addonUser?.max_linkedin_accounts === 'number'
+            ? addonUser.max_linkedin_accounts : 1; // default 1 account on free/starter
+          await supabase.from('users')
+            .update({
+              max_linkedin_accounts: currentMax + 1,
+              ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
+            })
+            .eq('id', userRecord.id);
+          console.log(`[WEBHOOK] ✓ Add-on account slot granted → max_linkedin_accounts=${currentMax + 1} for user ${userRecord.id}`);
+          return res.status(200).json({ received: true });
+        }
+
+        // ── Unlimited AI credit plans ──────────────────────────────────────
+        const isUnlimited = planKey !== null && UNLIMITED_CREDIT_PLANS.has(planKey);
+        let creditFields = {};
+        if (isUnlimited) {
+          const expiresAt = UNLIMITED_ONE_YEAR_PLANS.has(planKey)
+            ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+            : null;
+          creditFields = {
+            ai_credits_unlimited: true,
+            ai_credits_unlimited_expires: expiresAt,
+          };
+          console.log(`[WEBHOOK] ✓ Plan '${planKey}' grants unlimited AI credits. Expires: ${expiresAt ?? 'never'}`);
+        } else {
+          const initialCredits = planKey !== null ? PLAN_CREDITS[planKey] : null;
+          if (initialCredits !== null) creditFields = { ai_credits: initialCredits };
+        }
+
         await supabase.from('users')
           .update({
             subscription_status: plan,
-            ...(initialCredits !== null ? { ai_credits: initialCredits } : {}),
+            ...creditFields,
             ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
           })
           .eq('id', userRecord.id);
-        console.log(`[WEBHOOK] ✓ Plan '${plan}' activated for user ${userRecord.id}. AI credits set to ${initialCredits ?? 'unchanged (unknown plan)'}`);
+        console.log(`[WEBHOOK] ✓ Plan '${plan}' (key: ${planKey}) activated for user ${userRecord.id}`);
       }
       return res.status(200).json({ received: true });
     }
@@ -221,14 +268,19 @@ export default async function handler(req, res) {
 
         if (renewalUser?.subscription_status) {
           const planKey = normalisePlan(renewalUser.subscription_status);
-          const creditsToAdd = planKey !== null ? PLAN_CREDITS[planKey] : null;
-          if (creditsToAdd !== null && creditsToAdd !== undefined) {
-            const currentCredits = typeof renewalUser.ai_credits === 'number' ? renewalUser.ai_credits : 0;
-            const newBalance = currentCredits + creditsToAdd;
-            await supabase.from('users')
-              .update({ ai_credits: newBalance })
-              .eq('id', renewalUser.id);
-            console.log(`[WEBHOOK] ✓ AI credits topped up +${creditsToAdd} → ${newBalance} for user ${renewalUser.id} (plan: ${planKey})`);
+          // Skip top-up for unlimited plans and add-on (no credits)
+          if (planKey !== null && !UNLIMITED_CREDIT_PLANS.has(planKey) && planKey !== 'addon_account') {
+            const creditsToAdd = PLAN_CREDITS[planKey];
+            if (creditsToAdd > 0) {
+              const currentCredits = typeof renewalUser.ai_credits === 'number' ? renewalUser.ai_credits : 0;
+              const newBalance = currentCredits + creditsToAdd;
+              await supabase.from('users')
+                .update({ ai_credits: newBalance })
+                .eq('id', renewalUser.id);
+              console.log(`[WEBHOOK] ✓ AI credits topped up +${creditsToAdd} → ${newBalance} for user ${renewalUser.id} (plan: ${planKey})`);
+            }
+          } else if (planKey !== null) {
+            console.log(`[WEBHOOK] Unlimited plan '${planKey}' — skipping credit top-up`);
           }
         }
       } catch (credErr) {
@@ -347,26 +399,35 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 
 // Per-plan operational costs (cents)
 const PLAN_OPERATIONAL_COSTS = {
-  pro:          1700, // 17.00 €
-  growth:       1700, // 17.00 €
-  scale:        3000, // 30.00 €
-  scale_oferta: 3000, // 30.00 €  (same infra, different price point)
+  pro:           1700,  // 17.00 €
+  growth:        1700,  // 17.00 €
+  growth_anual:  15000, // 150.00 € (~12.50 €/month × 12)
+  scale:         3000,  // 30.00 €
+  scale_oferta:  3000,  // 30.00 €  (same infra, different price point)
+  scale_anual:   25000, // 250.00 € (~20.83 €/month × 12)
+  addon_account: 500,   //   5.00 € per extra account slot
 };
 
 // Per-plan Rewardful affiliate commission (cents)  — only applied when affiliate
 const PLAN_AFFILIATE_CUTS = {
-  pro:          750,  //  7.50 €
-  growth:       1860, // 18.60 €
-  scale:        3570, // 35.70 €
-  scale_oferta: 2070, // 20.70 €
+  pro:           750,   //  7.50 €
+  growth:        1860,  // 18.60 €
+  growth_anual:  15000, // 150.00 € (~19% of 790 €)
+  scale:         3570,  // 35.70 €
+  scale_oferta:  2070,  // 20.70 €
+  scale_anual:   35000, // 350.00 € (~17.6% of 1990 €)
+  addon_account: 0,     // No affiliate cut on add-ons
 };
 
 /** Normalise a raw plan string to a known key, or null if unrecognised.
  *  Returning null prevents automatic credit assignment for unknown plans. */
 function normalisePlan(raw = '') {
   const s = raw.toLowerCase().replace(/[\s-]/g, '_');
+  if (s.includes('addon') || s.includes('add_on')) return 'addon_account';
   if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
+  if (s.includes('scale') && (s.includes('anual') || s.includes('annual'))) return 'scale_anual';
   if (s.includes('scale'))  return 'scale';
+  if (s.includes('growth') && (s.includes('anual') || s.includes('annual'))) return 'growth_anual';
   if (s.includes('growth')) return 'growth';
   if (s.includes('pro'))    return 'pro';
   return null; // unknown plan — do not assign credits automatically

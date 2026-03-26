@@ -4,13 +4,18 @@ import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
 import {
   BarChart3, Users, MessageSquare, CheckCircle2, TrendingUp,
-  Send, Activity, Zap
+  Send, Activity, Zap, ChevronDown
 } from "lucide-react"
 
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = React.useState<"resumen" | "actividad">("resumen")
   const [campaigns, setCampaigns] = React.useState<any[]>([])
   const [loadingActivity, setLoadingActivity] = React.useState(false)
+
+  // Account filter
+  const [accounts, setAccounts] = React.useState<{ id: string; profile_name: string; unipile_account_id: string }[]>([])
+  const [selectedAccountId, setSelectedAccountId] = React.useState<string>("all")
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false)
 
   const statusConfig: Record<string, { label: string; color: string }> = {
     draft: { label: "Borrador", color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
@@ -19,11 +24,28 @@ export default function AnalyticsPage() {
     completed: { label: "Completada", color: "bg-slate-500/10 border-slate-500/20 text-slate-400" },
   }
 
+  React.useEffect(() => {
+    const token = localStorage.getItem("auth_token")
+    fetch("/api/linkedin/accounts", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setAccounts(d.accounts || []))
+      .catch(() => {})
+  }, [])
+
+  // Close account menu on outside click
+  React.useEffect(() => {
+    if (!accountMenuOpen) return
+    const handler = () => setAccountMenuOpen(false)
+    document.addEventListener("click", handler)
+    return () => document.removeEventListener("click", handler)
+  }, [accountMenuOpen])
+
   const fetchCampaignActivity = async () => {
     setLoadingActivity(true)
     try {
       const token = localStorage.getItem("auth_token")
-      const res = await fetch("/api/linkedin/campaigns", {
+      const params = selectedAccountId !== "all" ? `?accountId=${selectedAccountId}` : ""
+      const res = await fetch(`/api/linkedin/campaigns${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()
@@ -34,16 +56,53 @@ export default function AnalyticsPage() {
   }
 
   React.useEffect(() => {
-    if (activeTab === "actividad" && campaigns.length === 0) {
+    if (activeTab === "actividad") {
       fetchCampaignActivity()
     }
-  }, [activeTab])
+  }, [activeTab, selectedAccountId])
+
+  const selectedAccountName =
+    selectedAccountId === "all"
+      ? "Todas las cuentas"
+      : accounts.find(a => a.id === selectedAccountId)?.profile_name || "Cuenta"
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
-        <p className="text-slate-400">Métricas de rendimiento de tus campañas.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
+          <p className="text-slate-400">Métricas de rendimiento de tus campañas.</p>
+        </div>
+        {/* Account selector */}
+        <div className="relative" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => setAccountMenuOpen(v => !v)}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            {selectedAccountName}
+            <ChevronDown className={`w-4 h-4 transition-transform ${accountMenuOpen ? "rotate-180" : ""}`} />
+          </button>
+          {accountMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-52 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 py-1">
+              <button
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 transition-colors ${selectedAccountId === "all" ? "text-blue-400" : "text-slate-300"}`}
+                onClick={() => { setSelectedAccountId("all"); setAccountMenuOpen(false) }}
+              >
+                Todas las cuentas
+              </button>
+              {accounts.map(a => (
+                <button
+                  key={a.id}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 transition-colors ${selectedAccountId === a.id ? "text-blue-400" : "text-slate-300"}`}
+                  onClick={() => { setSelectedAccountId(a.id); setAccountMenuOpen(false) }}
+                >
+                  {a.profile_name || a.id}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

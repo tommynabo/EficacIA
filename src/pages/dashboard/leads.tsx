@@ -278,7 +278,7 @@ export default function LeadsPage() {
       {/* Filters */}
       <div className="flex gap-3">
         <Input
-          placeholder="Buscar por nombre, email, empresa..."
+          placeholder="Buscar por nombre, cargo, empresa..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="bg-slate-950 border-slate-800"
@@ -331,7 +331,18 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {leads.map((lead) => (
+                {leads
+                  .filter(lead => {
+                    if (!search.trim()) return true
+                    const q = search.toLowerCase()
+                    return (
+                      `${lead.first_name} ${lead.last_name}`.toLowerCase().includes(q) ||
+                      (lead.position || '').toLowerCase().includes(q) ||
+                      (lead.company || '').toLowerCase().includes(q) ||
+                      (lead.email || '').toLowerCase().includes(q)
+                    )
+                  })
+                  .map((lead) => (
                   <tr key={lead.id} className="hover:bg-slate-800/30 transition">
                     <td className="px-6 py-4">
                       <div>

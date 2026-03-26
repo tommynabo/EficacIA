@@ -6,7 +6,7 @@ import {
   Search, Send, RefreshCw, ChevronDown, Inbox,
   MessageSquare, User, Clock, Loader2, AlertCircle,
   Tag, PauseCircle, PlayCircle, ShieldBan, X, Check, Sparkles,
-  Filter, Flame, Snowflake, Thermometer,
+  Filter, Flame, Snowflake, Thermometer, FileText,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -223,6 +223,17 @@ export default function UniboxPage() {
   const [draft, setDraft] = React.useState("")
   const [sending, setSending] = React.useState(false)
   const [sendError, setSendError] = React.useState<string | null>(null)
+
+  // Message templates (loaded from localStorage — managed in Settings → Plantillas)
+  const [templates, setTemplates] = React.useState<{ id: string; name: string; content: string }[]>([])
+  const [templateMenuOpen, setTemplateMenuOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("eficacia_templates")
+      if (saved) setTemplates(JSON.parse(saved))
+    } catch { /* silent */ }
+  }, [])
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
@@ -1078,7 +1089,37 @@ export default function UniboxPage() {
                 <AlertCircle className="w-3.5 h-3.5" /> {sendError}
               </p>
             )}
+            {/* Template picker */}
+            {templateMenuOpen && templates.length > 0 && (
+              <div className="mb-2 bg-slate-900 border border-slate-700 rounded-xl shadow-xl py-1 max-h-48 overflow-y-auto">
+                {templates.map(t => (
+                  <button
+                    key={t.id}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-800 transition-colors"
+                    onClick={() => {
+                      const contactName = selectedChat ? chatTitle(selectedChat) : ""
+                      const text = t.content.replace(/\{\{nombre\}\}/gi, contactName)
+                      setDraft(prev => prev ? prev + "\n" + text : text)
+                      setTemplateMenuOpen(false)
+                      textareaRef.current?.focus()
+                    }}
+                  >
+                    <span className="font-medium text-slate-200">{t.name}</span>
+                    <span className="text-slate-500 ml-2 text-xs truncate">{t.content.slice(0, 60)}…</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-end gap-3">
+              {templates.length > 0 && (
+                <button
+                  className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors shrink-0"
+                  title="Insertar plantilla"
+                  onClick={() => setTemplateMenuOpen(v => !v)}
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+              )}
               <textarea
                 ref={textareaRef}
                 value={draft}

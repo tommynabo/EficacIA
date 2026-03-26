@@ -6,7 +6,7 @@ import { Input } from "@/src/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { Plus, MoreHorizontal, AlertCircle } from "lucide-react"
+import { Plus, MoreHorizontal, AlertCircle, Search } from "lucide-react"
 
 interface Campaign {
   id: string
@@ -27,6 +27,7 @@ export default function CampaignsPage() {
   const [campaignName, setCampaignName] = React.useState("")
   const [campaignDescription, setCampaignDescription] = React.useState("")
   const [isCreating, setIsCreating] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState("")
 
   const fetchCampaigns = async () => {
     try {
@@ -103,6 +104,15 @@ export default function CampaignsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Campañas</h2>
           <p className="text-slate-400">Crea y gestiona tus campañas de outreach en LinkedIn.</p>
         </div>
+        <div className="relative w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <Input
+            placeholder="Buscar campañas..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 bg-slate-950 border-slate-700"
+          />
+        </div>
       </div>
 
       {error && (
@@ -170,17 +180,21 @@ export default function CampaignsPage() {
                   <TableCell className="text-right"><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
-            ) : campaigns.length === 0 ? (
+            ) : campaigns.filter(c => !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-12 text-slate-400">
                   <div>
-                    <p className="mb-2">No hay campañas aún</p>
-                    <p className="text-sm">Crea tu primera campaña arriba para empezar</p>
+                    {searchQuery.trim()
+                      ? <><p className="mb-2">Sin resultados para "{searchQuery}"</p><p className="text-sm">Prueba con otro nombre de campaña</p></>
+                      : <><p className="mb-2">No hay campañas aún</p><p className="text-sm">Crea tu primera campaña arriba para empezar</p></>
+                    }
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
-              campaigns.map((campaign) => (
+              campaigns
+                .filter(c => !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((campaign) => (
                 <TableRow key={campaign.id} className="hover:bg-slate-800/50 cursor-pointer" onClick={() => navigate(`/dashboard/campaigns/${campaign.id}`)}>
                   <TableCell className="font-medium">
                     {campaign.name}
