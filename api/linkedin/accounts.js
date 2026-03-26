@@ -439,17 +439,19 @@ export default async function handler(req, res) {
       }
 
       const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
-      const { data: userRow } = await supabaseAdmin.from('users').select('subscription_status').eq('id', userId).single();
+      const { data: userRow } = await supabaseAdmin.from('users').select('subscription_status, max_linkedin_accounts').eq('id', userId).single();
       const userPlan = userRow?.subscription_status || 'free';
+      const extraAccounts = typeof userRow?.max_linkedin_accounts === 'number' ? userRow.max_linkedin_accounts : 0;
       const planLimit = ACCOUNT_LIMITS[userPlan] ?? 1;
+      const totalLimit = planLimit === Infinity ? Infinity : planLimit + extraAccounts;
 
-      if (planLimit !== Infinity) {
+      if (totalLimit !== Infinity) {
         const { count: accountCount } = await supabaseAdmin
           .from('linkedin_accounts')
           .select('*', { count: 'exact', head: true })
           .eq('team_id', teamId);
-        if ((accountCount || 0) >= planLimit) {
-          return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: planLimit, plan: userPlan });
+        if ((accountCount || 0) >= totalLimit) {
+          return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: totalLimit, plan: userPlan, extraAccounts });
         }
       }
 

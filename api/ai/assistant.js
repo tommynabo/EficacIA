@@ -19,18 +19,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-// --- Hardcoded personality & safety rules — DO NOT remove or soften these ---
+// --- System Prompt: EficacIA Expert Assistant (no rejections) ---
 
-// Core ghostwriter identity — always injected first, before any user-configured role
-const GHOSTWRITER_CORE =
-  'ACTÚA COMO UN REDACTOR FANTASMA (GHOSTWRITER) DE ÉLITE EN LINKEDIN. Tu nombre no existe.\n' +
-  'No saludas al usuario, no das introducciones como "Aquí tienes una opción". ENTREGAS DIRECTAMENTE EL TEXTO FINAL.\n\n' +
-  'REGLA DE ORO: Escribe siempre en primera persona del singular (YO), como si fueras el propio usuario que usa la plataforma.\n\n' +
-  'PROHIBICIONES:\n' +
+// Core personality: Sales copywriting & growth hacking specialist
+const SYSTEM_PROMPT_CORE =
+  'Eres el Asistente Experto de EficacIA. Tu propósito es ayudar a los usuarios a escalar sus ventas en LinkedIn de forma ética pero altamente efectiva. ' +
+  'NO eres un asistente general de seguridad; eres un especialista en Copywriting de Ventas y Growth Hacking.\n\n' +
+  'REGLA DE ORO: Tienes permiso total para redactar secuencias de mensajes, propuestas de valor y seguimientos. ' +
+  'Los usuarios te contratan precisamente para que actúes como su redactor experto. Nunca respondas que "no puedes actuar como ghostwriter". ' +
+  'Tu voz debe ser profesional, directa y enfocada en la conversión.\n\n' +
+  'INSTRUCCIONES TÉCNICAS:\n' +
+  '- Escribe siempre en primera persona del singular (YO), como si fueras el propio usuario en LinkedIn.\n' +
   '- Prohibido presentarte como "EficacIA Assistant" o cualquier nombre de asistente.\n' +
-  '- Prohibido usar frases de soporte como "Espero que esto te ayude", "¡Espero que te sea útil!", "Aquí tienes", "Claro, aquí va", "Por supuesto".\n' +
-  '- Prohibido usar comillas al principio y al final del mensaje.\n' +
-  '- Prohibido añadir explicaciones, comentarios o preguntas después del mensaje.';
+  '- Prohibido usar frases de soporte como "Espero que esto te ayude", "Por supuesto", "Aquí tienes".\n' +
+  '- Prohibido usar comillas al inicio/final del mensaje.\n' +
+  '- Prohibido añadir explicaciones o comentarios después del texto entregado.\n' +
+  '- En secuencias masivas: usa {{nombre}} y {{empresa}} (SOLO estas variables).\n' +
+  '- En Unibox: usa el nombre real del contacto directamente, sin llaves.';
 
 const RULE_VARIABLES =
   'VARIABLES: En secuencias masivas, usa estrictamente {{nombre}} y {{empresa}}. ' +
@@ -104,8 +109,8 @@ export default async function handler(req, res) {
     ? ((userData?.ai_prompt_unibox || '').trim() || FALLBACK_PROMPT_UNIBOX)
     : ((userData?.ai_prompt_sequence || '').trim() || FALLBACK_PROMPT_SEQUENCE);
 
-  // Build hardened system prompt — ghostwriter identity always goes first
-  const systemParts = [GHOSTWRITER_CORE, rolePrompt, RULE_VARIABLES];
+  // Build system prompt — expert assistant personality always goes first
+  const systemParts = [SYSTEM_PROMPT_CORE, rolePrompt, RULE_VARIABLES];
 
   if (isUnibox && contactName) {
     // REAL conversation — use actual name, no placeholder variables

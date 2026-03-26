@@ -213,6 +213,29 @@ export default function SettingsPage() {
     }
   }
 
+  const handleBuyExtraAccount = async () => {
+    const priceId = import.meta.env.VITE_STRIPE_PRICE_ADDON_ACCOUNT
+    if (!priceId) {
+      setCreditsMsg({ type: "error", text: "El producto de cuentas extra no está configurado (VITE_STRIPE_PRICE_ADDON_ACCOUNT)." })
+      setTimeout(() => setCreditsMsg(null), 5000)
+      return
+    }
+    try {
+      setCreditsMsg(null)
+      const res = await fetch(`${envUrl}/api/payments/create-checkout-session`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId, plan: "addon_account", userId: token() ? JSON.parse(atob(token()!.split(".")[1])).userId : undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error creando sesión de pago")
+      if (data.url) window.location.href = data.url
+    } catch (e: any) {
+      setCreditsMsg({ type: "error", text: e.message || "Error al iniciar el pago" })
+      setTimeout(() => setCreditsMsg(null), 5000)
+    }
+  }
+
   const loadAWAccounts = async () => {
     try {
       setAwLoading(true)
@@ -1297,10 +1320,7 @@ export default function SettingsPage() {
               </ul>
 
               <Button
-                onClick={() => {
-                  const priceId = process.env.VITE_STRIPE_PRICE_ADDON_ACCOUNT || "price_1TFAQSBYhY8BKBRPAeDOPTTW"
-                  window.location.href = `/subscribe?plan=addon_account&priceId=${priceId}`
-                }}
+                onClick={handleBuyExtraAccount}
                 className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-5 text-base font-semibold"
               >
                 <Plus className="w-5 h-5" />
