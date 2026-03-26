@@ -1,21 +1,16 @@
 {
-  "servers": {
-    "stripe": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@stripe/mcp",
-        "--api-key",
-        "${input:stripeApiKey}"
-      ]
-    }
-  },
-  "inputs": [
-    {
-      "id": "stripeApiKey",
-      "type": "promptString",
-      "description": "Stripe secret key (sk_live_...)",
-      "password": true
-    }
-  ]
+	"servers": {
+		"stripe": {
+			"type": "http",
+			"url": "https://mcp.stripe.com"
+		}
+	},
+	"inputs": [
+		{
+			"id": "stripeApiKey",
+			"type": "promptString",
+			"description": "Stripe secret key (sk_live_...)",
+			"password": true
+		}
+	]
 }

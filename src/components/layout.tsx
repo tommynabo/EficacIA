@@ -84,6 +84,14 @@ export function DashboardLayout() {
             {navItems.find(i => i.href === location.pathname)?.name || "Dashboard"}
           </h1>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setAssistantOpen(v => !v)}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-md font-semibold bg-violet-600 hover:bg-violet-500 text-white shadow-lg transition-all"
+              title="Abrir Asistente IA"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>EficacIA - Asistente IA</span>
+            </button>
             <div className="flex items-center gap-2 text-sm text-slate-400">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -98,26 +106,8 @@ export function DashboardLayout() {
         </div>
       </main>
 
-      {/* ── Global AI Assistant ──────────────────────────────────── */}
-      {/* Floating trigger button */}
-      <button
-        onClick={() => setAssistantOpen(v => !v)}
-        className={cn(
-          "fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-all",
-          assistantOpen
-            ? "bg-violet-500 hover:bg-violet-400"
-            : "bg-violet-600 hover:bg-violet-500"
-        )}
-        title="Asistente EficacIA"
-      >
-        {assistantOpen ? (
-          <X className="w-5 h-5 text-white" />
-        ) : (
-          <Sparkles className="w-5 h-5 text-white" />
-        )}
-      </button>
-
-      {/* Assistant panel */}
+      {/* ── Global AI Assistant Panel ────────────────────────────── */}
+      {/* Right-side drawer panel (replaces fixed bottom button) */}
       {assistantOpen && (
         <GlobalAssistantPanel onClose={() => setAssistantOpen(false)} />
       )}
@@ -196,7 +186,7 @@ function GlobalAssistantPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed bottom-[4.5rem] right-6 z-40 w-96 max-h-[calc(100vh-6rem)] flex flex-col rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl overflow-hidden">
+    <div className="fixed top-0 right-0 bottom-0 z-50 w-96 flex flex-col border-l border-slate-700 bg-slate-950 shadow-2xl overflow-hidden">
       {/* Header */}
       <div className="h-14 flex items-center justify-between px-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2">

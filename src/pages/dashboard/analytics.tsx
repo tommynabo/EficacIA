@@ -123,48 +123,58 @@ export default function AnalyticsPage() {
       {/* ─── Tab: Resumen ─────────────────────────────────────────── */}
       {activeTab === "resumen" && (
         <div className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-slate-400">Invitaciones Enviadas</CardTitle>
-                <Users className="h-4 w-4 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">1,248</div>
-                <p className="text-xs text-emerald-400 mt-1">+12% desde el mes pasado</p>
-              </CardContent>
+          {campaigns.length === 0 && !loadingActivity ? (
+            <Card className="p-14 flex flex-col items-center justify-center gap-4 border-dashed border-slate-700 bg-slate-900/20">
+              <BarChart3 className="w-12 h-12 text-slate-600" />
+              <div className="text-center">
+                <p className="font-medium text-slate-300 mb-1">No hay actividad registrada todavía</p>
+                <p className="text-sm text-slate-500">Crea campañas y lánzalas para ver las analíticas aquí</p>
+              </div>
             </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-slate-400">Tasa de Aceptación</CardTitle>
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">34.2%</div>
-                <p className="text-xs text-emerald-400 mt-1">+4.1% desde el mes pasado</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-slate-400">Mensajes Enviados</CardTitle>
-                <MessageSquare className="h-4 w-4 text-purple-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">842</div>
-                <p className="text-xs text-slate-500 mt-1">En los últimos 30 días</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-slate-400">Tasa de Respuesta</CardTitle>
-                <BarChart3 className="h-4 w-4 text-amber-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">12.8%</div>
-                <p className="text-xs text-emerald-400 mt-1">+2.4% desde el mes pasado</p>
-              </CardContent>
-            </Card>
-          </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-400">Invitaciones Enviadas</CardTitle>
+                  <Users className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">—</div>
+                  <p className="text-xs text-slate-500 mt-1">Sincronizando desde Unipile</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-400">Tasa de Aceptación</CardTitle>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">—</div>
+                  <p className="text-xs text-slate-500 mt-1">Calculando en tiempo real</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-400">Mensajes Enviados</CardTitle>
+                  <MessageSquare className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">—</div>
+                  <p className="text-xs text-slate-500 mt-1">En los últimos 30 días</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-400">Tasa de Respuesta</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-amber-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">—</div>
+                  <p className="text-xs text-slate-500 mt-1">Actualizando métricas</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <Card className="min-h-[400px] flex items-center justify-center border-dashed border-slate-700 bg-slate-900/20">
             <div className="text-center">

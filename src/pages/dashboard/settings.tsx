@@ -398,7 +398,7 @@ export default function SettingsPage() {
           { key: "auto-withdraw", label: "Auto-Withdraw" },
           { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
-          { key: "credits", label: "Créditos IA" },
+          { key: "credits", label: "Créditos IA + Cuentas Extra" },
           { key: "plantillas", label: "Plantillas" },
           { key: "afiliados", label: "Afiliados" },
         ].map(({ key, label, badge }) => (
@@ -1258,6 +1258,53 @@ export default function SettingsPage() {
               >
                 <CreditCard className="w-5 h-5" />
                 Comprar 1.000 créditos — 10 €
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Extra LinkedIn account add-on card */}
+          <Card className="border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-cyan-500/5">
+            <CardContent className="pt-6 space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-slate-100">Añadir Cuenta de LinkedIn</span>
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">Mensual</Badge>
+                  </div>
+                  <p className="text-sm text-slate-400">
+                    Amplía tu capacidad añadiendo una cuenta de LinkedIn adicional a tu plan.
+                    Perfecto para agencias y equipos que necesitan gestionar múltiples cuentas.
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-2xl font-bold text-slate-100">10 €</p>
+                  <p className="text-xs text-slate-500">/ mes</p>
+                </div>
+              </div>
+
+              <ul className="space-y-1.5 text-sm text-slate-300">
+                {[
+                  "1 cuenta de LinkedIn adicional",
+                  "Compatible con todos los planes",
+                  "Cancela cuando quieras",
+                  "Suscripción segura vía Stripe",
+                ].map(item => (
+                  <li key={item} className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              <Button
+                onClick={() => {
+                  const priceId = process.env.VITE_STRIPE_PRICE_ADDON_ACCOUNT || "price_1TFAQSBYhY8BKBRPAeDOPTTW"
+                  window.location.href = `/subscribe?plan=addon_account&priceId=${priceId}`
+                }}
+                className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-5 text-base font-semibold"
+              >
+                <Plus className="w-5 h-5" />
+                Añadir cuenta — 10 € / mes
               </Button>
             </CardContent>
           </Card>
