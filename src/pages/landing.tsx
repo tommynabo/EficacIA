@@ -81,7 +81,7 @@ export default function LandingPage() {
             <span className="font-semibold whitespace-nowrap">OFERTA DE LANZAMIENTO:</span>
           </div>
           <p className="text-white text-sm md:text-base">
-            Plan <span className="font-bold text-violet-300">SCALE</span> por <span className="font-bold text-emerald-400">99€/mes</span> (o <span className="font-bold text-emerald-400">80€/mes</span> anual) para los primeros <span className="font-bold text-violet-300">50 usuarios</span>. ¡Quedan pocas plazas!
+            Plan <span className="font-bold text-violet-300">GROWTH</span> anual al <span className="font-bold text-emerald-400">mismo precio que mensual</span> + <span className="font-bold text-amber-300">créditos IA totalmente ilimitados</span> · Solo primeros <span className="font-bold text-violet-300">50 usuarios</span>. ¡Quedan pocas plazas!
           </p>
           <Button size="sm" className="bg-violet-500 hover:bg-violet-600 text-white border-0 shrink-0 whitespace-nowrap flex items-center justify-center" asChild>
             <Link to="/pricing">¡Aprovechar ahora!</Link>

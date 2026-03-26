@@ -15,6 +15,7 @@ const PLANS: Array<{
   annualTotal: number
   popular: boolean
   badge?: string
+  launchOffer?: boolean
   accentColor: string
   features: string[]
 }> = [
@@ -31,6 +32,7 @@ const PLANS: Array<{
       '3 cuentas de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
+      '1.000 créditos IA',
       'Unibox unificado',
       'Soporte por email',
     ],
@@ -43,12 +45,14 @@ const PLANS: Array<{
     annualTotal: 780,
     popular: true,
     badge: 'MÁS POPULAR',
+    launchOffer: true,
     accentColor: 'violet',
     features: [
       'Leads ilimitados',
       '5 cuentas de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
+      '10.000 créditos IA',
       'AI Assistant incluido',
       'A/B Testing de mensajes',
       'API access',
@@ -69,6 +73,7 @@ const PLANS: Array<{
       '10 cuentas de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
+      'Créditos IA ilimitados',
       'AI Assistant incluido',
       'Dashboard de agencia',
       'Whitelabel disponible',
@@ -239,6 +244,18 @@ export default function PricingPage() {
                 {plan.badge && (
                   <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-full whitespace-nowrap shadow-lg shadow-indigo-500/30">
                     {plan.badge}
+                  </div>
+                )}
+
+                {/* Launch offer strip */}
+                {plan.launchOffer && (
+                  <div className="mb-5 px-4 py-2.5 bg-gradient-to-r from-amber-950/80 to-orange-950/80 border border-amber-500/40 rounded-xl text-center">
+                    <p className="text-xs font-bold text-amber-300 uppercase tracking-wider mb-1">
+                      🚀 Oferta Lanzamiento — Primeros 50 Usuarios
+                    </p>
+                    <p className="text-xs text-amber-200/80 leading-snug">
+                      Plan anual al <span className="font-semibold text-amber-100">mismo precio</span> → créditos IA <span className="font-semibold text-amber-100">totalmente ilimitados</span>
+                    </p>
                   </div>
                 )}
 
