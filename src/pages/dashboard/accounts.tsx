@@ -89,7 +89,7 @@ interface LinkedInAccount {
   withdraw_after_days: number
 }
 
-interface LinkedInAccount {
+export default function AccountsPage() {
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
