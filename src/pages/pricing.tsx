@@ -229,7 +229,7 @@ export default function PricingPage() {
             const displayPrice =
               billing === 'monthly'
                 ? plan.monthlyPrice
-                : annualMonthlyEquivalent(plan)
+                : plan.annualTotal
 
             return (
               <Card
@@ -267,18 +267,9 @@ export default function PricingPage() {
                   <p className="text-slate-400 text-sm mb-4">{plan.tagline}</p>
                   <div className="flex items-baseline gap-1">
                     <span className="text-4xl font-bold text-white">€{displayPrice}</span>
-                    <span className="text-slate-400 text-sm">/mes</span>
+                    <span className="text-slate-400 text-sm">{billing === 'annual' ? '/año' : '/mes'}</span>
                   </div>
-                  {billing === 'annual' ? (
-                    <div className="mt-2 space-y-0.5">
-                      <p className="text-xs text-slate-500 line-through">
-                        €{plan.monthlyPrice}/mes sin descuento
-                      </p>
-                      <p className="text-xs text-emerald-400 font-medium">
-                        Pago único €{plan.annualTotal}/año — ahorra €{annualSavings(plan)}
-                      </p>
-                    </div>
-                  ) : (
+                  {billing === 'monthly' && (
                     <p className="text-xs text-indigo-400 mt-2">
                       3 días gratis — luego €{plan.monthlyPrice}/mes
                     </p>
