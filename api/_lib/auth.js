@@ -1,4 +1,3 @@
-import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseAdmin = createClient(
@@ -36,15 +35,8 @@ export async function getAuthUser(req) {
       if (user && !error) {
         return { ...user, userId: user.id };
       }
-      
-      // Fallback: decodificar sin verificar
-      const decoded = jwt.decode(token);
-      if (decoded && (decoded.sub || decoded.userId)) {
-        const userId = decoded.sub || decoded.userId;
-        return { id: userId, userId, role: 'authenticated' };
-      }
     } catch (e) {
-      console.warn('[AUTH] Debug: JWT check failed...');
+      console.warn('[AUTH] JWT verification failed');
     }
   }
 

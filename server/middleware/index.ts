@@ -25,9 +25,13 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    req.userId = decoded.userId;
+    req.userId = decoded.sub || decoded.userId || decoded.id;
     req.email = decoded.email;
-    
+
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Invalid token payload: missing user ID' });
+    }
+
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);

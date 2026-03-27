@@ -346,6 +346,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
     }
     const userId = user.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' });
 
     // GET - listar cuentas LinkedIn del usuario
     if (req.method === 'GET') {

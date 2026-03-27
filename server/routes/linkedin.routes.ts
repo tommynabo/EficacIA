@@ -16,6 +16,7 @@ const db = supabaseAdmin as any
 router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
     const { status = 'all', limit = 50, offset = 0, search = '' } = req.query
 
     // Obtiene equipo del usuario
@@ -77,6 +78,7 @@ router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
 router.post('/import-leads', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
     const { leads: inputLeads } = req.body
 
     if (!inputLeads || !Array.isArray(inputLeads)) {
@@ -143,6 +145,7 @@ router.post('/import-leads', authMiddleware, async (req: Request, res: Response)
 router.post('/search-leads', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
     const { keywords, location, title, limit = 10 } = req.body
 
     if (!keywords) {
@@ -247,8 +250,24 @@ router.post('/search-leads', authMiddleware, async (req: Request, res: Response)
  */
 router.put('/leads/:leadId', authMiddleware, async (req: Request, res: Response) => {
   try {
+    const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
+
     const { leadId } = req.params
     const { status, notes, company, position } = req.body
+
+    // Verify ownership: get user's team
+    const { data: teams, error: teamsError } = await db
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1)
+
+    if (teamsError || !teams || teams.length === 0) {
+      return res.status(403).json({ error: 'No team configured for this user' })
+    }
+    const teamId = teams[0].id
+    if (!teamId) return res.status(403).json({ error: 'No team configured for this user' })
 
     const updateData: any = {}
     if (status) updateData.status = status
@@ -260,11 +279,16 @@ router.put('/leads/:leadId', authMiddleware, async (req: Request, res: Response)
       .from('leads')
       .update(updateData)
       .eq('id', leadId)
+      .eq('team_id', teamId)
       .select()
       .single()
 
     if (error) {
       return res.status(400).json({ error: error.message })
+    }
+
+    if (!lead) {
+      return res.status(404).json({ error: 'Lead not found or access denied' })
     }
 
     res.json({ success: true, lead })
@@ -280,9 +304,25 @@ router.put('/leads/:leadId', authMiddleware, async (req: Request, res: Response)
  */
 router.delete('/leads/:leadId', authMiddleware, async (req: Request, res: Response) => {
   try {
+    const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
+
     const { leadId } = req.params
 
-    const { error } = await db.from('leads').delete().eq('id', leadId)
+    // Verify ownership: get user's team
+    const { data: teams, error: teamsError } = await db
+      .from('teams')
+      .select('id')
+      .eq('owner_id', userId)
+      .limit(1)
+
+    if (teamsError || !teams || teams.length === 0) {
+      return res.status(403).json({ error: 'No team configured for this user' })
+    }
+    const teamId = teams[0].id
+    if (!teamId) return res.status(403).json({ error: 'No team configured for this user' })
+
+    const { error } = await db.from('leads').delete().eq('id', leadId).eq('team_id', teamId)
 
     if (error) {
       return res.status(400).json({ error: error.message })
@@ -302,6 +342,7 @@ router.delete('/leads/:leadId', authMiddleware, async (req: Request, res: Respon
 router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
     const { csvData, type, leads, source } = req.body
 
     // 1. Manejo para la Extensión de Chrome (JSON array)
@@ -423,6 +464,7 @@ router.post('/bulk-import', authMiddleware, async (req: Request, res: Response) 
 router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
 
     const { data: teamsForAccounts } = await db
       .from('teams')
@@ -463,6 +505,7 @@ router.get('/accounts', authMiddleware, async (req: Request, res: Response) => {
 router.post('/accounts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
     const { linkedin_email, linkedin_password, session_cookie, profile_name } = req.body
 
     // Obtener o crear team del usuario
@@ -583,6 +626,7 @@ router.delete('/accounts/:accountId', authMiddleware, async (req: Request, res: 
   try {
     const { accountId } = req.params
     const userId = req.userId
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' })
 
     // Verificar que la cuenta pertenezca al equipo del usuario
     const { data: userTeams } = await db.from('teams').select('id').eq('owner_id', userId)

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { LinkedInDataService, AIMessageService } from '../services/index.js';
 import { addSendMessageJob, addAnalyzeProfileJob } from '../services/queue.service.js';
+import { authMiddleware } from '../middleware/index.js';
 
 const router = Router();
 
@@ -70,9 +71,10 @@ router.post('/leads/:leadId/regenerate-message', async (req: Request, res: Respo
 });
 
 // Send message to a lead manually
-router.post('/leads/:leadId/send', async (req: Request, res: Response) => {
+router.post('/leads/:leadId/send', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' });
     const { leadId } = req.params;
     const { message, sessionCookie, profileUrl } = req.body;
 
@@ -105,14 +107,11 @@ router.post('/leads/:leadId/send', async (req: Request, res: Response) => {
 });
 
 // Send all leads in campaign
-router.post('/campaigns/:campaignId/send-all', async (req: Request, res: Response) => {
+router.post('/campaigns/:campaignId/send-all', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' });
     const { campaignId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
 
     // Get campaign
     const campaign = await LinkedInDataService.getCampaignById(campaignId);

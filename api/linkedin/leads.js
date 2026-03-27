@@ -23,6 +23,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
     }
     const userId = user.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' });
 
     if (req.method === 'GET') {
       const { status, search, limit = 50, offset = 0, campaign_id } = req.query;

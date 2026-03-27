@@ -40,9 +40,10 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Acceso Denegado. Token o API Key inválida.' });
     }
     const userId = user.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing User ID' });
 
     const teamId = await getOrCreateTeam(userId);
-    if (!teamId) return res.status(500).json({ error: 'Error al obtener o crear equipo de usuario' });
+    if (!teamId) return res.status(403).json({ error: 'No team configured for this user' });
 
     const { id, action } = req.query;
 
