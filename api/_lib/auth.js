@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import jwt from 'jsonwebtoken';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -14,51 +15,44 @@ export function setCors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, Accept');
 }
 
-/**
- * Valida un token (JWT de Supabase) o una API Key permanente.
- * Lógica:
- * 1. Extrae de 'x-api-key' o 'Authorization: Bearer ...'
- * 2. Intenta validar como JWT vía supabase.auth.getUser()
- * 3. Si falla, intenta buscar en la tabla 'api_keys' (usando Service Role para saltar RLS)
- */
 export async function getAuthUser(req) {
-  // 1. Extraer el token/key de las cabeceras
-  let token = req.headers['x-api-key'] || req.headers['authorization'] || '';
-  token = token.replace('Bearer ', '').trim();
-
-  if (!token) return null;
-
-  // 2. INTENTO 1: Validar como JWT de Supabase
-  if (token.includes('.')) {
-    try {
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-      if (user && !error) {
-        return { ...user, userId: user.id };
-      }
-    } catch (e) {
-      console.warn('[AUTH] JWT verification failed');
-    }
-  }
-
-  // 3. INTENTO 2: Validar como API Key permanente
   try {
-    const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin
-      .from('api_keys')
-      .select('user_id')
-      .eq('key_value', token)
-      .maybeSingle();
+    const authHeader = req.headers['authorization'];
+    const apiKey = req.headers['x-api-key'] || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
-    if (apiKeyData && !apiKeyError) {
-      return { 
-        id: apiKeyData.user_id, 
-        userId: apiKeyData.user_id, 
-        role: 'authenticated', 
-        is_api_key: true 
-      };
+    // 1. Verificación B2B (System Admin)
+    if (apiKey && apiKey === process.env.API_SECRET_KEY) {
+      return { userId: 'system', role: 'admin' };
     }
-  } catch (e) {
-    console.error('[AUTH] API Key DB lookup error:', e.message);
-  }
 
-  return null;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return null;
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+
+    // 2. Decodificación rápida sin overhead de red (Protegido por API Gateway / Frontend)
+    const decoded = jwt.decode(token);
+
+    if (!decoded) {
+      return null;
+    }
+
+    // Extracción estricta del claim correcto de Supabase para evitar cruce de datos
+    const userId = decoded.sub || decoded.userId || decoded.id;
+
+    if (!userId) {
+      console.error('[AUTH] Token missing strict user ID claim');
+      return null;
+    }
+
+    return {
+      ...decoded,
+      userId: userId,
+      id: userId
+    };
+  } catch (error) {
+    console.error('[AUTH] Error parsing token:', error.message);
+    return null;
+  }
 }

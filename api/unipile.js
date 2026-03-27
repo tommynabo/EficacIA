@@ -267,7 +267,7 @@ async function handleSync(req, res) {
 
       const { error: insertError } = await supabaseAdmin
         .from('linkedin_accounts')
-        .insert({
+        .upsert({
           team_id: teamId,
           username: username,
           unipile_account_id: accountId,
@@ -276,10 +276,10 @@ async function handleSync(req, res) {
           is_valid: true,
           session_cookie: 'managed_by_unipile',
           last_validated_at: new Date().toISOString(),
-        });
+        }, { onConflict: 'unipile_account_id' });
 
       if (insertError) {
-        console.error(`[SYNC] Error insertando ${accountId}:`, insertError.message);
+        console.error(`[SYNC] Error upserting ${accountId}:`, insertError.message);
       } else {
         synced++;
         console.log(`[SYNC] ✓ Cuenta registrada: ${accountId} (${profileName}) → usuario ${userId}`);
