@@ -15,6 +15,7 @@ import AnalyticsPage from "./pages/dashboard/analytics"
 import SettingsPage from "./pages/dashboard/settings"
 import LinkedInLivePage from "./pages/linkedin-live"
 import TerminosPage from "./pages/terminos"
+import TerminosAfiliadosPage from "./pages/terminos-afiliados"
 import PrivacidadPage from "./pages/privacidad"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/afiliados" element={<AfiliadosPage />} />
       <Route path="/terminos" element={<TerminosPage />} />
+      <Route path="/terminos-afiliados" element={<TerminosAfiliadosPage />} />
       <Route path="/privacidad" element={<PrivacidadPage />} />
       <Route path="/linkedin-live" element={<LinkedInLivePage />} />
       

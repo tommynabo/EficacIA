@@ -318,6 +318,7 @@ export default function LandingPage() {
               <Link to="/afiliados" className="hover:text-slate-300 transition-colors">Afiliados</Link>
               <Link to="/privacidad" className="hover:text-slate-300 transition-colors">Política de Privacidad</Link>
               <Link to="/terminos" className="hover:text-slate-300 transition-colors">Términos y Condiciones</Link>
+              <Link to="/terminos-afiliados" className="hover:text-slate-300 transition-colors">Términos de Afiliación</Link>
             </div>
           </div>
           <div className="border-t border-slate-800/60 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
