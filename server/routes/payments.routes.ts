@@ -11,8 +11,8 @@ const stripe = new Stripe(config.STRIPE_SECRET_KEY)
  * PLANES DISPONIBLES - Usando Stripe Product & Price IDs
  */
 const PLANS = {
-  starter: {
-    name: 'Starter',
+  pro: {
+    name: 'Pro',
     priceId: process.env.STRIPE_PRO_MONTHLY || 'price_1TDRVbBYhY8BKBRPHIhLMgv4', // €42/mes
     price: 4200,
     currency: 'eur',
@@ -35,12 +35,12 @@ const PLANS = {
     features: ['10 cuentas LinkedIn', 'IA Ilimitada', 'Todo incluido', 'Account manager dedicado'],
     trial_days: 7,
   },
-  starter_anual: {
-    name: 'Starter Anual',
+  pro_anual: {
+    name: 'Pro Anual',
     priceId: process.env.STRIPE_PRICE_STARTER_ANNUAL || 'price_1TDRVbBYhY8BKBRP8sPRbzGv', // €420/año
     price: 42000,
     currency: 'eur',
-    features: ['Todo lo de Starter', 'Precio anual con descuento'],
+    features: ['Todo lo de Pro', 'Precio anual con descuento'],
     trial_days: 7,
   },
   growth_anual: {
@@ -79,7 +79,7 @@ router.post('/create-checkout-session', async (req: Request, res: Response) => {
     const { plan } = req.body
 
     if (!plan || !PLANS[plan as keyof typeof PLANS]) {
-      return res.status(400).json({ error: 'Plan inválido. Usa "starter" o "pro".' })
+      return res.status(400).json({ error: 'Plan inválido.' })
     }
 
     const planConfig = PLANS[plan as keyof typeof PLANS]

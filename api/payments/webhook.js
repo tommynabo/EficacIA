@@ -29,11 +29,12 @@ export const config = { api: { bodyParser: false } };
 // Use -1 as a sentinel for "unlimited" AI credits (growth_anual, scale, scale_oferta, scale_anual).
 const PLAN_CREDITS = {
   pro:           1000,
+  pro_anual:     12000, // 12 meses de golpe (Stripe factura anualmente)
   growth:        2000,
-  growth_anual:  -1,    // Unlimited for 1 year
-  scale:         -1,    // Unlimited (10 accounts)
+  growth_anual:  -1,    // Ilimitado 1 año
+  scale:         -1,    // Ilimitado (10 cuentas)
   scale_oferta:  -1,
-  scale_anual:   -1,    // Unlimited annual
+  scale_anual:   -1,    // Ilimitado anual
   addon_account: 0,     // No credits — account slot add-on
 };
 
@@ -397,25 +398,27 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 //   6. Partner Share = floor(Net Profit / 2)  →  transferred to partner
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Per-plan operational costs (cents)
+// Per-plan operational costs (cents) — Anuales calculados a 12 meses reales de gasto
 const PLAN_OPERATIONAL_COSTS = {
-  pro:           1700,  // 17.00 €
-  growth:        1700,  // 17.00 €
-  growth_anual:  15000, // 150.00 € (~12.50 €/month × 12)
-  scale:         3000,  // 30.00 €
-  scale_oferta:  3000,  // 30.00 €  (same infra, different price point)
-  scale_anual:   25000, // 250.00 € (~20.83 €/month × 12)
-  addon_account: 500,   //   5.00 € per extra account slot
+  pro:           1700,  // 17.00 € / mes
+  pro_anual:     20400, // 204.00 € (17€ × 12 meses)
+  growth:        1700,  // 17.00 € / mes
+  growth_anual:  20400, // 204.00 € (17€ × 12 meses)
+  scale:         3000,  // 30.00 € / mes
+  scale_oferta:  3000,  // 30.00 € / mes
+  scale_anual:   36000, // 360.00 € (30€ × 12 meses)
+  addon_account: 500,   //   5.00 € / mes
 };
 
-// Per-plan Rewardful affiliate commission (cents)  — only applied when affiliate
+// Per-plan Rewardful affiliate commission (cents) -> 30% del (Precio - Costes)
 const PLAN_AFFILIATE_CUTS = {
-  pro:           750,   //  7.50 €
-  growth:        1860,  // 18.60 €
-  growth_anual:  15000, // 150.00 € (~19% of 790 €)
-  scale:         3570,  // 35.70 €
-  scale_oferta:  2070,  // 20.70 €
-  scale_anual:   35000, // 350.00 € (~17.6% of 1990 €)
+  pro:           750,   // (42 - 17) * 0.3 = 7.50 €
+  pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
+  growth:        1860,  // (79 - 17) * 0.3 = 18.60 €
+  growth_anual:  17580, // (790 - 204) * 0.3 = 175.80 €
+  scale:         5070,  // (199 - 30) * 0.3 = 50.70 €
+  scale_oferta:  2070,  // (99 - 30) * 0.3 = 20.70 €
+  scale_anual:   48900, // (1990 - 360) * 0.3 = 489.00 €
   addon_account: 0,     // No affiliate cut on add-ons
 };
 
@@ -426,10 +429,11 @@ function normalisePlan(raw = '') {
   if (s.includes('addon') || s.includes('add_on')) return 'addon_account';
   if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
   if (s.includes('scale') && (s.includes('anual') || s.includes('annual'))) return 'scale_anual';
-  if (s.includes('scale'))  return 'scale';
+  if (s.includes('scale') || s.includes('agency'))  return 'scale';
   if (s.includes('growth') && (s.includes('anual') || s.includes('annual'))) return 'growth_anual';
   if (s.includes('growth')) return 'growth';
-  if (s.includes('pro'))    return 'pro';
+  if (s.includes('pro') && (s.includes('anual') || s.includes('annual'))) return 'pro_anual';
+  if (s.includes('pro') || s.includes('starter')) return 'pro'; // Fallback mapping a PRO
   return null; // unknown plan — do not assign credits automatically
 }
 

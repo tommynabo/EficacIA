@@ -153,7 +153,11 @@ export default function SettingsPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        setAiCredits(typeof data.ai_credits === "number" ? data.ai_credits : 0)
+        if (data.ai_credits_unlimited === true) {
+          setAiCredits(-1)
+        } else {
+          setAiCredits(typeof data.ai_credits === "number" ? data.ai_credits : 0)
+        }
       }
     } catch { /* silent */ }
     finally { setCreditsLoading(false) }
@@ -1213,12 +1217,14 @@ export default function SettingsPage() {
                   <Loader2 className="w-5 h-5 animate-spin text-slate-400 mt-1" />
                 ) : (
                   <p className="text-3xl font-bold text-slate-100">
-                    {aiCredits !== null ? aiCredits.toLocaleString() : "—"}
-                    <span className="text-sm font-normal text-slate-400 ml-1">créditos</span>
+                    {aiCredits === -1 ? "∞" : (aiCredits !== null ? aiCredits.toLocaleString() : "—")}
+                    <span className="text-sm font-normal text-slate-400 ml-1">
+                      {aiCredits === -1 ? "Ilimitados" : "créditos"}
+                    </span>
                   </p>
                 )}
               </div>
-              {aiCredits !== null && aiCredits <= 50 && (
+              {aiCredits !== null && aiCredits >= 0 && aiCredits <= 50 && (
                 <div className="ml-auto flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-1.5">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {aiCredits === 0 ? "Sin créditos — la IA está bloqueada" : "Saldo bajo"}
