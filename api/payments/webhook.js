@@ -402,8 +402,8 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 const PLAN_OPERATIONAL_COSTS = {
   pro:           1700,  // 17.00 € / mes
   pro_anual:     20400, // 204.00 € (17€ × 12 meses)
-  growth:        1700,  // 17.00 € / mes
-  growth_anual:  20400, // 204.00 € (17€ × 12 meses)
+  growth:        2500,  // 25.00 € (5 cuentas x 5€)
+  growth_anual:  30000, // 300.00 € (25€ × 12 meses)
   scale:         3000,  // 30.00 € / mes
   scale_oferta:  3000,  // 30.00 € / mes
   scale_anual:   36000, // 360.00 € (30€ × 12 meses)
@@ -414,8 +414,8 @@ const PLAN_OPERATIONAL_COSTS = {
 const PLAN_AFFILIATE_CUTS = {
   pro:           750,   // (42 - 17) * 0.3 = 7.50 €
   pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
-  growth:        1860,  // (79 - 17) * 0.3 = 18.60 €
-  growth_anual:  17580, // (790 - 204) * 0.3 = 175.80 €
+  growth:        1620,  // (79 - 25) * 0.3 = 16.20 €
+  growth_anual:  14700, // (790 - 300) * 0.3 = 147.00 €
   scale:         2070,  // (99 - 30) * 0.3 = 20.70 €
   scale_oferta:  2070,  // (99 - 30) * 0.3 = 20.70 €
   scale_anual:   18900, // (990 - 360) * 0.3 = 189.00 €
