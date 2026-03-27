@@ -42,7 +42,7 @@ const PLANS: Array<{
     name: 'EficacIA GROWTH',
     tagline: 'El preferido por los equipos',
     monthlyPrice: 79,
-    annualTotal: 780,
+    annualTotal: 790,
     popular: true,
     badge: 'MÁS POPULAR',
     launchOffer: true,
