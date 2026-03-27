@@ -398,28 +398,28 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 //   6. Partner Share = floor(Net Profit / 2)  →  transferred to partner
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Per-plan operational costs (cents) — Anuales calculados a 12 meses reales de gasto
+// Per-plan operational costs (cents) - Anuales calculados a 12 meses
 const PLAN_OPERATIONAL_COSTS = {
-  pro:           1700,  // 17.00 € / mes
-  pro_anual:     20400, // 204.00 € (17€ × 12 meses)
-  growth:        2500,  // 25.00 € (5 cuentas x 5€)
-  growth_anual:  30000, // 300.00 € (25€ × 12 meses)
-  scale:         3000,  // 30.00 € / mes
-  scale_oferta:  3000,  // 30.00 € / mes
-  scale_anual:   36000, // 360.00 € (30€ × 12 meses)
-  addon_account: 500,   //   5.00 € / mes
+  pro:           1700,  // 17.00 € (15€ cuentas + 2€ IA)
+  pro_anual:     20400, // 204.00 € (17€ x 12 meses)
+  growth:        3000,  // 30.00 € (25€ cuentas + 5€ IA)
+  growth_anual:  36000, // 360.00 € (30€ x 12 meses)
+  scale:         6000,  // 60.00 € (50€ cuentas + 10€ IA)
+  scale_oferta:  6000,  // 60.00 €
+  scale_anual:   72000, // 720.00 € (60€ x 12 meses)
+  addon_account: 500,   // 5.00 €
 };
 
 // Per-plan Rewardful affiliate commission (cents) -> 30% del (Precio - Costes)
 const PLAN_AFFILIATE_CUTS = {
   pro:           750,   // (42 - 17) * 0.3 = 7.50 €
   pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
-  growth:        1620,  // (79 - 25) * 0.3 = 16.20 €
-  growth_anual:  14700, // (790 - 300) * 0.3 = 147.00 €
-  scale:         2070,  // (99 - 30) * 0.3 = 20.70 €
-  scale_oferta:  2070,  // (99 - 30) * 0.3 = 20.70 €
-  scale_anual:   18900, // (990 - 360) * 0.3 = 189.00 €
-  addon_account: 0,     // No affiliate cut on add-ons
+  growth:        1470,  // (79 - 30) * 0.3 = 14.70 €
+  growth_anual:  12900, // (790 - 360) * 0.3 = 129.00 €
+  scale:         1170,  // (99 - 60) * 0.3 = 11.70 €
+  scale_oferta:  1170,  // (99 - 60) * 0.3 = 11.70 €
+  scale_anual:   8100,  // (990 - 720) * 0.3 = 81.00 €
+  addon_account: 0,
 };
 
 /** Normalise a raw plan string to a known key, or null if unrecognised.
