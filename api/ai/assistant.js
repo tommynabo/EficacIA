@@ -99,9 +99,9 @@ export default async function handler(req, res) {
     .eq('id', userId)
     .single();
 
-  // Step 1b: Check AI credits — block if exhausted
+  // Step 1b: Check AI credits — block if exhausted (-1 = unlimited, always allowed)
   const currentCredits = userData?.ai_credits ?? 0;
-  if (currentCredits <= 0) {
+  if (currentCredits <= 0 && currentCredits !== -1) {
     return res.status(403).json({ error: 'Créditos agotados', code: 'NO_CREDITS' });
   }
 
@@ -167,12 +167,15 @@ export default async function handler(req, res) {
     }
 
     // Deduct 1 AI credit (best-effort, do not fail the response if this errors)
-    supabase
-      .from('users')
-      .update({ ai_credits: Math.max(0, currentCredits - 1) })
-      .eq('id', userId)
-      .then(() => {})
-      .catch((e) => console.warn('[AI ASSISTANT] Failed to deduct credit:', e.message));
+    // Skip deduction for unlimited plans (ai_credits = -1)
+    if (currentCredits !== -1) {
+      supabase
+        .from('users')
+        .update({ ai_credits: Math.max(0, currentCredits - 1) })
+        .eq('id', userId)
+        .then(() => {})
+        .catch((e) => console.warn('[AI ASSISTANT] Failed to deduct credit:', e.message));
+    }
 
     return res.status(200).json({ content, model: MODEL });
   } catch (err) {

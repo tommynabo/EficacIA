@@ -29,8 +29,8 @@ const PLANS = {
   },
   scale: {
     name: 'Scale',
-    priceId: process.env.STRIPE_AGENCY_MONTHLY || 'price_1TDRVeBYhY8BKBRPp0bdTlp8', // €199/mes
-    price: 19900,
+    priceId: process.env.STRIPE_AGENCY_MONTHLY || 'price_1TFWpqBYhY8BKBRP1TXrbLZ6', // €99/mes
+    price: 9900,
     currency: 'eur',
     features: ['10 cuentas LinkedIn', 'IA Ilimitada', 'Todo incluido', 'Account manager dedicado'],
     trial_days: 7,
@@ -53,8 +53,8 @@ const PLANS = {
   },
   scale_anual: {
     name: 'Scale Anual',
-    priceId: process.env.STRIPE_PRICE_SCALE_ANNUAL || 'price_1TDRVeBYhY8BKBRP51zIUpEy', // €1990/año
-    price: 199000,
+    priceId: process.env.STRIPE_PRICE_SCALE_ANNUAL || 'price_1TFWpxBYhY8BKBRPNs9jx4Cy', // €990/año
+    price: 99000,
     currency: 'eur',
     features: ['10 cuentas LinkedIn', 'IA Ilimitada', 'Todo incluido', 'Account manager dedicado'],
     trial_days: 7,

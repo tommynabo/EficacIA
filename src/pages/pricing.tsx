@@ -16,6 +16,9 @@ const PLANS: Array<{
   popular: boolean
   badge?: string
   launchOffer?: boolean
+  launchBadge?: string
+  originalMonthlyPrice?: number
+  originalAnnualTotal?: number
   accentColor: string
   features: string[]
 }> = [
@@ -64,9 +67,12 @@ const PLANS: Array<{
     name: 'EficacIA SCALE',
     tagline: 'Para agencias y equipos grandes',
     monthlyPrice: 99,
-    annualTotal: 960,
+    annualTotal: 990,
+    originalMonthlyPrice: 199,
+    originalAnnualTotal: 1990,
     popular: false,
-    badge: '🚀 OFERTA LIMITADA',
+    badge: '🔥 Oferta limitada a primeros usuarios',
+    launchBadge: '🔥 Oferta limitada a primeros usuarios',
     accentColor: 'purple',
     features: [
       'Leads ilimitados',
@@ -265,7 +271,19 @@ export default function PricingPage() {
                     <h3 className="text-2xl font-bold text-white">{plan.name}</h3>
                   </div>
                   <p className="text-slate-400 text-sm mb-4">{plan.tagline}</p>
-                  <div className="flex items-baseline gap-1">
+                  {/* Strike-through + launch badge for Scale */}
+                  {plan.launchBadge && (
+                    <div className="mb-2 inline-flex items-center px-3 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold">
+                      {plan.launchBadge}
+                    </div>
+                  )}
+                  <div className="flex items-baseline gap-2">
+                    {billing === 'monthly' && plan.originalMonthlyPrice && (
+                      <span className="line-through text-gray-400 text-lg">{plan.originalMonthlyPrice}€</span>
+                    )}
+                    {billing === 'annual' && plan.originalAnnualTotal && (
+                      <span className="line-through text-gray-400 text-lg">{plan.originalAnnualTotal}€</span>
+                    )}
                     <span className="text-4xl font-bold text-white">€{displayPrice}</span>
                     <span className="text-slate-400 text-sm">{billing === 'annual' ? '/año' : '/mes'}</span>
                   </div>

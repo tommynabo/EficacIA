@@ -30,7 +30,7 @@ export const config = { api: { bodyParser: false } };
 const PLAN_CREDITS = {
   pro:           1000,
   pro_anual:     12000, // 12 meses de golpe (Stripe factura anualmente)
-  growth:        2000,
+  growth:        10000,
   growth_anual:  -1,    // Ilimitado 1 año
   scale:         -1,    // Ilimitado (10 cuentas)
   scale_oferta:  -1,
@@ -392,8 +392,8 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 //   3. − Op. Costs   = fixed infra costs  (PRO/GROWTH: 17 €, SCALE: 30 €)
 //   4. − Affiliate   = Rewardful commission IF subscription/customer metadata
 //                      contains a rewardful key  (per-plan fixed amounts)
-//                      PRO: 7.50 €  |  GROWTH: 18.60 €  |  SCALE: 35.70 €
-//                      SCALE OFERTA: 20.70 €  |  no affiliate: 0 €
+//                      PRO: 7.50 €  |  GROWTH: 18.60 €  |  SCALE: 20.70 €
+//                      no affiliate: 0 €
 //   5. Net Profit    = result of steps 1-4  (floored at 0 — never negative)
 //   6. Partner Share = floor(Net Profit / 2)  →  transferred to partner
 // ─────────────────────────────────────────────────────────────────────────────
@@ -416,9 +416,9 @@ const PLAN_AFFILIATE_CUTS = {
   pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
   growth:        1860,  // (79 - 17) * 0.3 = 18.60 €
   growth_anual:  17580, // (790 - 204) * 0.3 = 175.80 €
-  scale:         5070,  // (199 - 30) * 0.3 = 50.70 €
+  scale:         2070,  // (99 - 30) * 0.3 = 20.70 €
   scale_oferta:  2070,  // (99 - 30) * 0.3 = 20.70 €
-  scale_anual:   48900, // (1990 - 360) * 0.3 = 489.00 €
+  scale_anual:   18900, // (990 - 360) * 0.3 = 189.00 €
   addon_account: 0,     // No affiliate cut on add-ons
 };
 
