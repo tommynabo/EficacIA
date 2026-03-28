@@ -218,75 +218,62 @@ async function handleSync(req, res) {
       return res.status(500).json({ error: 'Configuración de Unipile incompleta.' });
     }
 
-    // Listar todas las cuentas de Unipile
-    const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts`, {
-      headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
-    });
-
-    if (!listRes.ok) {
-      console.error('[SYNC] Error listando cuentas Unipile:', listRes.status);
-      return res.status(502).json({ error: 'Error al consultar Unipile.' });
-    }
-
-    const listData = await listRes.json();
-    const accounts = listData.items || listData || [];
-    console.log(`[SYNC] Unipile devolvió ${Array.isArray(accounts) ? accounts.length : 0} cuentas`);
-
-    if (!Array.isArray(accounts) || accounts.length === 0) {
-      return res.status(200).json({ synced: 0, message: 'No hay cuentas en Unipile.' });
-    }
-
     const teamId = await getOrCreateTeam(userId);
     if (!teamId) {
       return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
     }
 
-    // Obtener cuentas ya registradas
-    const { data: existingAccounts } = await supabaseAdmin
+    // 1. SOURCE OF TRUTH: only fetch accounts already belonging to this user — never insert from sync
+    const { data: myAccounts, error: dbError } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('unipile_account_id')
+      .select('id, unipile_account_id, is_valid')
       .eq('team_id', teamId);
 
-    const existingIds = new Set((existingAccounts || []).map(a => a.unipile_account_id));
-
-    let synced = 0;
-    for (const account of accounts) {
-      const accountId = account.id;
-      if (!accountId || existingIds.has(accountId)) continue;
-
-      // Solo cuentas LinkedIn activas
-      const accountType = account.type || '';
-      const sources = account.sources || [];
-      const isActive = sources.some(s => s.status === 'OK');
-      if (!isActive) continue;
-
-      const profileName = account.connection_params?.im?.username
-        || account.name
-        || `LinkedIn (${accountType})`;
-      const username = profileName.toLowerCase().replace(/\s+/g, '-');
-
-      const { error: insertError } = await supabaseAdmin
-        .from('linkedin_accounts')
-        .upsert({
-          team_id: teamId,
-          username: username,
-          unipile_account_id: accountId,
-          profile_name: profileName,
-          connection_method: 'unipile',
-          is_valid: true,
-          session_cookie: 'managed_by_unipile',
-          last_validated_at: new Date().toISOString(),
-        }, { onConflict: 'unipile_account_id' });
-
-      if (insertError) {
-        console.error(`[SYNC] Error upserting ${accountId}:`, insertError.message);
-      } else {
-        synced++;
-        console.log(`[SYNC] ✓ Cuenta registrada: ${accountId} (${profileName}) → usuario ${userId}`);
-      }
+    if (dbError) {
+      return res.status(500).json({ error: 'Error al consultar la base de datos.' });
     }
 
-    return res.status(200).json({ synced, message: `${synced} cuenta(s) sincronizada(s).` });
+    if (!myAccounts || myAccounts.length === 0) {
+      return res.status(200).json({ synced: 0, message: 'No hay cuentas registradas para este usuario.' });
+    }
+
+    // 2. Fetch Unipile list ONLY to update the status of already-owned accounts
+    // NEVER insert a new account here — new accounts are created exclusively via POST /accounts
+    let synced = 0;
+    try {
+      const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts`, {
+        headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+      });
+
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const unipileAccounts = listData.items || listData || [];
+
+        for (const dbAcc of myAccounts) {
+          if (!dbAcc.unipile_account_id) continue;
+          const unAcc = Array.isArray(unipileAccounts)
+            ? unipileAccounts.find(u => u.id === dbAcc.unipile_account_id)
+            : null;
+          if (!unAcc) continue;
+
+          const isActive = (unAcc.sources || []).some(s => s.status === 'OK');
+          if (isActive !== dbAcc.is_valid) {
+            const { error: updateError } = await supabaseAdmin
+              .from('linkedin_accounts')
+              .update({ is_valid: isActive, last_validated_at: new Date().toISOString() })
+              .eq('id', dbAcc.id)
+              .eq('team_id', teamId); // Explicit ownership guard on every write
+            if (!updateError) synced++;
+          }
+        }
+      } else {
+        console.error('[SYNC] Error listando cuentas Unipile:', listRes.status);
+      }
+    } catch (e) {
+      console.error('[SYNC] Error syncing statuses from Unipile:', e.message);
+    }
+
+    return res.status(200).json({ synced, message: `${synced} cuenta(s) actualizadas.` });
 
   } catch (err) {
     console.error('[SYNC] Error interno:', err);
@@ -340,11 +327,12 @@ async function handleRegister(req, res) {
       return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
     }
 
-    // Verificar si ya existe
+    // Verificar si ya existe — filtrar por team_id para evitar apropiarse de cuentas ajenas
     const { data: existingAccount } = await supabaseAdmin
       .from('linkedin_accounts')
       .select('id')
       .eq('unipile_account_id', unipileAccountId)
+      .eq('team_id', teamId)
       .single();
 
     if (existingAccount) {
@@ -356,7 +344,8 @@ async function handleRegister(req, res) {
           last_validated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', existingAccount.id);
+        .eq('id', existingAccount.id)
+        .eq('team_id', teamId); // Ownership guard
 
       console.log(`[REGISTER] ✓ Cuenta reconectada: ${unipileAccountId} → usuario ${userId}`);
       return res.status(200).json({ success: true, action: 'updated' });
@@ -591,11 +580,12 @@ async function handleWebhook(req, res) {
       return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
     }
 
-    // Buscar si ya existe (evitar duplicados)
+    // Buscar si ya existe (evitar duplicados) — filtrar por team_id para evitar apropiarse de cuentas ajenas
     const { data: existingAccount } = await supabaseAdmin
       .from('linkedin_accounts')
       .select('id')
       .eq('unipile_account_id', unipileAccountId)
+      .eq('team_id', teamId)
       .single();
 
     if (existingAccount) {
@@ -607,7 +597,8 @@ async function handleWebhook(req, res) {
           last_validated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', existingAccount.id);
+        .eq('id', existingAccount.id)
+        .eq('team_id', teamId); // Ownership guard
 
       if (updateError) {
         console.error('[WEBHOOK] Error al actualizar cuenta:', updateError.message);

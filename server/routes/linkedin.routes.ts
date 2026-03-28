@@ -647,6 +647,7 @@ router.delete('/accounts/:accountId', authMiddleware, async (req: Request, res: 
       .from('linkedin_accounts')
       .delete()
       .eq('id', accountId)
+      .in('team_id', userTeamIds.length ? userTeamIds : ['none'])
 
     if (error) {
       return res.status(400).json({ error: error.message })
