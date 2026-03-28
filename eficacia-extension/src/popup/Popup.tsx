@@ -238,11 +238,18 @@ const Popup = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Token de Conexión (API Key)</label>
-                <textarea 
+                <input
+                  type="text"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder="efi_..."
-                  className="w-full h-24 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none transition-all font-mono text-[11px]"
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const paste = e.clipboardData.getData('text');
+                    setToken(paste.trim());
+                  }}
+                  placeholder="Pega aquí tu API Token (efi_...)"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono text-[11px]"
+                  autoFocus
                 />
               </div>
             </div>
