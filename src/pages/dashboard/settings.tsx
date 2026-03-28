@@ -523,26 +523,31 @@ export default function SettingsPage() {
               <CardTitle className="text-base font-bold text-slate-200">Token de Conexión (API Key)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-base text-slate-400 leading-relaxed">Genera y utiliza este token permanente en la extensión para vincular tu cuenta.</p>
+              <p className="text-base text-slate-400 leading-relaxed">Tu token vitalicio para vincular la extensión con tu cuenta.</p>
               {isLoadingKey ? (
                 <div className="flex items-center justify-center p-4">
                   <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
                 </div>
               ) : apiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    readOnly
-                    type="password"
-                    value={apiKey}
-                    className="bg-slate-950 border-slate-800 font-mono text-sm text-slate-400"
-                  />
-                  <Button variant="outline" onClick={() => navigator.clipboard.writeText(apiKey)}>
-                    Copiar
-                  </Button>
-                </div>
+                <>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      type="text"
+                      value={apiKey}
+                      className="bg-slate-950 border-slate-800 font-mono text-sm text-slate-300"
+                    />
+                    <Button variant="outline" onClick={() => navigator.clipboard.writeText(apiKey)}>
+                      Copiar
+                    </Button>
+                  </div>
+                  <p className="text-sm text-emerald-400 font-medium">
+                    Este es tu Token Vitalicio. Nunca caduca. Pégalo en tu extensión de Chrome.
+                  </p>
+                </>
               ) : (
                 <Button onClick={generateApiKey} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2 py-6 text-base">
-                  <Plus className="w-5 h-5" /> Generar Token de Conexión
+                  <Plus className="w-5 h-5" /> Obtener Token de Conexión
                 </Button>
               )}
               <div className="p-4 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-sm text-emerald-400 flex items-start gap-2">

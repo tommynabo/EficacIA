@@ -18,41 +18,38 @@ export function setCors(res) {
 export async function getAuthUser(req) {
   try {
     const authHeader = req.headers['authorization'];
-    const apiKey = req.headers['x-api-key'] || (authHeader ? authHeader.replace('Bearer ', '') : null);
+    const token = req.headers['x-api-key'] || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
-    // 1. Verificación B2B (System Admin)
-    if (apiKey && apiKey === process.env.API_SECRET_KEY) {
+    if (!token) return null;
+
+    // 1. System Admin B2B
+    if (token === process.env.API_SECRET_KEY) {
       return { userId: 'system', role: 'admin' };
     }
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return null;
+    // 2. Lifetime Extension Token — looked up in DB, never expires
+    const { data: userWithToken, error: tokenError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('extension_token', token)
+      .single();
+
+    if (userWithToken && !tokenError) {
+      return { userId: userWithToken.id, id: userWithToken.id, role: 'user' };
     }
 
-    const token = authHeader.replace('Bearer ', '');
-
-    // 2. Decodificación rápida sin overhead de red (Protegido por API Gateway / Frontend)
+    // 3. Fallback: Web JWT (dashboard sessions)
     const decoded = jwt.decode(token);
-
-    if (!decoded) {
-      return null;
+    if (decoded) {
+      const userId = decoded.sub || decoded.userId || decoded.id;
+      if (userId) {
+        return { ...decoded, userId, id: userId };
+      }
     }
 
-    // Extracción estricta del claim correcto de Supabase para evitar cruce de datos
-    const userId = decoded.sub || decoded.userId || decoded.id;
-
-    if (!userId) {
-      console.error('[AUTH] Token missing strict user ID claim');
-      return null;
-    }
-
-    return {
-      ...decoded,
-      userId: userId,
-      id: userId
-    };
+    return null;
   } catch (error) {
-    console.error('[AUTH] Error parsing token:', error.message);
+    console.error('[AUTH] Error verifying token:', error.message);
     return null;
   }
 }

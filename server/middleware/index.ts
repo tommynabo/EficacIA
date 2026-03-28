@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyJWT } from '../lib/utils.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 declare global {
   namespace Express {
@@ -10,22 +11,42 @@ declare global {
   }
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No authorization token' });
     }
 
     const token = authHeader.substring(7);
+
+    // 1. System Admin B2B
+    if (token === process.env.API_SECRET_KEY) {
+      req.userId = 'system';
+      return next();
+    }
+
+    // 2. Lifetime Extension Token — looked up in DB, never expires
+    const { data: userWithToken } = await (supabaseAdmin as any)
+      .from('users')
+      .select('id')
+      .eq('extension_token', token)
+      .single();
+
+    if (userWithToken) {
+      req.userId = userWithToken.id;
+      return next();
+    }
+
+    // 3. Fallback: Web JWT (dashboard sessions)
     const decoded = verifyJWT(token);
 
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    req.userId = decoded.sub || decoded.userId || decoded.id;
+    req.userId = decoded.userId;
     req.email = decoded.email;
 
     if (!req.userId) {
