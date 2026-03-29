@@ -109,6 +109,8 @@ export default function CampaignDetailPage() {
 
   // Leads state
   const [search, setSearch] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState<string>("all")
+  const [emailFilter, setEmailFilter] = React.useState(false)
   const [showAddLeadModal, setShowAddLeadModal] = React.useState(false)
   const [cookieUpdateStatus, setCookieUpdateStatus] = React.useState<{type: 'success' | 'error', message: string} | null>(null)
   const [leadToDelete, setLeadToDelete] = React.useState<string | null>(null)
@@ -124,6 +126,10 @@ export default function CampaignDetailPage() {
   const [aiDialogOpen, setAiDialogOpen] = React.useState(false)
   const [aiObjective, setAiObjective] = React.useState("")
   const [aiGenerating, setAiGenerating] = React.useState(false)
+
+  // Preview state
+  const [showPreviewModal, setShowPreviewModal] = React.useState(false)
+  const [previewLeadIdx, setPreviewLeadIdx] = React.useState(0)
 
   // Compute custom variable names from all loaded leads
   const customVarKeys = React.useMemo(() => {
@@ -482,6 +488,19 @@ export default function CampaignDetailPage() {
 
   const activeStep = steps.find(s => s.id === activeStepId)
 
+  // Substitutes template variables with actual lead data for preview
+  const previewMessage = (text: string, lead: Lead | null): string => {
+    if (!lead) return text
+    const varMap: Record<string, string> = {
+      nombre:   lead.first_name || '',
+      apellido: lead.last_name  || '',
+      empresa:  lead.company    || '',
+      cargo:    lead.position   || '',
+      ...(lead.custom_vars || {}),
+    }
+    return text.replace(/\{\{(\w+)\}\}/g, (_m, k) => varMap[k] !== undefined ? varMap[k] : `{{${k}}}`)
+  }
+
   // --- Render: Loading --------------------------------------------------------
 
   if (loading) {
@@ -508,13 +527,23 @@ export default function CampaignDetailPage() {
   }
 
   const filteredLeads = leads.filter(l => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      `${l.first_name} ${l.last_name}`.toLowerCase().includes(q) ||
-      l.company?.toLowerCase().includes(q) ||
-      l.linkedin_url?.toLowerCase().includes(q)
-    )
+    if (search) {
+      const q = search.toLowerCase()
+      const match =
+        `${l.first_name} ${l.last_name}`.toLowerCase().includes(q) ||
+        l.company?.toLowerCase().includes(q) ||
+        l.linkedin_url?.toLowerCase().includes(q)
+      if (!match) return false
+    }
+    if (statusFilter === "sent") {
+      if (!l.sent_message) return false
+    } else if (statusFilter === "not_sent") {
+      if (l.sent_message) return false
+    } else if (statusFilter !== "all") {
+      if (l.status !== statusFilter) return false
+    }
+    if (emailFilter && !l.email) return false
+    return true
   })
 
   const statusConfig = {
@@ -719,6 +748,54 @@ export default function CampaignDetailPage() {
 
       {activeTab === "leads" && (
         <div className="space-y-4">
+          {/* ── Barra de filtros avanzados ──────────────────────────────── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              { key: "all",       label: "Todos" },
+              { key: "new",       label: "Nuevo" },
+              { key: "sent",      label: "Enviado" },
+              { key: "not_sent",  label: "No enviado" },
+              { key: "contacted", label: "Contactado" },
+              { key: "qualified", label: "Cualificado" },
+              { key: "converted", label: "Convertido" },
+            ] as const).map(f => {
+              const count =
+                f.key === "all"      ? leads.length
+                : f.key === "sent"     ? leads.filter(l => l.sent_message).length
+                : f.key === "not_sent" ? leads.filter(l => !l.sent_message).length
+                : leads.filter(l => l.status === f.key).length
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    statusFilter === f.key
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {f.label}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    statusFilter === f.key
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                  }`}>{count}</span>
+                </button>
+              )
+            })}
+            <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+            <button
+              onClick={() => setEmailFilter(v => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                emailFilter
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+            >
+              <Mail className="w-3 h-3" /> Solo con email
+            </button>
+          </div>
+
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-xs">
@@ -912,12 +989,22 @@ export default function CampaignDetailPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Mensaje de Outreach</label>
-                    <button
-                      onClick={() => updateStep(activeStep.id, { content: "" })}
-                      className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" /> Limpiar contenido
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewLeadIdx(0); setShowPreviewModal(true) }}
+                        className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors font-medium"
+                      >
+                        <Eye className="w-3 h-3" /> Vista Previa
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-600 text-xs">|</span>
+                      <button
+                        onClick={() => updateStep(activeStep.id, { content: "" })}
+                        className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" /> Limpiar
+                      </button>
+                    </div>
                   </div>
                   <div className="relative">
                     <textarea
@@ -1339,6 +1426,96 @@ export default function CampaignDetailPage() {
               </Button>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* \u2500\u2500 Modal: Vista Previa del mensaje con variables sustituidas \u2500\u2500\u2500\u2500 */}
+      {showPreviewModal && activeStep && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowPreviewModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-blue-500" />
+                <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-200">Vista Previa del Mensaje</h3>
+                <Badge variant="outline" className="text-[10px] px-1.5">
+                  {activeStep.type === "invitation" ? "Invitaci\u00f3n" : "Mensaje"}
+                </Badge>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {leads.length > 0 ? (
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-1.5">
+                    Previsualizar con lead:
+                  </label>
+                  <select
+                    value={previewLeadIdx}
+                    onChange={e => setPreviewLeadIdx(parseInt(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    {leads.slice(0, 20).map((l, i) => (
+                      <option key={l.id} value={i}>
+                        {l.first_name} {l.last_name}{l.company ? ` \u2014 ${l.company}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Sin leads a\u00f1adidos \u2014 las variables aparecer\u00e1n sin sustituir.</p>
+              )}
+
+              {/* Message bubble preview */}
+              <div className="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                    T\u00fa
+                  </div>
+                  <span className="text-xs text-slate-500">As\u00ed ver\u00e1 el mensaje tu contacto</span>
+                </div>
+                <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                  {previewMessage(activeStep.content, leads[previewLeadIdx] || null)}
+                </p>
+              </div>
+
+              {/* Char count */}
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>{activeStep.type === "invitation" ? "Invitaci\u00f3n de conexi\u00f3n" : "Mensaje directo"}</span>
+                {(() => {
+                  const len = previewMessage(activeStep.content, leads[previewLeadIdx] || null).length
+                  const overLimit = activeStep.type === "invitation" && len > 200
+                  return (
+                    <span className={overLimit ? "text-red-500 font-bold" : ""}>
+                      {len} caracteres{activeStep.type === "invitation" && " / 200 m\u00e1x."}
+                      {overLimit && " \u26a0 Supera l\u00edmite"}
+                    </span>
+                  )
+                })()}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="ghost" size="sm" onClick={() => setShowPreviewModal(false)}>Cerrar</Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => { setShowPreviewModal(false); setAiDialogOpen(true); setAiObjective("") }}
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Iterar con IA
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

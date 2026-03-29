@@ -4,7 +4,7 @@ import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
 import { Badge } from "@/src/components/ui/badge"
 import { Skeleton } from "@/src/components/ui/skeleton"
-import { AlertCircle, Trash2, CheckCircle2, X, Linkedin, Zap, ShieldAlert, Loader } from "lucide-react"
+import { AlertCircle, Trash2, CheckCircle2, X, Linkedin, Zap, ShieldAlert, Loader, Send, MessageSquare, TrendingUp } from "lucide-react"
 import ConnectLinkedInButton from "@/src/components/connect-linkedin-button"
 
 const RISK_THRESHOLD = 15 // acciones/hora — límite máximo permitido
@@ -104,6 +104,27 @@ export default function AccountsPage() {
   // Plan limit modal state
   const [showPlanLimitModal, setShowPlanLimitModal] = React.useState(false)
 
+  // Daily metrics state
+  const [dailyStats, setDailyStats] = React.useState<{ invitations: number; messages: number; accepted: number } | null>(null)
+
+  const fetchDailyStats = async () => {
+    try {
+      const tkn = localStorage.getItem("auth_token")
+      const res = await fetch("/api/linkedin/campaigns", {
+        headers: { Authorization: `Bearer ${tkn}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const campaigns: any[] = data.campaigns || []
+        setDailyStats({
+          invitations: campaigns.reduce((s, c) => s + (c.stats?.invitations || 0), 0),
+          messages: campaigns.reduce((s, c) => s + (c.stats?.messages || 0), 0),
+          accepted: campaigns.reduce((s, c) => s + (c.stats?.accepted || 0), 0),
+        })
+      }
+    } catch { /* silent */ }
+  }
+
   // Auto-withdraw settings are now managed from Settings → Auto-Withdraw tab
 
   // Pending invitations per account (accountId → count), used to calculate health score
@@ -182,6 +203,7 @@ export default function AccountsPage() {
       // Sincronizar cuentas de Unipile automáticamente al cargar la página
       syncUnipileAccounts()
     })
+    fetchDailyStats()
   }, [])
   // Detectar retorno desde Unipile (?unipile=success en la URL)
   React.useEffect(() => {
@@ -286,6 +308,29 @@ export default function AccountsPage() {
           </div>
         </Card>
       )}
+
+      {/* ── Indicadores de actividad ───────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {([
+          { icon: Send,          label: "Invitaciones enviadas",  key: "invitations" as const, color: "text-blue-400",    bg: "bg-blue-500/10"    },
+          { icon: MessageSquare, label: "Mensajes enviados",      key: "messages"    as const, color: "text-purple-400",  bg: "bg-purple-500/10"  },
+          { icon: TrendingUp,    label: "Conexiones aceptadas",  key: "accepted"    as const, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+        ] as const).map(({ icon: Icon, label, key, color, bg }) => (
+          <Card key={label} className="p-5 flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+              <Icon className={`w-6 h-6 ${color}`} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+              {dailyStats === null ? (
+                <Skeleton className="h-7 w-16 mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-slate-100">{dailyStats[key].toLocaleString("es-ES")}</p>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
 
       <Card>
         <Table>

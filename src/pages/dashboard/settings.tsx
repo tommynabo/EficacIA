@@ -4,7 +4,8 @@ import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
-import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt, Trash2, Pencil } from "lucide-react"
+import { ShieldAlert, CheckCircle2, Plus, Download, Loader2, Lock, Timer, AlertCircle, Sparkles, Ban, UserCheck, Zap, CreditCard, ExternalLink, FileText, Receipt, Trash2, Pencil, Calendar, Clock } from "lucide-react"
+import { Switch } from "@/src/components/ui/switch"
 import { useAuth } from "@/src/contexts/AuthContext"
 
 export default function SettingsPage() {
@@ -63,6 +64,20 @@ export default function SettingsPage() {
   const [unblockingId, setUnblockingId] = React.useState<string | null>(null)
   const [blockedMsg, setBlockedMsg] = React.useState<{ type: "success" | "error"; text: string } | null>(null)
 
+  // Global send-schedule state (per action type)
+  interface ScheduleWindow { enabled: boolean; days: number[]; start_time: string; end_time: string }
+  const [globalSchedule, setGlobalSchedule] = React.useState<{
+    invitations: ScheduleWindow
+    messages: ScheduleWindow
+    timezone: string
+  }>({
+    invitations: { enabled: false, days: [1, 2, 3, 4, 5], start_time: '09:00', end_time: '18:00' },
+    messages:    { enabled: false, days: [1, 2, 3, 4, 5], start_time: '09:00', end_time: '18:00' },
+    timezone: 'Europe/Madrid',
+  })
+  const [scheduleSaving, setScheduleSaving] = React.useState(false)
+  const [scheduleMsg, setScheduleMsg] = React.useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
   // Message templates state
   interface MessageTemplate { id: string; name: string; content: string }
   const [templates, setTemplates] = React.useState<MessageTemplate[]>([])
@@ -74,12 +89,56 @@ export default function SettingsPage() {
   const token = () => localStorage.getItem("auth_token")
   const envUrl = import.meta.env.VITE_API_URL || ""
 
+  const loadGlobalSchedule = async () => {
+    try {
+      const res = await fetch(`${envUrl}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.global_schedule) {
+          setGlobalSchedule(data.global_schedule)
+        }
+      }
+    } catch { /* silent */ }
+  }
+
+  const saveGlobalSchedule = async () => {
+    try {
+      setScheduleSaving(true)
+      const res = await fetch(`${envUrl}/api/auth/me`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ global_schedule: globalSchedule }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error al guardar')
+      setScheduleMsg({ type: 'success', text: '✓ Horarios de envío guardados correctamente' })
+      setTimeout(() => setScheduleMsg(null), 4000)
+    } catch (e: any) {
+      setScheduleMsg({ type: 'error', text: e.message || 'Error al guardar' })
+      setTimeout(() => setScheduleMsg(null), 4000)
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
+
+  const updateScheduleSection = (
+    section: 'invitations' | 'messages',
+    updates: Partial<{ enabled: boolean; days: number[]; start_time: string; end_time: string }>
+  ) => {
+    setGlobalSchedule(s => ({ ...s, [section]: { ...s[section], ...updates } }))
+  }
+
   React.useEffect(() => {
     if (activeTab === "extension") {
       fetchApiKey()
     }
     if (activeTab === "auto-withdraw") {
       loadAWAccounts()
+    }
+    if (activeTab === "horarios") {
+      loadGlobalSchedule()
     }
     if (activeTab === "blocked") {
       loadBlockedLeads()
@@ -423,6 +482,7 @@ export default function SettingsPage() {
           { key: "extension", label: "Extensión Eficacia", badge: "Nueva" }, 
           { key: "billing", label: "Facturación" },
           { key: "auto-withdraw", label: "Auto-Withdraw" },
+          { key: "horarios", label: "Horarios de Envío" },
           { key: "blocked", label: "Bloqueados" },
           { key: "ai-assistant", label: "IA Assistant" },
           { key: "credits", label: "Créditos IA + Cuentas Extra" },
@@ -1456,6 +1516,172 @@ export default function SettingsPage() {
       )}
 
       {/* ─── AFILIADOS TAB ────────────────────────────────────────────── */}
+      {activeTab === "horarios" && (
+        <div className="max-w-3xl space-y-6">
+          {scheduleMsg && (
+            <div className={`flex items-center gap-2 text-sm rounded-lg p-3 border ${
+              scheduleMsg.type === 'success'
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-400 bg-red-500/10 border-red-500/20'
+            }`}>
+              {scheduleMsg.type === 'success'
+                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                : <AlertCircle className="w-4 h-4 shrink-0" />}
+              {scheduleMsg.text}
+            </div>
+          )}
+
+          {/* Zona horaria global */}
+          <Card className="border-slate-800 bg-slate-900/40">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <CardTitle className="text-base">Zona Horaria Global</CardTitle>
+              </div>
+              <CardDescription>Se aplica a los horarios configurados a continuación.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <select
+                value={globalSchedule.timezone}
+                onChange={e => setGlobalSchedule(s => ({ ...s, timezone: e.target.value }))}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <optgroup label="Europa">
+                  <option value="Europe/Madrid">Madrid — CET/CEST (UTC+1/+2)</option>
+                  <option value="Europe/London">Londres — GMT/BST (UTC+0/+1)</option>
+                  <option value="Europe/Paris">París — CET/CEST (UTC+1/+2)</option>
+                  <option value="Europe/Berlin">Berlín — CET/CEST (UTC+1/+2)</option>
+                  <option value="Europe/Lisbon">Lisboa — WET/WEST (UTC+0/+1)</option>
+                </optgroup>
+                <optgroup label="América Latina">
+                  <option value="America/Mexico_City">Ciudad de México — CST/CDT (UTC-6/-5)</option>
+                  <option value="America/Bogota">Bogotá — COT (UTC-5)</option>
+                  <option value="America/Lima">Lima — PET (UTC-5)</option>
+                  <option value="America/Santiago">Santiago — CLT/CLST (UTC-4/-3)</option>
+                  <option value="America/Argentina/Buenos_Aires">Buenos Aires — ART (UTC-3)</option>
+                  <option value="America/Sao_Paulo">São Paulo — BRT (UTC-3)</option>
+                </optgroup>
+                <optgroup label="Norteamérica">
+                  <option value="America/New_York">Nueva York — EST/EDT (UTC-5/-4)</option>
+                  <option value="America/Chicago">Chicago — CST/CDT (UTC-6/-5)</option>
+                  <option value="America/Los_Angeles">Los Ángeles — PST/PDT (UTC-8/-7)</option>
+                </optgroup>
+                <option value="UTC">UTC (Universal)</option>
+              </select>
+            </CardContent>
+          </Card>
+
+          {/* Invitaciones */}
+          {(['invitations', 'messages'] as const).map(section => {
+            const win = globalSchedule[section]
+            const isInvitations = section === 'invitations'
+            return (
+              <Card key={section} className="border-slate-800 bg-slate-900/40">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-blue-400" />
+                      <CardTitle className="text-base">
+                        {isInvitations ? 'Horario de Invitaciones' : 'Horario de Mensajes'}
+                      </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium ${win.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {win.enabled ? 'Activo' : 'Inactivo'}
+                      </span>
+                      <Switch
+                        checked={win.enabled}
+                        onCheckedChange={v => updateScheduleSection(section, { enabled: v })}
+                      />
+                    </div>
+                  </div>
+                  <CardDescription>
+                    {isInvitations
+                      ? 'Define cuándo se envían las solicitudes de conexión. Puedes habilitarlo para noches y fines de semana.'
+                      : 'Define cuándo se envían los mensajes de seguimiento, independientemente del horario de invitaciones.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className={`space-y-5 transition-opacity duration-200 ${win.enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    {/* Días activos */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-tight mb-2">Días activos</label>
+                      <div className="flex gap-2 flex-wrap">
+                        {[{d:1,l:'L'},{d:2,l:'M'},{d:3,l:'X'},{d:4,l:'J'},{d:5,l:'V'},{d:6,l:'S'},{d:0,l:'D'}].map(({ d, l }) => {
+                          const active = win.days.includes(d)
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => updateScheduleSection(section, {
+                                days: active ? win.days.filter(x => x !== d) : [...win.days, d]
+                              })}
+                              className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${
+                                active
+                                  ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
+                                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                              }`}
+                            >
+                              {l}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {isInvitations && (
+                        <p className="text-xs text-slate-500 mt-2">
+                          ℹ️ Las invitaciones funcionan bien de noche y en fin de semana cuando el destinatario revisa LinkedIn en su tiempo libre.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Franja horaria */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-tight mb-1.5">Hora de inicio</label>
+                        <input
+                          type="time"
+                          value={win.start_time}
+                          onChange={e => updateScheduleSection(section, { start_time: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-tight mb-1.5">Hora de fin</label>
+                        <input
+                          type="time"
+                          value={win.end_time}
+                          onChange={e => updateScheduleSection(section, { end_time: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Resumen */}
+                    {win.enabled && win.days.length > 0 && (
+                      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg px-4 py-3 text-xs text-blue-400">
+                        <span className="font-semibold">Resumen:</span> Se enviarán{' '}
+                        {isInvitations ? 'invitaciones' : 'mensajes'} de{' '}
+                        {win.start_time} a {win.end_time}{' '}los días{' '}
+                        {win.days.sort().map(d => ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d]).join(', ')}
+                        {' '}(
+                        <span className="font-mono">{globalSchedule.timezone}</span>).
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={loadGlobalSchedule} disabled={scheduleSaving}>Descartar</Button>
+            <Button onClick={saveGlobalSchedule} disabled={scheduleSaving} className="gap-2 px-8">
+              {scheduleSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : 'Guardar Horarios'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {activeTab === "afiliados" && (
         <div className="space-y-6">
           <div>
