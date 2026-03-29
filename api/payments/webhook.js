@@ -403,7 +403,7 @@ const PLAN_OPERATIONAL_COSTS = {
   pro:           1700,  // 17.00 € (15€ cuentas + 2€ IA)
   pro_anual:     20400, // 204.00 € (17€ x 12 meses)
   growth:        3000,  // 30.00 € (25€ cuentas + 5€ IA)
-  growth_anual:  36000, // 360.00 € (30€ x 12 meses)
+  growth_anual:  33600, // 336.00 € (28€ x 12 meses)
   scale:         6000,  // 60.00 € (50€ cuentas + 10€ IA)
   scale_oferta:  6000,  // 60.00 €
   scale_anual:   72000, // 720.00 € (60€ x 12 meses)
@@ -415,7 +415,7 @@ const PLAN_AFFILIATE_CUTS = {
   pro:           750,   // (42 - 17) * 0.3 = 7.50 €
   pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
   growth:        1470,  // (79 - 30) * 0.3 = 14.70 €
-  growth_anual:  12900, // (790 - 360) * 0.3 = 129.00 €
+  growth_anual:  13620, // (790 - 336) * 0.3 = 136.20 €
   scale:         1170,  // (99 - 60) * 0.3 = 11.70 €
   scale_oferta:  1170,  // (99 - 60) * 0.3 = 11.70 €
   scale_anual:   8100,  // (990 - 720) * 0.3 = 81.00 €
@@ -478,8 +478,26 @@ async function executePartnerSplit(stripe, invoice) {
   ]);
 
   // ── Determine plan ────────────────────────────────────────────────────────
-  const planRaw  = subMeta.plan || custMeta.plan || '';
-  const planKey  = normalisePlan(planRaw);
+  const planRaw = subMeta.plan || custMeta.plan || '';
+  let planKey = normalisePlan(
+    planRaw ||
+    invoice.lines?.data[0]?.price?.lookup_key ||
+    invoice.lines?.data[0]?.plan?.nickname ||
+    ''
+  );
+
+  // SISTEMA ANTIFALLOS: Si Stripe envía el metadato vacío o no lo reconoce,
+  // inferir el plan basándose en el importe cobrado (invoice.amount_paid, en céntimos).
+  if (!planKey || planKey === 'pro') {
+    const amountPaid = invoice.amount_paid; // en céntimos
+    if      (amountPaid === 4200)  planKey = 'pro';
+    else if (amountPaid === 42000) planKey = 'pro_anual';
+    else if (amountPaid === 7900)  planKey = 'growth';
+    else if (amountPaid === 79000) planKey = 'growth_anual';
+    else if (amountPaid === 9900)  planKey = 'scale_oferta';
+    else if (amountPaid === 99000) planKey = 'scale_anual';
+    if (planKey) console.log(`[WEBHOOK] ANTIFALLOS: plan inferred from amount_paid=${amountPaid} → '${planKey}'`);
+  }
 
   // ── Step 2: Stripe Fee (exact from BalanceTransaction, else estimated) ────
   let stripeFee = 0;
