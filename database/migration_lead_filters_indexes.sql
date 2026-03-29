@@ -6,6 +6,10 @@
 -- Applied  : Run once in Supabase SQL editor or via any migration tool.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Enable pg_trgm extension (required for gin_trgm_ops in index 7 below).
+-- Safe to run multiple times — IF NOT EXISTS is idempotent.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- (1) Fast per-campaign lookup — base index for all lead queries scoped to a campaign
 CREATE INDEX IF NOT EXISTS idx_leads_campaign_id
   ON leads (campaign_id);
@@ -39,7 +43,3 @@ CREATE INDEX IF NOT EXISTS idx_leads_name_company_trgm
     (first_name || ' ' || last_name || ' ' || COALESCE(company, '')) gin_trgm_ops
   );
 
--- Note: index (7) requires the pg_trgm extension.
--- If not enabled, comment out index (7) and run:
---   CREATE EXTENSION IF NOT EXISTS pg_trgm;
--- first, or simply skip it — the other indexes cover most filter scenarios.
