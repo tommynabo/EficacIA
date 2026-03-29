@@ -501,20 +501,21 @@ async function executePartnerSplit(stripe, invoice) {
 
   // ── Step 2: Stripe Fee (exact from BalanceTransaction, else estimated) ────
   let stripeFee = 0;
-  try {
-    const chargeId = invoice.charge;
-    if (chargeId) {
-      const charge = await stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] });
-      const bt = charge.balance_transaction;
-      if (bt && typeof bt === 'object') {
-        stripeFee = bt.fee || 0;
+  if (invoice.charge) {
+    try {
+      const charge = await stripe.charges.retrieve(invoice.charge, {
+        expand: ['balance_transaction']
+      });
+      if (charge.balance_transaction && charge.balance_transaction.fee) {
+        stripeFee = charge.balance_transaction.fee;
         console.log(`[WEBHOOK] Stripe fee (exact): ${stripeFee} ¢`);
       }
+    } catch (feeError) {
+      console.error('[WEBHOOK] Error fetching Stripe fee, using fallback estimation:', feeError.message);
+      // Fallback: estimación del 1.5% + 0.25€ si falla la API
+      stripeFee = Math.round(invoice.amount_paid * 0.015) + 25;
+      console.warn(`[WEBHOOK] Stripe fee estimate (fallback): ${stripeFee} ¢`);
     }
-  } catch (feeErr) {
-    // Conservative EU card rate fallback: 2 % + 0.25 €
-    stripeFee = Math.ceil(gross * 0.02) + 25;
-    console.warn(`[WEBHOOK] Could not retrieve Stripe fee — estimate: ${stripeFee} ¢. ${feeErr.message}`);
   }
 
   // ── Step 3: Operational Costs ─────────────────────────────────────────────
@@ -534,10 +535,16 @@ async function executePartnerSplit(stripe, invoice) {
   );
   const affiliateCut = isAffiliate ? (PLAN_AFFILIATE_CUTS[planKey] ?? 0) : 0;
 
-  // ── Step 5: Net Profit (never negative) ───────────────────────────────────
-  const afterFee    = Math.max(0, gross - stripeFee);
-  const afterCosts  = Math.max(0, afterFee - operationalCosts);
-  const netProfit   = Math.max(0, afterCosts - affiliateCut);
+  // ── Step 5: Net Profit ────────────────────────────────────────────────────
+  const grossAmount = invoice.amount_paid;
+  // Beneficio Neto = Lo que paga el cliente - Comisión de Stripe - Costes Servidores - Comisión Afiliado
+  const netProfit = grossAmount - stripeFee - operationalCosts - affiliateCut;
+
+  // Si por algún motivo los costes superan al ingreso (ej. cupones 100%), no transferimos nada
+  if (netProfit <= 0) {
+    console.log(`[WEBHOOK] Net profit is zero or negative (${netProfit}). Skipping transfer.`);
+    return;
+  }
 
   // ── Step 6: 50/50 Partner Share ───────────────────────────────────────────
   const partnerShare = Math.floor(netProfit / 2);
@@ -545,7 +552,7 @@ async function executePartnerSplit(stripe, invoice) {
   // Human-readable breakdown for Vercel logs
   const fmt = (c) => `${(c / 100).toFixed(2)}€`;
   console.log(
-    `[WEBHOOK] 💰 Pago ${fmt(gross)} → Fee ${fmt(stripeFee)} → Costes ${fmt(operationalCosts)} → Afiliado ${fmt(affiliateCut)} → Beneficio ${fmt(netProfit)} → Split Socio ${fmt(partnerShare)}` +
+    `[WEBHOOK] 💰 Pago ${fmt(grossAmount)} → Fee ${fmt(stripeFee)} → Costes ${fmt(operationalCosts)} → Afiliado ${fmt(affiliateCut)} → Beneficio ${fmt(netProfit)} → Split Socio ${fmt(partnerShare)}` +
     ` | plan=${planKey} afiliado=${isAffiliate} invoice=${invoice.id}`
   );
 
@@ -567,14 +574,14 @@ async function executePartnerSplit(stripe, invoice) {
         metadata: {
           invoice_id:        invoice.id,
           plan:              planKey,
-          is_affiliate:      String(isAffiliate),
-          gross_amount:      String(gross),
-          stripe_fee:        String(stripeFee),
-          operational_costs: String(operationalCosts),
-          affiliate_cut:     String(affiliateCut),
-          net_profit:        String(netProfit),
-          partner_share:     String(partnerShare),
+          gross_amount:      grossAmount.toString(),
+          stripe_fee:        stripeFee.toString(),
+          operational_costs: operationalCosts.toString(),
+          affiliate_cut:     affiliateCut.toString(),
+          net_profit:        netProfit.toString(),
           split_percent:     '50',
+          partner_share:     partnerShare.toString(),
+          is_affiliate:      isAffiliate.toString(),
           customer_id:       customerId || '',
           subscription_id:   subscriptionId || '',
         },
