@@ -490,7 +490,9 @@ export default function CampaignDetailPage() {
 
   // Substitutes template variables with actual lead data for preview
   const previewMessage = (text: string, lead: Lead | null): string => {
-    if (!lead) return text
+    const decodeEscapes = (t: string) =>
+      t.replace(/\\u([0-9a-fA-F]{4})/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
+    if (!lead) return decodeEscapes(text)
     const varMap: Record<string, string> = {
       nombre:   lead.first_name || '',
       apellido: lead.last_name  || '',
@@ -498,7 +500,9 @@ export default function CampaignDetailPage() {
       cargo:    lead.position   || '',
       ...(lead.custom_vars || {}),
     }
-    return text.replace(/\{\{(\w+)\}\}/g, (_m, k) => varMap[k] !== undefined ? varMap[k] : `{{${k}}}`)
+    return decodeEscapes(
+      text.replace(/\{\{(\w+)\}\}/g, (_m, k) => varMap[k] !== undefined ? varMap[k] : `{{${k}}}`)
+    )
   }
 
   // --- Render: Loading --------------------------------------------------------
@@ -1436,7 +1440,7 @@ export default function CampaignDetailPage() {
           onClick={() => setShowPreviewModal(false)}
         >
           <div
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-lg shadow-2xl"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700">
@@ -1476,18 +1480,41 @@ export default function CampaignDetailPage() {
                 <p className="text-xs text-slate-400 italic">Sin leads a\u00f1adidos \u2014 las variables aparecer\u00e1n sin sustituir.</p>
               )}
 
-              {/* Message bubble preview */}
-              <div className="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                    T\u00fa
+              {/* LinkedIn-style message preview */}
+              {(() => {
+                const senderAccount = accounts.find(a => a.id === settings.linkedin_account_ids?.[0])
+                const senderName = senderAccount?.profile_name || senderAccount?.username || 'Tu cuenta'
+                const senderInitials = senderName.split(' ').map((w: string) => w[0] || '').slice(0, 2).join('').toUpperCase() || 'TU'
+                const msgText = previewMessage(activeStep.content, leads[previewLeadIdx] || null)
+                return (
+                  <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                    {/* LinkedIn header bar */}
+                    <div className="bg-[#0a66c2] px-4 py-2.5 flex items-center gap-2">
+                      <Linkedin className="w-4 h-4 text-white" />
+                      <span className="text-white text-xs font-semibold">LinkedIn · Mensajería</span>
+                    </div>
+                    {/* Chat area */}
+                    <div className="bg-white dark:bg-slate-950 p-5">
+                      <div className="flex items-start gap-3">
+                        {/* Avatar with initials */}
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white text-xs font-bold shrink-0 ring-2 ring-slate-100 dark:ring-slate-800">
+                          {senderInitials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2 mb-2">
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{senderName}</span>
+                            <span className="text-[10px] text-slate-400">Ahora</span>
+                          </div>
+                          {/* Message bubble */}
+                          <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                            {msgText}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-xs text-slate-500">As\u00ed ver\u00e1 el mensaje tu contacto</span>
-                </div>
-                <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-                  {previewMessage(activeStep.content, leads[previewLeadIdx] || null)}
-                </p>
-              </div>
+                )
+              })()}
 
               {/* Char count */}
               <div className="flex items-center justify-between text-xs text-slate-500">
