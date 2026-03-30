@@ -501,9 +501,23 @@ async function executePartnerSplit(stripe, invoice) {
 
   // ── Step 2: Stripe Fee (exact from BalanceTransaction, else estimated) ────
   let stripeFee = 0;
-  if (invoice.charge) {
+  let chargeId = invoice.charge;
+
+  // 1. Si no hay charge directo, buscarlo en el payment_intent
+  if (!chargeId && invoice.payment_intent) {
     try {
-      const charge = await stripe.charges.retrieve(invoice.charge, {
+      const piId = typeof invoice.payment_intent === 'string' ? invoice.payment_intent : invoice.payment_intent.id;
+      const pi = await stripe.paymentIntents.retrieve(piId);
+      chargeId = pi.latest_charge;
+    } catch (piError) {
+      console.error('[WEBHOOK] Error fetching PaymentIntent for chargeId:', piError.message);
+    }
+  }
+
+  // 2. Extraer el fee real desde el Charge
+  if (chargeId) {
+    try {
+      const charge = await stripe.charges.retrieve(chargeId, {
         expand: ['balance_transaction']
       });
       if (charge.balance_transaction && charge.balance_transaction.fee) {
@@ -511,11 +525,14 @@ async function executePartnerSplit(stripe, invoice) {
         console.log(`[WEBHOOK] Stripe fee (exact): ${stripeFee} ¢`);
       }
     } catch (feeError) {
-      console.error('[WEBHOOK] Error fetching Stripe fee, using fallback estimation:', feeError.message);
-      // Fallback: estimación del 1.5% + 0.25€ si falla la API
-      stripeFee = Math.round(invoice.amount_paid * 0.015) + 25;
-      console.warn(`[WEBHOOK] Stripe fee estimate (fallback): ${stripeFee} ¢`);
+      console.error('[WEBHOOK] Error fetching Stripe fee:', feeError.message);
     }
+  }
+
+  // 3. FALLBACK ABSOLUTO: Si el fee sigue siendo 0 pero se ha cobrado dinero
+  if (stripeFee === 0 && invoice.amount_paid > 0) {
+    console.warn(`[WEBHOOK] stripeFee is 0 for invoice ${invoice.id}. Applying mathematical fallback (1.5% + 0.25€).`);
+    stripeFee = Math.round(invoice.amount_paid * 0.015) + 25;
   }
 
   // ── Step 3: Operational Costs ─────────────────────────────────────────────
