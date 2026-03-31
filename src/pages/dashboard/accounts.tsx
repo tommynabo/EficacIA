@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { Button } from "@/src/components/ui/button"
 import { Card } from "@/src/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table"
@@ -90,10 +91,13 @@ interface LinkedInAccount {
 }
 
 export default function AccountsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [accounts, setAccounts] = React.useState<LinkedInAccount[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
+  // Guard: evita que el registro se dispare más de una vez por render
+  const isRegistering = React.useRef(false)
 
   // Throttle control state
   const [throttleAccount, setThrottleAccount] = React.useState<LinkedInAccount | null>(null)
@@ -205,33 +209,42 @@ export default function AccountsPage() {
     })
     fetchDailyStats()
   }, [])
-  // Detectar retorno desde Unipile (?unipile=success en la URL)
+
+  // ── Detectar retorno desde Unipile (?unipile=success&account_id=XXX) ──────────
+  // Usamos useSearchParams (React Router) en vez de window.location.search para
+  // asegurar que los params están disponibles en el momento del render en la SPA.
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const status = params.get("unipile")
-    const accountId = params.get("account_id") || params.get("accountId")
+    const unipileStatus = searchParams.get("unipile")
+    const accountId = searchParams.get("account_id") || searchParams.get("accountId")
 
-    if (status === "success") {
-      // Limpiar parámetros de la URL sin recargar
-      window.history.replaceState({}, "", window.location.pathname)
-      setSuccess("Conexión finalizada. Registrando cuenta...")
+    // Evitar doble ejecución en re-renders o StrictMode
+    if (unipileStatus !== "success" || isRegistering.current) return
+    isRegistering.current = true
 
+    // Limpiar parámetros de la URL inmediatamente (replace: true = sin entrada en historial)
+    setSearchParams({}, { replace: true })
+    setSuccess("Conexión finalizada. Registrando cuenta...")
+
+    const run = async () => {
       if (accountId && accountId !== '{account_id}') {
-        // Camino rápido: Unipile nos devolvió el account_id directamente
-        handleRegisterFallback(accountId)
+        // Camino directo: Unipile devolvió el account_id en el redirect
+        await handleRegisterFallback(accountId)
       } else {
-        // Fallback: buscar la cuenta más reciente de Unipile que aún no esté en DB
-        handleRegisterLatestFallback()
+        // Fallback: buscar la cuenta más reciente sin dueño en Unipile
+        await handleRegisterLatestFallback()
       }
+      isRegistering.current = false
     }
-  }, [])
+    run()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const handleRegisterFallback = async (accountId: string) => {
     try {
       const token = localStorage.getItem("auth_token")
       const res = await fetch(`/api/unipile?action=register&accountId=${accountId}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()
       if (res.ok) {
@@ -241,11 +254,12 @@ export default function AccountsPage() {
         setError(`Límite de cuentas alcanzado para tu plan (${data.plan}). Haz upgrade para añadir más.`)
         setShowPlanLimitModal(true)
       } else {
-        // Si register falla, intentar register-latest como segundo fallback
-        console.warn("Register directo falló, intentando register-latest:", data.error)
+        // Register directo falló — intentar register-latest como segundo fallback
+        console.warn("[ACCOUNTS] Register directo falló, intentando register-latest:", data.error)
         await handleRegisterLatestFallback()
       }
-    } catch {
+    } catch (err) {
+      console.error("[ACCOUNTS] Error en handleRegisterFallback:", err)
       await handleRegisterLatestFallback()
     }
   }
@@ -255,7 +269,7 @@ export default function AccountsPage() {
       const token = localStorage.getItem("auth_token")
       const res = await fetch(`/api/unipile?action=register-latest`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -265,12 +279,12 @@ export default function AccountsPage() {
         setError(`Límite de cuentas alcanzado para tu plan (${data.plan}). Haz upgrade para añadir más.`)
         setShowPlanLimitModal(true)
       } else {
-        // Puede que el webhook ya haya gestionado la inserción — refrescar y comprobar
+        // El webhook puede haber insertado la cuenta — refrescar y comprobar
         setSuccess("✓ Conexión completada. Actualizando lista de cuentas...")
         await fetchAccounts()
       }
-    } catch {
-      // Si todo falla, al menos sincronizamos el estado
+    } catch (err) {
+      console.error("[ACCOUNTS] Error en handleRegisterLatestFallback:", err)
       setSuccess("✓ Conexión completada. Actualizando...")
       await fetchAccounts()
     }
