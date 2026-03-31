@@ -685,14 +685,32 @@ async function handleWebhook(req, res) {
       }
     }
 
-    // userId viene en la query del notify_url (lo incluimos al generar el link)
-    // Unipile sobreescribe el campo 'name' con el nombre del perfil de LinkedIn
-    let userId = req.query.userId || null;
-    let profileName = null;
+    // ─── ARQUITECTURA: El Webhook es SOLO un actualizador de estado pasivo ────
+    // La INSERCIÓN de cuentas nuevas es responsabilidad EXCLUSIVA del frontend
+    // (POST /api/unipile?action=register o action=register-latest), porque solo
+    // el frontend conoce el user_id / team_id del usuario autenticado.
+    // Si la cuenta no existe en nuestra BD, simplemente ACKamos el webhook y
+    // dejamos que el frontend haga la inserción al volver del flujo de Unipile.
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Consultar la API de Unipile para obtener el nombre del perfil
+    // Buscar si la cuenta ya existe en nuestra BD (por cualquier team)
+    const { data: existingAccount } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('id, team_id')
+      .eq('unipile_account_id', unipileAccountId)
+      .maybeSingle();
+
+    if (!existingAccount) {
+      // La cuenta aún no está en BD — el frontend se encargará de insertarla.
+      // Retornamos 200 OK silencioso para que Unipile no reintente el webhook.
+      console.log(`[WEBHOOK] Cuenta ${unipileAccountId} no registrada en BD todavía. Inserción pendiente vía frontend. Retornando 200 OK silencioso.`);
+      return res.status(200).json({ received: true, processed: false, reason: 'pending_frontend_registration' });
+    }
+
+    // La cuenta YA existe → actualizar su estado (reconexión / refresco de cookie)
     const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
     const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+    let profileName = null;
 
     if (unipileDsn && unipileApiKey) {
       try {
@@ -702,7 +720,6 @@ async function handleWebhook(req, res) {
         if (accountRes.ok) {
           const accountData = await accountRes.json();
           console.log('[WEBHOOK] Datos de cuenta Unipile:', JSON.stringify(accountData, null, 2));
-          // Extraer nombre del perfil de LinkedIn
           profileName = accountData.connection_params?.im?.username
             || accountData.name
             || null;
@@ -714,82 +731,24 @@ async function handleWebhook(req, res) {
       }
     }
 
-    if (!userId) {
-      console.error('[WEBHOOK] No se pudo determinar el user_id para account:', unipileAccountId);
-      return res.status(400).json({ error: 'No se pudo vincular la cuenta al usuario.' });
-    }
-
-    // Verificar que el usuario existe
-    const { data: user, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .single();
-
-    if (userError || !user) {
-      console.error(`[WEBHOOK] Usuario ${userId} no encontrado.`);
-      return res.status(404).json({ error: 'Usuario no encontrado.' });
-    }
-
-    const teamId = await getOrCreateTeam(userId);
-    if (!teamId) {
-      console.error(`[WEBHOOK] No se pudo obtener/crear equipo para ${userId}`);
-      return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
-    }
-
-    // Buscar si ya existe (evitar duplicados) — filtrar por team_id para evitar apropiarse de cuentas ajenas
-    const { data: existingAccount } = await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from('linkedin_accounts')
-      .select('id')
-      .eq('unipile_account_id', unipileAccountId)
-      .eq('team_id', teamId)
-      .single();
-
-    if (existingAccount) {
-      const { error: updateError } = await supabaseAdmin
-        .from('linkedin_accounts')
-        .update({
-          is_valid: true,
-          profile_name: profileName || undefined,
-          last_validated_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingAccount.id)
-        .eq('team_id', teamId); // Ownership guard
-
-      if (updateError) {
-        console.error('[WEBHOOK] Error al actualizar cuenta:', updateError.message);
-        return res.status(500).json({ error: 'Error al actualizar la cuenta.' });
-      }
-
-      console.log(`[WEBHOOK] ✓ Cuenta reconectada: ${unipileAccountId} → usuario ${userId}`);
-      return res.status(200).json({ received: true, action: 'updated' });
-    }
-
-    // Crear nueva cuenta
-    const username = (profileName || 'linkedin').toLowerCase().replace(/\s+/g, '-');
-    const { data: newAccount, error: insertError } = await supabaseAdmin
-      .from('linkedin_accounts')
-      .insert({
-        team_id: teamId,
-        username: username,
-        unipile_account_id: unipileAccountId,
-        profile_name: profileName || `LinkedIn (${provider})`,
-        connection_method: 'unipile',
+      .update({
         is_valid: true,
-        session_cookie: 'managed_by_unipile',
+        profile_name: profileName || undefined,
         last_validated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
-      .select()
-      .single();
+      .eq('id', existingAccount.id)
+      .eq('team_id', existingAccount.team_id); // Ownership guard: solo actualiza el dueño real
 
-    if (insertError) {
-      console.error('[WEBHOOK] Error al insertar cuenta:', insertError.message);
-      return res.status(500).json({ error: 'Error al guardar la cuenta de LinkedIn.' });
+    if (updateError) {
+      console.error('[WEBHOOK] Error al actualizar cuenta:', updateError.message);
+      return res.status(500).json({ error: 'Error al actualizar la cuenta.' });
     }
 
-    console.log(`[WEBHOOK] ✓ Cuenta creada: ${newAccount.id} (Unipile: ${unipileAccountId}) → usuario ${userId}`);
-    return res.status(200).json({ received: true, action: 'created', accountId: newAccount.id });
+    console.log(`[WEBHOOK] ✓ Estado actualizado para cuenta ${unipileAccountId} (team: ${existingAccount.team_id}).`);
+    return res.status(200).json({ received: true, action: 'updated' });
 
   } catch (err) {
     console.error('[WEBHOOK] Error interno:', err);
