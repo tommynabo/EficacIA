@@ -572,24 +572,28 @@ async function handleWebhook(req, res) {
 
     let unipileAccountId;
     let provider;
+    let messageStatus = 'OK';
+    let passedUserId = req.query.userId || payload.name; // UserID de la query o del name (que forzamos en la url gen)
 
     if (accountStatus) {
       // Formato real de Unipile
-      if (accountStatus.message !== 'OK') {
-        console.log(`[WEBHOOK] AccountStatus con message="${accountStatus.message}", ignorado.`);
-        return res.status(200).json({ received: true, processed: false });
-      }
       unipileAccountId = accountStatus.account_id;
       provider = accountStatus.account_type || 'LINKEDIN';
+      messageStatus = accountStatus.message;
+    } else if (payload.status === 'CREATION_SUCCESS' && payload.account_id) {
+      // Unipile también envía en crudo este Payload a veces
+      unipileAccountId = payload.account_id;
+      provider = payload.account_type || 'LINKEDIN';
+      messageStatus = payload.status;
     } else if (event) {
-      // Formato alternativo documentado
-      const eventosConexion = ['account.created', 'account.connected', 'account_connected'];
-      if (!eventosConexion.includes(event)) {
-        console.log(`[WEBHOOK] Evento "${event}" ignorado (no es de conexión).`);
-        return res.status(200).json({ received: true, processed: false });
-      }
+      // Formato alternativo documentado (webhooks de eventos)
       unipileAccountId = eventData.account_id || eventData.accountId || eventData.id;
       provider = eventData.provider || eventData.account_type || 'LINKEDIN';
+      const eventosConexion = ['account.created', 'account.connected', 'account_connected'];
+      if (!eventosConexion.includes(event) && event !== 'message.created' && event !== 'chat.created') {
+        console.log(`[WEBHOOK] Evento "${event}" ignorado (no es de conexión o chat).`);
+        return res.status(200).json({ received: true, processed: false });
+      }
     } else {
       console.log('[WEBHOOK] Formato de payload no reconocido, ignorado.');
       return res.status(200).json({ received: true, processed: false });
@@ -677,14 +681,22 @@ async function handleWebhook(req, res) {
       }
     }
 
-    // ─── ARQUITECTURA: El Webhook es SOLO un actualizador de estado pasivo ────
-    // La INSERCIÓN de cuentas nuevas es responsabilidad EXCLUSIVA del frontend
-    // (POST /api/unipile?action=register o action=register-latest), porque solo
-    // el frontend conoce el user_id / team_id del usuario autenticado.
-    // Si la cuenta no existe en nuestra BD, simplemente ACKamos el webhook y
-    // dejamos que el frontend haga la inserción al volver del flujo de Unipile.
-    // ─────────────────────────────────────────────────────────────────────────
+    if (messageStatus !== 'OK' && messageStatus !== 'CREATION_SUCCESS') {
+      console.log(`[WEBHOOK] Status no es de conexión exitosa ("${messageStatus}"), deteniendo flujo de conexión.`);
+      if (messageStatus === 'DELETED' || messageStatus === 'DISCONNECTED' || messageStatus === 'ERROR') {
+        await supabaseAdmin
+          .from('linkedin_accounts')
+          .update({ is_valid: false })
+          .eq('unipile_account_id', unipileAccountId);
+        console.log(`[WEBHOOK] ✓ Cuenta ${unipileAccountId} marcada como inválida (is_valid: false) por status ${messageStatus}`);
+      }
+      return res.status(200).json({ received: true, processed: false, reason: messageStatus });
+    }
 
+    // ─── ARQUITECTURA: INSERCIÓN AUTOMÁTICA DESDE WEBHOOK ────
+    // Ya que Unipile ha notificado que la cuenta se guardó/conectó bien (OK/CREATION_SUCCESS), 
+    // insertamos la cuenta si no existe y conocemos el user id.
+    
     // Buscar si la cuenta ya existe en nuestra BD (por cualquier team)
     const { data: existingAccount } = await supabaseAdmin
       .from('linkedin_accounts')
@@ -692,19 +704,11 @@ async function handleWebhook(req, res) {
       .eq('unipile_account_id', unipileAccountId)
       .maybeSingle();
 
-    if (!existingAccount) {
-      // La cuenta aún no está en BD — el frontend se encargará de insertarla.
-      // Retornamos 200 OK silencioso para que Unipile no reintente el webhook.
-      console.log(`[WEBHOOK] Cuenta ${unipileAccountId} no registrada en BD todavía. Inserción pendiente vía frontend. Retornando 200 OK silencioso.`);
-      return res.status(200).json({ received: true, processed: false, reason: 'pending_frontend_registration' });
-    }
-
-    // La cuenta YA existe → actualizar su estado (reconexión / refresco de cookie)
     const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
     const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
     let profileName = null;
 
-    if (unipileDsn && unipileApiKey) {
+    if (unipileDsn && unipileApiKey && unipileAccountId) {
       try {
         const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${unipileAccountId}`, {
           headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
@@ -722,6 +726,47 @@ async function handleWebhook(req, res) {
         console.error('[WEBHOOK] Error al consultar API Unipile:', fetchErr.message);
       }
     }
+
+    if (!existingAccount) {
+      // La cuenta aún no está. Intentamos conectarla automáticamente.
+      if (!passedUserId || passedUserId.length < 8) { // basic guid validation
+        console.log(`[WEBHOOK] Cuenta ${unipileAccountId} no tiene user_id en la petición. No se puede auto-insertar. userId detectado: "${passedUserId}"`);
+        return res.status(200).json({ received: true, processed: false, reason: 'missing_user_id' });
+      }
+
+      console.log(`[WEBHOOK] Cuenta ${unipileAccountId} no registrada. Insertando AUTOMÁTICAMENTE para user: ${passedUserId}`);
+
+      const teamId = await getOrCreateTeam(passedUserId);
+      if (!teamId) {
+        return res.status(500).json({ error: 'Error al obtener equipo para webhook.' });
+      }
+
+      const username = (profileName || `linkedin-${unipileAccountId.slice(0, 8)}`).toLowerCase().replace(/\s+/g, '-');
+      const { data: newAccount, error: insertError } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .insert({
+          team_id: teamId,
+          username: username,
+          unipile_account_id: unipileAccountId,
+          profile_name: profileName || `LinkedIn (${provider})`,
+          connection_method: 'unipile',
+          is_valid: true,
+          session_cookie: 'managed_by_unipile',
+          last_validated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[WEBHOOK] Error insertando nueva cuenta:', insertError.message);
+        return res.status(500).json({ error: 'Error automático insertando cuenta', details: insertError.message });
+      }
+
+      console.log(`[WEBHOOK] ✓ Cuenta creada automáticamente con ID: ${newAccount.id}`);
+      return res.status(200).json({ received: true, action: 'created', accountId: newAccount.id });
+    }
+
+    // La cuenta YA existe → actualizar su estado (reconexión / refresco de cookie)
 
     const { error: updateError } = await supabaseAdmin
       .from('linkedin_accounts')
