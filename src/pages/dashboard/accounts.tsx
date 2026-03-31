@@ -208,13 +208,73 @@ export default function AccountsPage() {
   // Detectar retorno desde Unipile (?unipile=success en la URL)
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get("unipile") === "success") {
-      // Limpiar parámetro de la URL sin recargar
+    const status = params.get("unipile")
+    const accountId = params.get("account_id") || params.get("accountId")
+
+    if (status === "success") {
+      // Limpiar parámetros de la URL sin recargar
       window.history.replaceState({}, "", window.location.pathname)
-      setSuccess("Sincronizando cuenta de LinkedIn...")
-      syncUnipileAccounts()
+      setSuccess("Conexión finalizada. Registrando cuenta...")
+
+      if (accountId && accountId !== '{account_id}') {
+        // Camino rápido: Unipile nos devolvió el account_id directamente
+        handleRegisterFallback(accountId)
+      } else {
+        // Fallback: buscar la cuenta más reciente de Unipile que aún no esté en DB
+        handleRegisterLatestFallback()
+      }
     }
   }, [])
+
+  const handleRegisterFallback = async (accountId: string) => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch(`/api/unipile?action=register&accountId=${accountId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccess("✓ Cuenta de LinkedIn vinculada correctamente.")
+        await fetchAccounts()
+      } else if (res.status === 403 && data.error === 'PLAN_LIMIT_REACHED') {
+        setError(`Límite de cuentas alcanzado para tu plan (${data.plan}). Haz upgrade para añadir más.`)
+        setShowPlanLimitModal(true)
+      } else {
+        // Si register falla, intentar register-latest como segundo fallback
+        console.warn("Register directo falló, intentando register-latest:", data.error)
+        await handleRegisterLatestFallback()
+      }
+    } catch {
+      await handleRegisterLatestFallback()
+    }
+  }
+
+  const handleRegisterLatestFallback = async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch(`/api/unipile?action=register-latest`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setSuccess("✓ Cuenta de LinkedIn vinculada correctamente.")
+        await fetchAccounts()
+      } else if (res.status === 403 && data.error === 'PLAN_LIMIT_REACHED') {
+        setError(`Límite de cuentas alcanzado para tu plan (${data.plan}). Haz upgrade para añadir más.`)
+        setShowPlanLimitModal(true)
+      } else {
+        // Puede que el webhook ya haya gestionado la inserción — refrescar y comprobar
+        setSuccess("✓ Conexión completada. Actualizando lista de cuentas...")
+        await fetchAccounts()
+      }
+    } catch {
+      // Si todo falla, al menos sincronizamos el estado
+      setSuccess("✓ Conexión completada. Actualizando...")
+      await fetchAccounts()
+    }
+  }
 
   const handleDisconnect = async (accountId: string) => {
     if (!confirm("¿Desconectar esta cuenta?")) return

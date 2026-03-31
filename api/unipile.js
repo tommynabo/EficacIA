@@ -111,6 +111,12 @@ export default async function handler(req, res) {
     return handleRegister(req, res);
   }
 
+  // ─── REGISTER-LATEST: POST /api/unipile?action=register-latest ──
+  // Fallback: registra la cuenta Unipile más reciente del usuario si no existe ya
+  if (action === 'register-latest') {
+    return handleRegisterLatest(req, res);
+  }
+
   // ─── GENERATE LINK: POST /api/unipile  (default) ────────────────
   return handleGenerateLink(req, res);
 }
@@ -153,7 +159,9 @@ async function handleGenerateLink(req, res) {
     const host = req.headers.host; // ej: eficac-ia.vercel.app
     const baseUrl = `${protocol}://${host}`;
 
-    const successRedirectUrl = baseUrl + '/dashboard/accounts?unipile=success';
+    // Unipile inyecta automáticamente {account_id} con el ID real de la cuenta conectada.
+    // Esto permite que el frontend registre la cuenta en Supabase con seguridad via POST /api/unipile?action=register.
+    const successRedirectUrl = baseUrl + '/dashboard/accounts?unipile=success&account_id={account_id}';
 
     // notify_url: donde Unipile nos avisa cuando el usuario completa el login
     // Incluimos userId en la query porque Unipile sobreescribe el campo 'name'
@@ -398,6 +406,135 @@ async function handleRegister(req, res) {
 
   } catch (err) {
     console.error('[REGISTER] Error interno:', err);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+}
+
+// ─── Register-Latest: registra la cuenta Unipile más reciente del usuario ──
+
+async function handleRegisterLatest(req, res) {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'No autenticado.' });
+    }
+
+    const unipileDsn = (process.env.UNIPILE_DSN || '').trim();
+    const unipileApiKey = (process.env.UNIPILE_API_KEY || '').trim();
+
+    if (!unipileDsn || !unipileApiKey) {
+      return res.status(500).json({ error: 'Configuración de Unipile incompleta.' });
+    }
+
+    const teamId = await getOrCreateTeam(userId);
+    if (!teamId) {
+      return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
+    }
+
+    // Obtener IDs de cuentas ya registradas en Supabase para este usuario
+    const { data: ownedAccounts } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .select('unipile_account_id')
+      .eq('team_id', teamId)
+      .not('unipile_account_id', 'is', null);
+
+    const ownedIds = new Set((ownedAccounts || []).map(a => a.unipile_account_id));
+
+    // Listar todas las cuentas en Unipile
+    const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts?limit=50`, {
+      headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+    });
+
+    if (!listRes.ok) {
+      console.error('[REGISTER-LATEST] Error listando cuentas Unipile:', listRes.status);
+      return res.status(502).json({ error: 'Error al consultar cuentas de Unipile.' });
+    }
+
+    const listData = await listRes.json();
+    const unipileAccounts = listData.items || listData || [];
+
+    if (!Array.isArray(unipileAccounts) || unipileAccounts.length === 0) {
+      return res.status(200).json({ success: false, message: 'No hay cuentas en Unipile aún.' });
+    }
+
+    // El campo 'name' de la cuenta Unipile es sobrescrito con userId al crear el link (campo name: `${userId}`)
+    // Por tanto filtramos las cuentas cuyo campo 'name' coincide con nuestro userId.
+    const myUnipileAccounts = unipileAccounts.filter(u => u.name === `${userId}`);
+
+    // Encontrar la primera que aún no está en nuestra DB
+    const newAccount = myUnipileAccounts.find(u => !ownedIds.has(u.id));
+
+    if (!newAccount) {
+      console.log(`[REGISTER-LATEST] No hay cuentas nuevas de Unipile para userId=${userId}. Puede que el webhook ya las haya insertado.`);
+      return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar.' });
+    }
+
+    // Obtener detalles completos de la cuenta
+    let profileName = null;
+    let provider = 'LINKEDIN';
+    try {
+      const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${newAccount.id}`, {
+        headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+      });
+      if (accountRes.ok) {
+        const accountData = await accountRes.json();
+        profileName = accountData.connection_params?.im?.username
+          || accountData.name
+          || null;
+        // El campo name fue sobreescrito con userId — no usarlo como nombre
+        if (profileName === `${userId}`) profileName = null;
+        provider = accountData.type || 'LINKEDIN';
+      }
+    } catch (fetchErr) {
+      console.error('[REGISTER-LATEST] Error obteniendo detalles de cuenta:', fetchErr.message);
+    }
+
+    // Verificar límites del plan
+    const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
+    const { data: userRow } = await supabaseAdmin
+      .from('users')
+      .select('subscription_status')
+      .eq('id', userId)
+      .single();
+    const userPlan = userRow?.subscription_status || 'free';
+    const planLimit = ACCOUNT_LIMITS[userPlan] ?? 1;
+    if (planLimit !== Infinity) {
+      const { count: accountCount } = await supabaseAdmin
+        .from('linkedin_accounts')
+        .select('*', { count: 'exact', head: true })
+        .eq('team_id', teamId);
+      if ((accountCount || 0) >= planLimit) {
+        console.warn(`[REGISTER-LATEST] Plan limit reached for user ${userId}`);
+        return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: planLimit, plan: userPlan });
+      }
+    }
+
+    const username = (profileName || `linkedin-${newAccount.id.slice(0, 8)}`).toLowerCase().replace(/\s+/g, '-');
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from('linkedin_accounts')
+      .insert({
+        team_id: teamId,
+        username: username,
+        unipile_account_id: newAccount.id,
+        profile_name: profileName || `LinkedIn (${provider})`,
+        connection_method: 'unipile',
+        is_valid: true,
+        session_cookie: 'managed_by_unipile',
+        last_validated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[REGISTER-LATEST] Error al insertar cuenta:', insertError.message);
+      return res.status(500).json({ error: 'Error al guardar la cuenta de LinkedIn.' });
+    }
+
+    console.log(`[REGISTER-LATEST] ✓ Cuenta creada: ${inserted.id} (Unipile: ${newAccount.id}) → usuario ${userId}`);
+    return res.status(200).json({ success: true, action: 'created', accountId: inserted.id });
+
+  } catch (err) {
+    console.error('[REGISTER-LATEST] Error interno:', err);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 }
