@@ -357,8 +357,9 @@ export default function AccountsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ConnectLinkedInButton
+            redirect={true}
             onSuccess={() => {
-              setSuccess("Enlace generado. Completa el login en la pestaña abierta.")
+              setSuccess("Redirigiendo a Unipile... Completa el login y volverás aquí automáticamente.")
             }}
             onError={(msg) => setError(msg)}
           />
@@ -437,7 +438,8 @@ export default function AccountsPage() {
                   <p className="mb-2 font-medium">No hay cuentas conectadas</p>
                   <p className="text-sm mb-4">Conecta tu LinkedIn de forma segura con Unipile</p>
                   <ConnectLinkedInButton
-                    onSuccess={() => setSuccess("Enlace generado. Completa el login en la pestaña abierta.")}
+                    redirect={true}
+                    onSuccess={() => setSuccess("Redirigiendo a Unipile... Completa el login y volverás aquí automáticamente.")}
                     onError={(msg) => setError(msg)}
                   />
                 </TableCell>

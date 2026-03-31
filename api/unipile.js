@@ -465,10 +465,9 @@ async function handleRegisterLatest(req, res) {
       return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar.' });
     }
 
-    // Obtener detalles de cada cuenta sin dueño y quedarnos con la más reciente
-    // (la que tiene la fecha de creación más alta — protege contra sesiones antiguas)
-    const THIRTY_MIN_MS = 30 * 60 * 1000;
-    const cutoff = new Date(Date.now() - THIRTY_MIN_MS);
+    // Obtener detalles de cada cuenta sin dueño y quedarnos con la más reciente.
+    // No aplicamos ventana de tiempo: la protección real ya viene del Set globallyOwnedIds
+    // (ningún account que ya tenga dueño puede ser tomado por otro usuario).
     let newAccount = null;
     let profileName = null;
     let provider = 'LINKEDIN';
@@ -478,35 +477,28 @@ async function handleRegisterLatest(req, res) {
         const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${candidate.id}`, {
           headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
         });
-        if (!accountRes.ok) continue;
-        const accountData = await accountRes.json();
-
-        // Comprobar ventana de 30 minutos usando sources[].created_at si está disponible
-        const sources = accountData.sources || [];
-        const accountCreatedAt = sources[0]?.created_at
-          ? new Date(sources[0].created_at)
-          : null;
-
-        if (accountCreatedAt && accountCreatedAt < cutoff) {
-          console.log(`[REGISTER-LATEST] Cuenta ${candidate.id} demasiado antigua (${accountCreatedAt.toISOString()}), ignorada.`);
+        if (!accountRes.ok) {
+          console.warn(`[REGISTER-LATEST] No se pudo obtener detalle de cuenta ${candidate.id}: ${accountRes.status}`);
           continue;
         }
+        const accountData = await accountRes.json();
+        console.log(`[REGISTER-LATEST] Candidata sin dueño: ${candidate.id} | provider: ${accountData.type}`);
 
-        // Esta cuenta es candidata válida
+        // Tomar la primera candidata válida sin dueño
         newAccount = candidate;
         profileName = accountData.connection_params?.im?.username
           || (accountData.name && accountData.name !== `${userId}` ? accountData.name : null)
           || null;
         provider = accountData.type || 'LINKEDIN';
-        break; // tomar la primera válida encontrada
+        break;
       } catch (fetchErr) {
         console.error('[REGISTER-LATEST] Error obteniendo detalle de cuenta:', candidate.id, fetchErr.message);
       }
     }
 
     if (!newAccount) {
-      console.log(`[REGISTER-LATEST] Ninguna cuenta sin dueño cumple la ventana de 30 min para userId=${userId}.`);
-      return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar en la ventana de tiempo.' });
+      console.log(`[REGISTER-LATEST] No se encontró ninguna cuenta sin dueño en Unipile para userId=${userId}.`);
+      return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar.' });
     }
 
     // Verificar límites del plan
