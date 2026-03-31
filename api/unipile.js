@@ -431,17 +431,17 @@ async function handleRegisterLatest(req, res) {
       return res.status(500).json({ error: 'Error al obtener equipo del usuario.' });
     }
 
-    // Obtener IDs de cuentas ya registradas en Supabase para este usuario
-    const { data: ownedAccounts } = await supabaseAdmin
+    // Recoger TODOS los unipile_account_ids ya registrados globalmente (cualquier equipo)
+    // para evitar apropiarse de cuentas que ya pertenecen a otro usuario.
+    const { data: allRegisteredAccounts } = await supabaseAdmin
       .from('linkedin_accounts')
       .select('unipile_account_id')
-      .eq('team_id', teamId)
       .not('unipile_account_id', 'is', null);
 
-    const ownedIds = new Set((ownedAccounts || []).map(a => a.unipile_account_id));
+    const globallyOwnedIds = new Set((allRegisteredAccounts || []).map(a => a.unipile_account_id));
 
     // Listar todas las cuentas en Unipile
-    const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts?limit=50`, {
+    const listRes = await fetch(`https://${unipileDsn}/api/v1/accounts?limit=100`, {
       headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
     });
 
@@ -457,36 +457,56 @@ async function handleRegisterLatest(req, res) {
       return res.status(200).json({ success: false, message: 'No hay cuentas en Unipile aún.' });
     }
 
-    // El campo 'name' de la cuenta Unipile es sobrescrito con userId al crear el link (campo name: `${userId}`)
-    // Por tanto filtramos las cuentas cuyo campo 'name' coincide con nuestro userId.
-    const myUnipileAccounts = unipileAccounts.filter(u => u.name === `${userId}`);
+    // Filtrar las que NO están registradas en ningún equipo
+    const unownedAccounts = unipileAccounts.filter(u => !globallyOwnedIds.has(u.id));
 
-    // Encontrar la primera que aún no está en nuestra DB
-    const newAccount = myUnipileAccounts.find(u => !ownedIds.has(u.id));
-
-    if (!newAccount) {
-      console.log(`[REGISTER-LATEST] No hay cuentas nuevas de Unipile para userId=${userId}. Puede que el webhook ya las haya insertado.`);
+    if (unownedAccounts.length === 0) {
+      console.log(`[REGISTER-LATEST] No hay cuentas sin dueño en Unipile para userId=${userId}.`);
       return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar.' });
     }
 
-    // Obtener detalles completos de la cuenta
+    // Obtener detalles de cada cuenta sin dueño y quedarnos con la más reciente
+    // (la que tiene la fecha de creación más alta — protege contra sesiones antiguas)
+    const THIRTY_MIN_MS = 30 * 60 * 1000;
+    const cutoff = new Date(Date.now() - THIRTY_MIN_MS);
+    let newAccount = null;
     let profileName = null;
     let provider = 'LINKEDIN';
-    try {
-      const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${newAccount.id}`, {
-        headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
-      });
-      if (accountRes.ok) {
+
+    for (const candidate of unownedAccounts) {
+      try {
+        const accountRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${candidate.id}`, {
+          headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
+        });
+        if (!accountRes.ok) continue;
         const accountData = await accountRes.json();
+
+        // Comprobar ventana de 30 minutos usando sources[].created_at si está disponible
+        const sources = accountData.sources || [];
+        const accountCreatedAt = sources[0]?.created_at
+          ? new Date(sources[0].created_at)
+          : null;
+
+        if (accountCreatedAt && accountCreatedAt < cutoff) {
+          console.log(`[REGISTER-LATEST] Cuenta ${candidate.id} demasiado antigua (${accountCreatedAt.toISOString()}), ignorada.`);
+          continue;
+        }
+
+        // Esta cuenta es candidata válida
+        newAccount = candidate;
         profileName = accountData.connection_params?.im?.username
-          || accountData.name
+          || (accountData.name && accountData.name !== `${userId}` ? accountData.name : null)
           || null;
-        // El campo name fue sobreescrito con userId — no usarlo como nombre
-        if (profileName === `${userId}`) profileName = null;
         provider = accountData.type || 'LINKEDIN';
+        break; // tomar la primera válida encontrada
+      } catch (fetchErr) {
+        console.error('[REGISTER-LATEST] Error obteniendo detalle de cuenta:', candidate.id, fetchErr.message);
       }
-    } catch (fetchErr) {
-      console.error('[REGISTER-LATEST] Error obteniendo detalles de cuenta:', fetchErr.message);
+    }
+
+    if (!newAccount) {
+      console.log(`[REGISTER-LATEST] Ninguna cuenta sin dueño cumple la ventana de 30 min para userId=${userId}.`);
+      return res.status(200).json({ success: false, message: 'Sin cuentas nuevas que registrar en la ventana de tiempo.' });
     }
 
     // Verificar límites del plan
