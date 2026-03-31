@@ -338,7 +338,7 @@ function extractLinkedInId(url) {
  * Resolve a LinkedIn identifier (username/vanity name) to a Unipile provider_id
  */
 async function getUnipileProviderId(unipileAccountId, linkedinId) {
-  const res = await fetch(`${unipileBase()}/api/v1/users/${linkedinId}?account_id=${unipileAccountId}`, {
+  const res = await fetch(`${unipileBase()}/api/v1/accounts/${linkedinId}?account_id=${unipileAccountId}`, {
     method: 'GET',
     headers: unipileHeaders(),
   });
@@ -367,7 +367,7 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
   }
 
   console.log('[SEND-ACTION] Sending invitation to:', linkedinId);
-  const res = await fetch(`${unipileBase()}/api/v1/users/invite`, {
+  const res = await fetch(`${unipileBase()}/api/v1/accounts/invite`, {
     method: 'POST',
     headers: unipileHeaders(),
     body: JSON.stringify(body),

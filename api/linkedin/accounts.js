@@ -284,7 +284,7 @@ export default async function handler(req, res) {
         let withdrawn = 0, errors = 0;
 
         try {
-          const invUrl = `${unipileBase()}/api/v1/users/invite/sent?account_id=${account.unipile_account_id}&limit=100`;
+          const invUrl = `${unipileBase()}/api/v1/accounts/invite/sent?account_id=${account.unipile_account_id}&limit=100`;
           const invResp = await fetch(invUrl, { headers: unipileHeaders() });
           if (!invResp.ok) {
             const errText = await invResp.text();
@@ -292,7 +292,7 @@ export default async function handler(req, res) {
             continue;
           }
           const invData = await invResp.json();
-          const rawInvitations = invData.items || invData.data || invData.invitations || [];
+          const rawInvitations = invData.accounts || invData.items || invData.data || invData.invitations || [];
           const invitations = rawInvitations.filter(inv => {
             if (inv.is_received === true) return false;
             if (inv.direction === 'received' || inv.direction === 'incoming') return false;
@@ -307,10 +307,10 @@ export default async function handler(req, res) {
               const acctQ = `account_id=${account.unipile_account_id}`;
               const base = unipileBase();
               const strategies = [
-                { url: `${base}/api/v1/users/invite/sent/${invId}?${acctQ}`, body: null },
-                { url: `${base}/api/v1/users/invite/sent/${invId}`, body: JSON.stringify({ account_id: account.unipile_account_id }) },
-                { url: `${base}/api/v1/users/invite/${invId}?${acctQ}`, body: null },
-                { url: `${base}/api/v1/users/${inv.invited_user_public_id}/invite?${acctQ}`, body: null },
+                { url: `${base}/api/v1/accounts/invite/sent/${invId}?${acctQ}`, body: null },
+                { url: `${base}/api/v1/accounts/invite/sent/${invId}`, body: JSON.stringify({ account_id: account.unipile_account_id }) },
+                { url: `${base}/api/v1/accounts/invite/${invId}?${acctQ}`, body: null },
+                { url: `${base}/api/v1/accounts/${inv.invited_user_public_id}/invite?${acctQ}`, body: null },
               ];
 
               let wResp = null;
@@ -375,7 +375,7 @@ export default async function handler(req, res) {
           const invResp = await fetch(invUrl, { headers: { 'X-API-KEY': apiKey, Accept: 'application/json' } });
           if (!invResp.ok) return res.status(200).json({ count: 0 });
           const invData = await invResp.json();
-          const items = invData.items || invData.data || invData.invitations || [];
+          const items = invData.accounts || invData.items || invData.data || invData.invitations || [];
           return res.status(200).json({ count: items.length });
         } catch {
           return res.status(200).json({ count: 0 });

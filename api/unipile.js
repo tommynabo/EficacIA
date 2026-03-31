@@ -255,7 +255,7 @@ async function handleSync(req, res) {
 
       if (listRes.ok) {
         const listData = await listRes.json();
-        const unipileAccounts = listData.items || listData || [];
+        const unipileAccounts = listData.accounts || listData.items || listData || [];
 
         for (const dbAcc of myAccounts) {
           if (!dbAcc.unipile_account_id) continue;
@@ -451,7 +451,7 @@ async function handleRegisterLatest(req, res) {
     }
 
     const listData = await listRes.json();
-    const unipileAccounts = listData.items || listData || [];
+    const unipileAccounts = listData.accounts || listData.items || listData || [];
 
     if (!Array.isArray(unipileAccounts) || unipileAccounts.length === 0) {
       return res.status(200).json({ success: false, message: 'No hay cuentas en Unipile aún.' });
@@ -623,7 +623,7 @@ async function handleWebhook(req, res) {
             
             let publicIdentifier = senderId;
             try {
-              const userRes = await fetch(`https://${unipileDsn}/api/v1/users/${senderId}?account_id=${unipileAccountId}`, {
+              const userRes = await fetch(`https://${unipileDsn}/api/v1/accounts/${senderId}?account_id=${unipileAccountId}`, {
                 headers: { 'X-API-KEY': unipileApiKey, 'Accept': 'application/json' },
               });
               if (userRes.ok) {
