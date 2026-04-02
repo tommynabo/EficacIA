@@ -323,30 +323,43 @@ async function tryApifyScrape(lead, cvars) {
 }
 
 /**
- * Extract LinkedIn identifier from a profile URL.
- * Unipile needs the provider_id (vanity name or urn).
+ * Función para limpiar URLs tipo 'es.linkedin.com/in/user/es' -> 'user'
+ * Extract LinkedIn base identifier from a profile URL.
  */
-function extractLinkedInId(url) {
+function extractLinkedInIdentifier(url) {
   if (!url) return null;
-  // Soporta perfiles estándar (/in/...) y Sales Navigator (/sales/lead/...)
-  // El [^/?#,] asegura que nos detenemos si encontramos una barra, un query param, un hash o una coma (típico en Sales Nav)
-  const m = url.match(/linkedin\.com\/(?:in|sales\/lead)\/([^/?#,]+)/);
-  return m ? m[1] : null;
+  // Buscar el patrón /in/username o /sales/lead/username ignorando trailing slashes u otros paths
+  const match = url.match(/linkedin\.com\/.*(?:in|sales\/lead)\/([^\/?#,]+)/i);
+  return match ? match[1].trim() : url.trim(); // Devuelve el username o la string original limpia si falla
 }
 
 /**
  * Resolve a LinkedIn identifier (username/vanity name) to a Unipile provider_id
  */
 async function getUnipileProviderId(unipileAccountId, linkedinId) {
-  const res = await fetch(`${unipileBase()}/api/v1/accounts/${linkedinId}?account_id=${unipileAccountId}`, {
+  const cleanIdentifier = extractLinkedInIdentifier(linkedinId);
+  
+  // Fase 3: Verificación estricta del unipileAccountId para evitar enviar un UUID de Supabase
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(unipileAccountId)) {
+    console.error('[SEND-ACTION] CRITICAL ERROR: unipileAccountId is a UUID!', unipileAccountId);
+    throw new Error('El account_id proporcionado a Unipile es un UUID de Supabase, debe ser el unipile_id.');
+  }
+
+  // Fase 2: Aplicar el identificador limpio en el endpoint /api/v1/users/{identifier}
+  const url = `${unipileBase()}/api/v1/users/${cleanIdentifier}?account_id=${unipileAccountId}`;
+  console.log(`[SEND-ACTION] Resolving Unipile user via: GET /api/v1/users/${cleanIdentifier} (Account: ${unipileAccountId})`);
+  
+  const res = await fetch(url, {
     method: 'GET',
     headers: unipileHeaders(),
   });
+  
   if (!res.ok) {
     const err = await res.text();
     console.error('[SEND-ACTION] Failed to resolve Unipile provider_id:', res.status, err);
     throw new Error(`Failed to resolve profile (${res.status}): ${err.slice(0, 200)}`);
   }
+  
   const data = await res.json();
   return data.provider_id;
 }
@@ -366,7 +379,7 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
     body.message = finalMsg;
   }
 
-  console.log('[SEND-ACTION] Sending invitation to:', linkedinId);
+  console.log('[SEND-ACTION] Sending invitation to provider_id:', providerId);
   const res = await fetch(`${unipileBase()}/api/v1/accounts/invite`, {
     method: 'POST',
     headers: unipileHeaders(),
@@ -384,10 +397,11 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
  * Send a direct message via Unipile.
  */
 async function sendMessage(unipileAccountId, linkedinId, message) {
-  console.log('[SEND-ACTION] Sending message to:', linkedinId);
+  const providerId = await getUnipileProviderId(unipileAccountId, linkedinId);
+  console.log('[SEND-ACTION] Sending message to provider_id:', providerId);
   const body = {
     account_id: unipileAccountId,
-    attendees_ids: [linkedinId],
+    attendees_ids: [providerId],
     text: message,
   };
   const res = await fetch(`${unipileBase()}/api/v1/chats`, {
@@ -536,7 +550,7 @@ export default async function handler(req, res) {
       } catch { /* non-fatal */ }
     }
 
-    const linkedinId = extractLinkedInId(lead.linkedin_url);
+    const linkedinId = extractLinkedInIdentifier(lead.linkedin_url);
     if (!linkedinId) {
       return res.status(400).json({ error: 'El lead no tiene URL de LinkedIn válida' });
     }
