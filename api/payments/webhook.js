@@ -295,6 +295,86 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true });
   }
 
+  // ── charge.refunded — Anti Hit & Run + Clawback ──────────────────────────
+  //
+  // When a charge is refunded (fully or partially), we:
+  //   1. Revoke the user's plan, credits, and flag them for fraud.
+  //   2. Reverse the partner transfer (clawback) to recover the 50% split.
+  //
+  if (event.type === 'charge.refunded') {
+    const charge       = event.data.object;
+    const customerId   = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id || null;
+    const chargeInvoiceId = typeof charge.invoice === 'string' ? charge.invoice : charge.invoice?.id || null;
+
+    console.log(`[WEBHOOK] ⚠ charge.refunded — customer=${customerId} invoice=${chargeInvoiceId} charge=${charge.id}`);
+
+    // ── 1. Revoke user: downgrade to free, strip credits, set fraud flag ──
+    if (customerId) {
+      const { error: revokeErr } = await supabase.from('users')
+        .update({
+          subscription_status: 'free',
+          ai_credits: 0,
+          ai_credits_unlimited: false,
+          ai_credits_unlimited_expires: null,
+          fraud_flag: true,
+        })
+        .eq('stripe_customer_id', customerId);
+
+      if (revokeErr) {
+        console.error(`[WEBHOOK] Failed to revoke user (customer ${customerId}):`, revokeErr.message);
+      } else {
+        console.log(`[WEBHOOK] ✓ User revoked: plan=free, credits=0, fraud_flag=true (customer ${customerId})`);
+      }
+    }
+
+    // ── 2. Clawback: reverse the partner transfer ─────────────────────────
+    // Find the stripe_transfer_id from our invoices table.
+    let transferId = null;
+
+    // Try to find by invoice ID first
+    if (chargeInvoiceId) {
+      const { data: invRow } = await supabase.from('invoices')
+        .select('stripe_transfer_id')
+        .eq('stripe_invoice_id', chargeInvoiceId)
+        .single();
+      transferId = invRow?.stripe_transfer_id || null;
+    }
+
+    // Fallback: search by payment_intent if no invoice match
+    if (!transferId && charge.payment_intent) {
+      const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent.id;
+      try {
+        const pi = await stripe.paymentIntents.retrieve(piId);
+        if (pi.invoice) {
+          const invoiceId = typeof pi.invoice === 'string' ? pi.invoice : pi.invoice.id;
+          const { data: invRow } = await supabase.from('invoices')
+            .select('stripe_transfer_id')
+            .eq('stripe_invoice_id', invoiceId)
+            .single();
+          transferId = invRow?.stripe_transfer_id || null;
+        }
+      } catch (piErr) {
+        console.warn(`[WEBHOOK] Could not resolve payment_intent ${piId}:`, piErr.message);
+      }
+    }
+
+    if (transferId) {
+      try {
+        const reversal = await stripe.transfers.createReversal(transferId, {
+          description: 'Reversión automática por reembolso del cliente',
+        });
+        console.log(`[WEBHOOK] ✓ Partner clawback: reversed transfer ${transferId} (reversal ${reversal.id})`);
+      } catch (revErr) {
+        // The partner may not have enough balance — log but don't crash
+        console.error(`[WEBHOOK] ✗ Could not reverse transfer ${transferId}: ${revErr.message}`);
+      }
+    } else {
+      console.warn(`[WEBHOOK] No stripe_transfer_id found for charge ${charge.id} — manual clawback required`);
+    }
+
+    return res.status(200).json({ received: true });
+  }
+
   // ── customer.subscription.deleted ────────────────────────────────────────
   if (event.type === 'customer.subscription.deleted') {
     const sub       = event.data.object;
@@ -627,6 +707,18 @@ async function executePartnerSplit(stripe, invoice) {
     console.log(
       `[WEBHOOK] ✓ Transfer completo: ${fmt(partnerShare)} → ${partnerAccountId} (transfer ${transfer.id})`
     );
+
+    // ── Persist transfer ID so we can reverse it on refund (clawback) ──────
+    try {
+      const supabase = getSupabase();
+      await supabase.from('invoices')
+        .update({ stripe_transfer_id: transfer.id })
+        .eq('stripe_invoice_id', invoice.id);
+      console.log(`[WEBHOOK] ✓ stripe_transfer_id '${transfer.id}' saved for invoice ${invoice.id}`);
+    } catch (dbErr) {
+      // Non-fatal — transfer already succeeded
+      console.warn(`[WEBHOOK] Could not persist transfer ID to DB:`, dbErr.message);
+    }
   } catch (err) {
     // Log but still return 200 to Stripe — the customer payment is already
     // settled. Investigate and replay manually via Stripe Dashboard if needed.
