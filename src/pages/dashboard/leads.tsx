@@ -34,6 +34,8 @@ interface Lead {
   sent_at: string | null
   created_at: string
   conversation_temperature?: string
+  sequence_status?: string
+  error_message?: string | null
 }
 
 export default function LeadsPage() {
@@ -355,9 +357,25 @@ export default function LeadsPage() {
                     <td className="px-6 py-4 text-white">{lead.company || '-'}</td>
                     <td className="px-6 py-4 text-white">{lead.position || '-'}</td>
                     <td className="px-6 py-4">
-                      <Badge variant="outline" className={getStatusColor(lead.status)}>
-                        {getStatusLabel(lead.status)}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className={getStatusColor(lead.status)}>
+                          {getStatusLabel(lead.status)}
+                        </Badge>
+                        {(lead.sequence_status === 'failed' || lead.sequence_status === 'retry_later') && lead.error_message && (
+                          <div className="relative group inline-flex items-center">
+                            <AlertCircle
+                              className={`w-4 h-4 cursor-default shrink-0 ${
+                                lead.sequence_status === 'failed' ? 'text-red-500' : 'text-orange-400'
+                              }`}
+                            />
+                            {/* Tooltip */}
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl text-center whitespace-normal">
+                              {lead.error_message}
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-700" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       {lead.conversation_temperature === 'hot' && (

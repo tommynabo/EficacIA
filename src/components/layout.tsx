@@ -30,6 +30,44 @@ export function DashboardLayout() {
 
   const [assistantOpen, setAssistantOpen] = React.useState(false)
 
+  // ── Account health: detect disconnected LinkedIn accounts ──────────────────
+  const [disconnectedAccounts, setDisconnectedAccounts] = React.useState<
+    { id: string; profile_name: string }[]
+  >([])
+  const [reconnecting, setReconnecting] = React.useState(false)
+
+  React.useEffect(() => {
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+    fetch('/api/linkedin/accounts', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        const accounts: any[] = d.accounts || []
+        setDisconnectedAccounts(
+          accounts
+            .filter((a: any) => a.is_valid === false)
+            .map((a: any) => ({ id: a.id, profile_name: a.profile_name || a.username || a.id }))
+        )
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleReconnect = async () => {
+    const token = localStorage.getItem('auth_token')
+    if (!token || reconnecting) return
+    setReconnecting(true)
+    try {
+      const res = await fetch('/api/unipile', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (data.url) window.open(data.url, '_blank', 'noopener,noreferrer')
+    } catch { /* silent */ } finally {
+      setReconnecting(false)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
     navigate('/', { replace: true })
@@ -102,6 +140,28 @@ export function DashboardLayout() {
           </div>
         </header>
         <div className="flex-1 overflow-auto p-8">
+          {/* ── Disconnected-account health banner ────────────────────────────────────── */}
+          {disconnectedAccounts.map(account => (
+            <div
+              key={account.id}
+              className="mb-5 flex items-start gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-5 py-4"
+            >
+              <span className="text-xl leading-none select-none" aria-hidden>&#x26A0;&#xFE0F;</span>
+              <p className="flex-1 text-sm text-red-200 leading-relaxed">
+                &#x26A0;&#xFE0F; Tu cuenta de LinkedIn{' '}
+                <strong className="text-red-100">{account.profile_name}</strong>{' '}
+                se ha desconectado. Esto es una medida de seguridad normal de LinkedIn (caducidad de cookies o
+                revisión de rutina) para proteger tus datos.{' '}
+                <button
+                  onClick={handleReconnect}
+                  disabled={reconnecting}
+                  className="underline font-semibold text-red-100 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {reconnecting ? 'Conectando…' : 'Haz clic aquí para reconectarla de forma segura y continuar tus campañas.'}
+                </button>
+              </p>
+            </div>
+          ))}
           <Outlet />
         </div>
       </main>

@@ -51,18 +51,19 @@ async function getOrCreateTeam(userId) {
 function verifyWebhookSignature(req) {
   const secret = process.env.UNIPILE_WEBHOOK_SECRET;
   if (!secret) {
-    // No secret configured — allow all webhooks through
-    console.log('[WEBHOOK] No UNIPILE_WEBHOOK_SECRET set — skipping signature verification.');
-    return true;
+    // Fail-close: without a configured secret we cannot verify authenticity.
+    // Block ALL incoming webhooks to prevent spoofed payloads.
+    console.error('[WEBHOOK] CRITICAL: UNIPILE_WEBHOOK_SECRET is not set. Blocking webhook (fail-close). Configure this environment variable to enable webhook processing.');
+    return false;
   }
   const signature = req.headers['x-webhook-signature']
     || req.headers['x-unipile-signature']
     || req.headers['x-hub-signature-256'];
 
   if (!signature) {
-    // Some Unipile webhook types don't include a signature header — allow through with warning
-    console.warn('[WEBHOOK] Secret configured but no signature header present. Allowing through for debugging. Received headers:', JSON.stringify(Object.keys(req.headers)));
-    return true;
+    // Fail-close: reject all unsigned requests when a secret is configured.
+    console.error('[WEBHOOK] Signature header absent. Rejecting unsigned webhook request.');
+    return false;
   }
 
   // Verify HMAC

@@ -203,7 +203,7 @@ export default async function handler(req, res) {
         .from('leads')
         .select('*')
         .eq('campaign_id', campaign.id)
-        .in('sequence_status', ['pending', 'active'])
+        .in('sequence_status', ['pending', 'active', 'retry_later'])
         .lte('next_action_at', now.toISOString())
         .order('next_action_at', { ascending: true })
         .limit(effectiveBatch);
@@ -214,7 +214,7 @@ export default async function handler(req, res) {
           .from('leads')
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaign.id)
-          .in('sequence_status', ['pending', 'active']);
+          .in('sequence_status', ['pending', 'active', 'retry_later']);
 
         if (activeCount === 0) {
           await supabaseAdmin.from('campaigns').update({
@@ -225,17 +225,29 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // 3. PROCESAMIENTO EN SERIE DEL LOTE (con micro-jitter entre leads)
+      // 3. PROCESAMIENTO EN SERIE DEL LOTE (anti-ban DB-level jitter — no sleep() en serverless)
       const protocol = req.headers['x-forwarded-proto'] || 'https';
       const host = req.headers.host;
+
+      // Pre-fetch account throttle state once before iterating the batch
+      let accountThrottledUntil = null;
+      {
+        const { data: acctBefore } = await supabaseAdmin
+          .from('linkedin_accounts')
+          .select('next_action_at')
+          .eq('id', primaryAccountId)
+          .maybeSingle();
+        accountThrottledUntil = acctBefore?.next_action_at ? new Date(acctBefore.next_action_at) : null;
+      }
 
       for (let i = 0; i < leadsToProcess.length; i++) {
         const lead = leadsToProcess[i];
 
-        // Micro-jitter entre leads del mismo lote: 2-8 segundos
-        if (i > 0) {
-          const microJitter = Math.floor(Math.random() * 6000) + 2000;
-          await sleep(microJitter);
+        // Anti-ban: skip remaining leads if account DB throttle is still active
+        if (accountThrottledUntil && accountThrottledUntil > now) {
+          console.log(`[ENGINE] Anti-ban throttle active for account ${primaryAccountId} until ${accountThrottledUntil.toISOString()}. Skipping ${leadsToProcess.length - i} remaining lead(s).`);
+          stats.skipped += leadsToProcess.length - i;
+          break;
         }
 
         const stepIndex = lead.current_step || 0;
@@ -263,12 +275,55 @@ export default async function handler(req, res) {
             }),
           });
 
+          const sendData = await sendRes.json().catch(() => ({}));
+
           if (!sendRes.ok) {
-            const errData = await sendRes.json().catch(() => ({}));
-            throw new Error(errData.error || 'Failed call to send-action');
+            const httpStatus = sendRes.status;
+            const rawMsg = sendData.error || `Error HTTP ${httpStatus}`;
+            let humanMsg, newStatus, nextAt;
+
+            if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+              // Transient Unipile/network upstream error — retry in 1 hour
+              humanMsg = rawMsg;
+              newStatus = 'retry_later';
+              nextAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+            } else if (httpStatus === 429 || /r[aá]te.?limit|l[ií]mite.?diario|daily.?limit/i.test(rawMsg)) {
+              // LinkedIn rate-limit — retry tomorrow morning
+              humanMsg = 'Límite diario de LinkedIn alcanzado. Se reintentará mañana.';
+              newStatus = 'retry_later';
+              const tomorrow = new Date();
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              tomorrow.setHours(9, 0, 0, 0);
+              nextAt = tomorrow.toISOString();
+            } else if (/disconnect|desconect/i.test(rawMsg)) {
+              // LinkedIn session expired / account disconnected
+              humanMsg = 'Cuenta de LinkedIn desconectada.';
+              newStatus = 'failed';
+              nextAt = null;
+            } else if (httpStatus === 403 || /privad[ao]|private|no permite/i.test(rawMsg)) {
+              // Private profile or messaging blocked
+              humanMsg = 'El perfil de este usuario es privado o no permite mensajes.';
+              newStatus = 'failed';
+              nextAt = null;
+            } else {
+              // Generic / unknown error — keep active with 20-min penalty
+              humanMsg = rawMsg;
+              newStatus = 'active';
+              nextAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+            }
+
+            await supabaseAdmin.from('leads').update({
+              sequence_status: newStatus,
+              next_action_at: nextAt,
+              error_message: humanMsg,
+              last_action_at: now.toISOString(),
+            }).eq('id', lead.id);
+            stats.errors++;
+            console.log(`[ENGINE] Lead ${lead.id} → ${newStatus} (HTTP ${httpStatus}): ${humanMsg}`);
+            continue;
           }
 
-          // 4. RE-PROGRAMACIÓN CON JITTER HUMANO
+          // 4. Success: re-schedule next step with human jitter
           const nextStepIndex = stepIndex + 1;
           const nextStep = sequence[nextStepIndex];
 
@@ -285,19 +340,29 @@ export default async function handler(req, res) {
             sequence_status: nextStep ? 'active' : 'completed',
             next_action_at: nextActionAt,
             last_action_at: now.toISOString(),
-            error_message: null
+            error_message: null,
           }).eq('id', lead.id);
 
+          // Anti-ban: DB-level jitter on account — 45 to 120 seconds before next action.
+          // NO sleep() in serverless functions. The NEXT cron run respects this timestamp.
+          const antiBanJitterSec = Math.floor(Math.random() * 76) + 45; // [45, 120] inclusive
+          const newThrottleTime = new Date(Date.now() + antiBanJitterSec * 1000);
+          await supabaseAdmin.from('linkedin_accounts').update({
+            next_action_at: newThrottleTime.toISOString(),
+          }).eq('id', primaryAccountId);
+          accountThrottledUntil = newThrottleTime; // Update local cache so remaining batch knows
+
           stats.processed++;
-          console.log(`[ENGINE] Lead ${lead.id} processed (Step ${stepIndex}). Next: ${nextActionAt}`);
+          console.log(`[ENGINE] Lead ${lead.id} processed (Step ${stepIndex}). Anti-ban throttle: ${antiBanJitterSec}s. Next lead at: ${newThrottleTime.toISOString()}`);
 
         } catch (err) {
-          console.error(`[ENGINE] Error in lead ${lead.id}:`, err.message);
+          // Network-level failure (fetch itself threw) → transient, retry in 1 hour
+          console.error(`[ENGINE] Network error for lead ${lead.id}:`, err.message);
           await supabaseAdmin.from('leads').update({
-            sequence_status: 'active',
-            next_action_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(), // +20 min penalización
+            sequence_status: 'retry_later',
+            next_action_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // +1h
             error_message: err.message,
-            last_action_at: now.toISOString()
+            last_action_at: now.toISOString(),
           }).eq('id', lead.id);
           stats.errors++;
         }
