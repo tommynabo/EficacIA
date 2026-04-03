@@ -575,7 +575,8 @@ async function handleWebhook(req, res) {
       unipileAccountId = eventData.account_id || eventData.accountId || eventData.id;
       provider = eventData.provider || eventData.account_type || 'LINKEDIN';
       const eventosConexion = ['account.created', 'account.connected', 'account_connected'];
-      if (!eventosConexion.includes(event) && event !== 'message.created' && event !== 'chat.created') {
+      // Añadido 'message_received' para la nueva versión de Unipile
+      if (!eventosConexion.includes(event) && event !== 'message.created' && event !== 'chat.created' && event !== 'message_received') {
         console.log(`[WEBHOOK] Evento "${event}" ignorado (no es de conexión o chat).`);
         return res.status(200).json({ received: true, processed: false });
       }
@@ -589,9 +590,11 @@ async function handleWebhook(req, res) {
       return res.status(400).json({ error: 'Falta account_id en el payload.' });
     }
 
-    if (event === 'message.created' || event === 'chat.created') {
+    // Añadido 'message_received'
+    if (event === 'message.created' || event === 'chat.created' || event === 'message_received') {
       try {
-        const senderId = eventData.sender_id || eventData.attendees?.[0]?.provider_id;
+        // Añadido eventData.sender?.attendee_provider_id para capturar bien el ID del prospecto
+        const senderId = eventData.sender_id || eventData.attendees?.[0]?.provider_id || eventData.sender?.attendee_provider_id;
         const isSender = eventData.is_sender;
         
         console.log(`[WEBHOOK] Nuevo mensaje/chat en cuenta ${unipileAccountId} de ${senderId}. is_sender: ${isSender}`);
