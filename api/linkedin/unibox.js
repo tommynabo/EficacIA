@@ -503,7 +503,7 @@ export default async function handler(req, res) {
               .then(() => {}).catch(() => {});
           }
           if (unipile_id && accountId) {
-            const blockUrl = `${unipileBase()}/api/v1/accounts/${unipile_id}/block?account_id=${accountId}`;
+            const blockUrl = `${unipileBase()}/api/v1/users/${unipile_id}/block?account_id=${accountId}`;
             fetch(blockUrl, {
               method: 'POST',
               headers: unipileHeaders(),

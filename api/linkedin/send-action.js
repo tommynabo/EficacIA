@@ -380,7 +380,7 @@ async function sendInvitation(unipileAccountId, linkedinId, message) {
   }
 
   console.log('[SEND-ACTION] Sending invitation to provider_id:', providerId);
-  const res = await fetch(`${unipileBase()}/api/v1/accounts/invite`, {
+  const res = await fetch(`${unipileBase()}/api/v1/users/invite`, {
     method: 'POST',
     headers: unipileHeaders(),
     body: JSON.stringify(body),
