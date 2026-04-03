@@ -32,7 +32,7 @@ const PLANS: Array<{
     accentColor: 'indigo',
     features: [
       'Leads ilimitados',
-      '3 cuentas de LinkedIn',
+      '1 cuenta de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
       '1.000 créditos IA',
@@ -52,7 +52,7 @@ const PLANS: Array<{
     accentColor: 'violet',
     features: [
       'Leads ilimitados',
-      '5 cuentas de LinkedIn',
+      '3 cuentas de LinkedIn',
       'Campañas ilimitadas',
       'Secuencias multi-paso con IA',
       '10.000 créditos IA',

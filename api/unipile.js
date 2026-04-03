@@ -361,7 +361,7 @@ async function handleRegister(req, res) {
 
     // Crear nueva cuenta
     // ── Verificar límites del plan antes de crear cuenta nueva ───────────────
-    const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
+    const ACCOUNT_LIMITS = { free: 1, pro: 1, growth: 3, estrellas_blancas: 3, scale: Infinity };
     const { data: userRow } = await supabaseAdmin
       .from('users')
       .select('subscription_status')
@@ -376,7 +376,12 @@ async function handleRegister(req, res) {
         .eq('team_id', teamId);
       if ((accountCount || 0) >= planLimit) {
         console.warn(`[REGISTER] Plan limit reached for user ${userId} (plan: ${userPlan}, limit: ${planLimit})`);
-        return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: planLimit, plan: userPlan });
+        return res.status(403).json({
+          error: 'PLAN_LIMIT_REACHED',
+          message: `Has alcanzado el límite de cuentas de tu plan (${planLimit} cuenta${planLimit !== 1 ? 's' : ''}).`,
+          limit: planLimit,
+          plan: userPlan,
+        });
       }
     }
 
@@ -502,7 +507,7 @@ async function handleRegisterLatest(req, res) {
     }
 
     // Verificar límites del plan
-    const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
+    const ACCOUNT_LIMITS = { free: 1, pro: 1, growth: 3, estrellas_blancas: 3, scale: Infinity };
     const { data: userRow } = await supabaseAdmin
       .from('users')
       .select('subscription_status')
@@ -517,7 +522,12 @@ async function handleRegisterLatest(req, res) {
         .eq('team_id', teamId);
       if ((accountCount || 0) >= planLimit) {
         console.warn(`[REGISTER-LATEST] Plan limit reached for user ${userId}`);
-        return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: planLimit, plan: userPlan });
+        return res.status(403).json({
+          error: 'PLAN_LIMIT_REACHED',
+          message: `Has alcanzado el límite de cuentas de tu plan (${planLimit} cuenta${planLimit !== 1 ? 's' : ''}).`,
+          limit: planLimit,
+          plan: userPlan,
+        });
       }
     }
 

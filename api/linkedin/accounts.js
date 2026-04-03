@@ -439,7 +439,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const ACCOUNT_LIMITS = { free: 1, pro: 3, growth: 5, scale: Infinity };
+      const ACCOUNT_LIMITS = { free: 1, pro: 1, growth: 3, estrellas_blancas: 3, scale: Infinity };
       const { data: userRow } = await supabaseAdmin.from('users').select('subscription_status, max_linkedin_accounts').eq('id', userId).single();
       const userPlan = userRow?.subscription_status || 'free';
       const extraAccounts = typeof userRow?.max_linkedin_accounts === 'number' ? userRow.max_linkedin_accounts : 0;
@@ -452,7 +452,13 @@ export default async function handler(req, res) {
           .select('*', { count: 'exact', head: true })
           .eq('team_id', teamId);
         if ((accountCount || 0) >= totalLimit) {
-          return res.status(403).json({ error: 'PLAN_LIMIT_REACHED', limit: totalLimit, plan: userPlan, extraAccounts });
+          return res.status(403).json({
+            error: 'PLAN_LIMIT_REACHED',
+            message: `Has alcanzado el límite de cuentas de tu plan (${totalLimit} cuenta${totalLimit !== 1 ? 's' : ''}).`,
+            limit: totalLimit,
+            plan: userPlan,
+            extraAccounts,
+          });
         }
       }
 

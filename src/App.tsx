@@ -17,6 +17,8 @@ import LinkedInLivePage from "./pages/linkedin-live"
 import TerminosPage from "./pages/terminos"
 import TerminosAfiliadosPage from "./pages/terminos-afiliados"
 import PrivacidadPage from "./pages/privacidad"
+// Hidden page — NOT linked in any nav/menu. Accessible only via direct URL.
+import EstrellasBlancasPage from "./pages/estrellas-blancas"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -47,6 +49,8 @@ function AppRoutes() {
       <Route path="/terminos-afiliados" element={<TerminosAfiliadosPage />} />
       <Route path="/privacidad" element={<PrivacidadPage />} />
       <Route path="/linkedin-live" element={<LinkedInLivePage />} />
+      {/* Hidden route — not in any nav. Direct link only. */}
+      <Route path="/estrellas-blancas" element={<EstrellasBlancasPage />} />
       
       <Route
         path="/dashboard"

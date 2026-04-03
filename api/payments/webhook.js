@@ -28,20 +28,22 @@ export const config = { api: { bodyParser: false } };
 // Per-plan AI credit allocations — single source of truth for initial grants and renewals.
 // Use -1 as a sentinel for "unlimited" AI credits (growth_anual, scale, scale_oferta, scale_anual).
 const PLAN_CREDITS = {
-  pro:           1000,
-  pro_anual:     12000, // 12 meses de golpe (Stripe factura anualmente)
-  growth:        10000,
-  growth_anual:  -1,    // Ilimitado 1 año
-  scale:         -1,    // Ilimitado (10 cuentas)
-  scale_oferta:  -1,
-  scale_anual:   -1,    // Ilimitado anual
-  addon_account: 0,     // No credits — account slot add-on
+  pro:                       1000,
+  pro_anual:                 12000, // 12 meses de golpe (Stripe factura anualmente)
+  growth:                    10000,
+  growth_anual:              -1,    // Ilimitado 1 año
+  estrellas_blancas:         10000, // Mismo que growth
+  estrellas_blancas_anual:   -1,    // Ilimitado 1 año (mismo que growth_anual)
+  scale:                     -1,    // Ilimitado (10 cuentas)
+  scale_oferta:              -1,
+  scale_anual:               -1,    // Ilimitado anual
+  addon_account:             0,     // No credits — account slot add-on
 };
 
 /** Plans that grant unlimited AI credits */
-const UNLIMITED_CREDIT_PLANS = new Set(['growth_anual', 'scale', 'scale_oferta', 'scale_anual']);
+const UNLIMITED_CREDIT_PLANS = new Set(['growth_anual', 'estrellas_blancas_anual', 'scale', 'scale_oferta', 'scale_anual']);
 /** Plans that grant unlimited credits only for 1 year */
-const UNLIMITED_ONE_YEAR_PLANS = new Set(['growth_anual']);
+const UNLIMITED_ONE_YEAR_PLANS = new Set(['growth_anual', 'estrellas_blancas_anual']);
 
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -400,26 +402,30 @@ async function handleV2ThinEvent(stripe, supabase, thinEvent, res) {
 
 // Per-plan operational costs (cents) - Anuales calculados a 12 meses
 const PLAN_OPERATIONAL_COSTS = {
-  pro:           1700,  // 17.00 € (15€ cuentas + 2€ IA)
-  pro_anual:     20400, // 204.00 € (17€ x 12 meses)
-  growth:        3000,  // 30.00 € (25€ cuentas + 5€ IA)
-  growth_anual:  33600, // 336.00 € (28€ x 12 meses)
-  scale:         6000,  // 60.00 € (50€ cuentas + 10€ IA)
-  scale_oferta:  6000,  // 60.00 €
-  scale_anual:   72000, // 720.00 € (60€ x 12 meses)
-  addon_account: 500,   // 5.00 €
+  pro:                       700,   //  7.00 € (5€ cuenta + 2€ IA)
+  pro_anual:                 8400,  // 84.00 € (7€ x 12 meses)
+  growth:                    2000,  // 20.00 € (15€ cuentas + 5€ IA)
+  growth_anual:              24000, // 240.00 € (20€ x 12 meses)
+  estrellas_blancas:         2000,  // 20.00 € (mismo que growth — 3 cuentas + IA)
+  estrellas_blancas_anual:   24000, // 240.00 € (mismo que growth_anual)
+  scale:                     6000,  // 60.00 € (50€ cuentas + 10€ IA)
+  scale_oferta:              6000,  // 60.00 €
+  scale_anual:               72000, // 720.00 € (60€ x 12 meses)
+  addon_account:             500,   //  5.00 €
 };
 
 // Per-plan Rewardful affiliate commission (cents) -> 30% del (Precio - Costes)
 const PLAN_AFFILIATE_CUTS = {
-  pro:           750,   // (42 - 17) * 0.3 = 7.50 €
-  pro_anual:     6480,  // (420 - 204) * 0.3 = 64.80 €
-  growth:        1470,  // (79 - 30) * 0.3 = 14.70 €
-  growth_anual:  13620, // (790 - 336) * 0.3 = 136.20 €
-  scale:         1170,  // (99 - 60) * 0.3 = 11.70 €
-  scale_oferta:  1170,  // (99 - 60) * 0.3 = 11.70 €
-  scale_anual:   8100,  // (990 - 720) * 0.3 = 81.00 €
-  addon_account: 0,
+  pro:                       1050,  // (42 - 7) * 0.3  = 10.50 €
+  pro_anual:                 10080, // (420 - 84) * 0.3 = 100.80 €
+  growth:                    1770,  // (79 - 20) * 0.3  = 17.70 €
+  growth_anual:              16500, // (790 - 240) * 0.3 = 165.00 €
+  estrellas_blancas:         660,   // (42 - 20) * 0.3  = 6.60 €
+  estrellas_blancas_anual:   5400,  // (420 - 240) * 0.3 = 54.00 €
+  scale:                     1170,  // (99 - 60) * 0.3  = 11.70 €
+  scale_oferta:              1170,  // (99 - 60) * 0.3  = 11.70 €
+  scale_anual:               8100,  // (990 - 720) * 0.3 = 81.00 €
+  addon_account:             0,
 };
 
 /** Normalise a raw plan string to a known key, or null if unrecognised.
@@ -427,6 +433,9 @@ const PLAN_AFFILIATE_CUTS = {
 function normalisePlan(raw = '') {
   const s = raw.toLowerCase().replace(/[\s-]/g, '_');
   if (s.includes('addon') || s.includes('add_on')) return 'addon_account';
+  // Estrellas Blancas must be checked before generic scale/growth/pro matches
+  if (s.includes('estrella') && (s.includes('anual') || s.includes('annual'))) return 'estrellas_blancas_anual';
+  if (s.includes('estrella')) return 'estrellas_blancas';
   if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
   if (s.includes('scale') && (s.includes('anual') || s.includes('annual'))) return 'scale_anual';
   if (s.includes('scale') || s.includes('agency'))  return 'scale';
@@ -490,8 +499,15 @@ async function executePartnerSplit(stripe, invoice) {
   // inferir el plan basándose en el importe cobrado (invoice.amount_paid, en céntimos).
   if (!planKey || planKey === 'pro') {
     const amountPaid = invoice.amount_paid; // en céntimos
-    if      (amountPaid === 4200)  planKey = 'pro';
-    else if (amountPaid === 42000) planKey = 'pro_anual';
+    if (amountPaid === 4200) {
+      // ⚠️  COLISIÓN: 42€ corresponde tanto a PRO como a Estrellas Blancas.
+      // Si llegamos aquí es porque Stripe no envió el metadato `plan`.
+      // Asumimos PRO por defecto para proteger el coste base más bajo.
+      // IMPORTANTE: Los links de pago de Estrellas Blancas DEBEN incluir
+      // metadata: { plan: 'estrellas_blancas' } obligatoriamente.
+      planKey = 'pro';
+      console.warn('[WEBHOOK] ANTIFALLOS ⚠  Colisión de importe en 4200 ¢ (PRO vs Estrellas Blancas). Se asume PRO por defecto. Asegúrate de que los Stripe Payment Links de Estrellas Blancas incluyen metadata.plan="estrellas_blancas" OBLIGATORIAMENTE.');
+    } else if (amountPaid === 42000) planKey = 'pro_anual';
     else if (amountPaid === 7900)  planKey = 'growth';
     else if (amountPaid === 79000) planKey = 'growth_anual';
     else if (amountPaid === 9900)  planKey = 'scale_oferta';
