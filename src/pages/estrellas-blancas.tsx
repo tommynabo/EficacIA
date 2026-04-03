@@ -30,8 +30,12 @@ export default function EstrellasBlancasPage() {
   const monthlyEquivalent = billing === 'annual' ? Math.round(420 / 12) : null
 
   const handleCheckout = () => {
-    // TODO: Insertar link de Stripe Estrellas Blancas
-    window.location.href = '#'
+    // Stripe Payment Links — incluyen subscription_data.metadata.plan para el webhook
+    if (billing === 'monthly') {
+      window.location.href = 'https://buy.stripe.com/5kQ6oGfKwf8jbSh4jYgQE01' // Mensual 42€
+    } else {
+      window.location.href = 'https://buy.stripe.com/8x2aEWbug6BNg8x03IgQE00' // Anual 420€
+    }
   }
 
   return (
