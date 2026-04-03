@@ -80,6 +80,80 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // ── POST ?action=safe-refund — Admin: refund with Hit & Run protection ─────
+  if (req.method === 'POST' && req.query.action === 'safe-refund') {
+    const { getStripe: _getStripe, getSupabase } = await import('../_lib/stripe.js');
+    const _stripe   = _getStripe();
+    const _supabase = getSupabase();
+
+    const PLAN_CREDITS_MAP = {
+      pro: 1000, pro_anual: 12000, growth: 10000, growth_anual: -1,
+      estrellas_blancas: 10000, estrellas_blancas_anual: -1,
+      scale: -1, scale_oferta: -1, scale_anual: -1, addon_account: 0,
+    };
+    const UNLIMITED_PLANS = new Set(['growth_anual','estrellas_blancas_anual','scale','scale_oferta','scale_anual']);
+    const normPlan = (raw = '') => {
+      const s = raw.toLowerCase().replace(/[\s-]/g, '_');
+      if (s.includes('addon') || s.includes('add_on')) return 'addon_account';
+      if (s.includes('estrella') && (s.includes('anual') || s.includes('annual'))) return 'estrellas_blancas_anual';
+      if (s.includes('estrella')) return 'estrellas_blancas';
+      if (s.includes('scale') && (s.includes('oferta') || s.includes('offer'))) return 'scale_oferta';
+      if (s.includes('scale') && (s.includes('anual') || s.includes('annual'))) return 'scale_anual';
+      if (s.includes('scale') || s.includes('agency')) return 'scale';
+      if (s.includes('growth') && (s.includes('anual') || s.includes('annual'))) return 'growth_anual';
+      if (s.includes('growth')) return 'growth';
+      if (s.includes('pro') && (s.includes('anual') || s.includes('annual'))) return 'pro_anual';
+      if (s.includes('pro') || s.includes('starter')) return 'pro';
+      return null;
+    };
+
+    const { userId: srUserId, stripe_customer_id: srCustomerId, charge_id } = req.body || {};
+    if (!charge_id) return res.status(400).json({ error: 'charge_id is required' });
+    if (!srUserId && !srCustomerId) return res.status(400).json({ error: 'userId or stripe_customer_id is required' });
+
+    let srUser = null;
+    if (srUserId) {
+      const { data } = await _supabase.from('users')
+        .select('id, subscription_status, ai_credits, ai_credits_unlimited, fraud_flag')
+        .eq('id', srUserId).single();
+      srUser = data;
+    }
+    if (!srUser && srCustomerId) {
+      const { data } = await _supabase.from('users')
+        .select('id, subscription_status, ai_credits, ai_credits_unlimited, fraud_flag')
+        .eq('stripe_customer_id', srCustomerId).single();
+      srUser = data;
+    }
+    if (!srUser) return res.status(404).json({ error: 'User not found' });
+    if (srUser.fraud_flag) return res.status(403).json({ error: 'Usuario marcado como fraude. Reembolso bloqueado.' });
+
+    const srPlanKey = normPlan(srUser.subscription_status);
+    if (srPlanKey && UNLIMITED_PLANS.has(srPlanKey)) {
+      return res.status(400).json({ error: 'Plan ilimitado activo. Los reembolsos requieren revisión manual del administrador.', plan: srPlanKey });
+    }
+
+    const allocated = PLAN_CREDITS_MAP[srPlanKey] ?? 0;
+    if (allocated > 0) {
+      const current = typeof srUser.ai_credits === 'number' ? srUser.ai_credits : 0;
+      const consumed = allocated - current;
+      const pct = (consumed / allocated) * 100;
+      if (pct > 5) {
+        return res.status(400).json({
+          error: 'Reembolso denegado: El usuario ha consumido más del 5% de sus recursos de Inteligencia Artificial.',
+          details: { plan: srPlanKey, allocated_credits: allocated, current_credits: current, consumed_credits: consumed, consumed_percent: parseFloat(pct.toFixed(1)), threshold_percent: 5 },
+        });
+      }
+    }
+
+    try {
+      const refund = await _stripe.refunds.create({ charge: charge_id });
+      console.log(`[SAFE-REFUND] ✓ Refund ${refund.id} for charge ${charge_id} (user ${srUser.id})`);
+      return res.status(200).json({ success: true, refund_id: refund.id, charge_id, user_id: srUser.id });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to process refund via Stripe', stripe_error: err.message });
+    }
+  }
+
   // ── GET ?action=connect-status — Stripe Connect account status ────────────
   if (req.method === 'GET' && req.query.action === 'connect-status') {
     const { userId: authId, error: authErr } = await getAuthUser(req);
