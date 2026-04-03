@@ -501,12 +501,14 @@ async function executePartnerSplit(stripe, invoice) {
     const amountPaid = invoice.amount_paid; // en céntimos
     if (amountPaid === 4200) {
       // ⚠️  COLISIÓN: 42€ corresponde tanto a PRO como a Estrellas Blancas.
-      // Si llegamos aquí es porque Stripe no envió el metadato `plan`.
-      // Asumimos PRO por defecto para proteger el coste base más bajo.
-      // IMPORTANTE: Los links de pago de Estrellas Blancas DEBEN incluir
-      // metadata: { plan: 'estrellas_blancas' } obligatoriamente.
-      planKey = 'pro';
-      console.warn('[WEBHOOK] ANTIFALLOS ⚠  Colisión de importe en 4200 ¢ (PRO vs Estrellas Blancas). Se asume PRO por defecto. Asegúrate de que los Stripe Payment Links de Estrellas Blancas incluyen metadata.plan="estrellas_blancas" OBLIGATORIAMENTE.');
+      // Priorizar el metadato de Stripe si existe. Si no, asumir PRO por defecto
+      // para proteger el coste base más bajo (7€ vs 20€).
+      // REQUISITO: Los Payment Links de Estrellas Blancas DEBEN tener configurado
+      // en Stripe → Subscription data → Metadata → plan: estrellas_blancas
+      planKey = normalisePlan(subMeta?.plan || '') || 'pro';
+      if (planKey === 'pro') {
+        console.log('[WEBHOOK] Importe de 42€. Sin metadatos específicos, se procesa como plan Pro.');
+      }
     } else if (amountPaid === 42000) planKey = 'pro_anual';
     else if (amountPaid === 7900)  planKey = 'growth';
     else if (amountPaid === 79000) planKey = 'growth_anual';

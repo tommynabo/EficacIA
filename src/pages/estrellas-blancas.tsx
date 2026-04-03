@@ -26,6 +26,10 @@ const FEATURES = [
   'Soporte prioritario',
 ]
 
+// REQUISITO CRÍTICO: Ambos Payment Links DEBEN tener configurado en Stripe Dashboard:
+//   Product → Payment Link → Subscription data → Metadata → plan: estrellas_blancas
+// Sin este metadato, el webhook anti-colisión asignará el coste de PRO (7€) en lugar
+// del coste real de Estrellas Blancas (20€), afectando el Revenue Split.
 const STRIPE_LINKS: Record<BillingPeriod, string> = {
   monthly: 'https://buy.stripe.com/5kQ6oGfKwf8jbSh4jYgQE01',
   annual:  'https://buy.stripe.com/8x2aEWbug6BNg8x03IgQE00',
@@ -66,6 +70,8 @@ export default function EstrellasBlancasPage() {
 
   const handleCheckout = () => {
     setLoading(true)
+    // Redirige al Payment Link de Stripe que DEBE tener metadata.plan="estrellas_blancas"
+    // configurado en Stripe Dashboard para que el webhook identifique el plan correctamente.
     window.location.href = STRIPE_LINKS[billing]
   }
 
