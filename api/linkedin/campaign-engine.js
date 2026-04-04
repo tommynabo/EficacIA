@@ -277,6 +277,18 @@ export default async function handler(req, res) {
 
           const sendData = await sendRes.json().catch(() => ({}));
 
+          // FIX: Atrapar el 202 de "Procesando IA" para no saltarse el paso
+          if (sendRes.status === 202 || sendData.status === 'processing') {
+            console.log(`[ENGINE] Lead ${lead.id} procesando Apify, pausando 5 mins.`);
+            await supabaseAdmin.from('leads').update({
+              sequence_status: 'retry_later',
+              next_action_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // Reintento en 5 min
+              error_message: 'Analizando perfil con IA...',
+              last_action_at: now.toISOString(),
+            }).eq('id', lead.id);
+            continue; // Vital: evitamos que avance el step de la secuencia
+          }
+
           if (!sendRes.ok) {
             const httpStatus = sendRes.status;
             const rawMsg = sendData.error || `Error HTTP ${httpStatus}`;

@@ -106,7 +106,7 @@ function resolveTemplate(template, lead) {
  * ALWAYS tries to generate — uses scraped data if available, falls back to lead DB fields.
  */
 async function generateAdvancedAIVariables(template, lead, aiPrompt, actionType) {
-  const unresolvedTags = template.match(/\{\{(\w+)\}\}/g);
+  const unresolvedTags = template.match(/\{\{([\w\s-]+)\}\}/g);
   if (!unresolvedTags || unresolvedTags.length === 0) {
     console.log('[AI-VARS] No unresolved tags found, skipping.');
     return template;
@@ -560,7 +560,7 @@ export default async function handler(req, res) {
     finalMessage = resolveTemplate(finalMessage, lead);
 
     // ─── Step 2: Check if AI variables are needed ────────────────────────────
-    const remainingTags = finalMessage.match(/\{\{(\w+)\}\}/g);
+    const remainingTags = finalMessage.match(/\{\{([\w\s-]+)\}\}/g);
     const needsAdvancedAI = !!remainingTags && remainingTags.length > 0;
 
     let aiCreditsSnapshot = null;
@@ -571,9 +571,10 @@ export default async function handler(req, res) {
       // ── Guard: verify the user has at least 1 AI credit before calling Claude
       if (creditUserId) {
         const { data: creditUser } = await supabaseAdmin.from('users')
-          .select('ai_credits').eq('id', creditUserId).single();
+          .select('ai_credits, ai_credits_unlimited').eq('id', creditUserId).single();
+        const isUnlimited = creditUser?.ai_credits_unlimited === true;
         const currentCredits = creditUser?.ai_credits ?? 0;
-        if (currentCredits < 1) {
+        if (!isUnlimited && currentCredits < 1) {
           console.warn(`[SEND-ACTION] Insufficient AI credits for user ${creditUserId} (${currentCredits})`);
           await supabaseAdmin.from('leads').update({
             sequence_status: 'paused',
@@ -642,7 +643,7 @@ export default async function handler(req, res) {
 
       // Update lead in DB
       await supabaseAdmin.from('leads').update({
-        status: actionType === 'invitation' ? 'invited' : 'contacted',
+        status: 'contacted',
         sent_message: true,
         sent_at: new Date().toISOString(),
         ai_message: finalMessage,
